@@ -72,6 +72,10 @@ function osDetailToRow(d) {
 }
 
 /* ---------------- constants ---------------- */
+/* Código de acesso pra editar ou excluir uma venda já finalizada.
+   Pra trocar, é só mudar esse valor aqui e me pedir pra republicar. */
+const PIN_EDICAO = "1234";
+
 const FORMAS = [
   { id: "dinheiro", label: "Dinheiro" },
   { id: "pix", label: "Pix" },
@@ -333,6 +337,43 @@ export default function EnigmaSistema() {
     setTab("caixa");
   }
 
+  async function excluirVenda(venda) {
+    try {
+      await sb(`vendas?id=eq.${venda.id}`, { method: "DELETE", prefer: "return=minimal" });
+      const usados = (venda.itens || []).filter((i) => i.estoqueId);
+      usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, u.qtd));
+      if (caixaAtual && caixaAtual.vendas.some((v) => v.id === venda.id)) {
+        setCaixaAtual({ ...caixaAtual, vendas: caixaAtual.vendas.filter((v) => v.id !== venda.id) });
+      }
+      setSaveError(false);
+      return true;
+    } catch (e) { setSaveError(true); return false; }
+  }
+
+  async function editarVenda(venda, novosItens, novaForma) {
+    const novoTotal = novosItens.reduce((s, i) => s + i.valor * i.qtd, 0);
+    try {
+      await sb(`vendas?id=eq.${venda.id}`, {
+        method: "PATCH", prefer: "return=minimal",
+        body: JSON.stringify({ itens: novosItens, forma_pagamento: novaForma, total: novoTotal }),
+      });
+      // reconcilia estoque: devolve o que não é mais usado, desconta o que passou a ser usado a mais
+      const oldMap = {}; (venda.itens || []).forEach((i) => { if (i.estoqueId) oldMap[i.estoqueId] = (oldMap[i.estoqueId] || 0) + i.qtd; });
+      const newMap = {}; novosItens.forEach((i) => { if (i.estoqueId) newMap[i.estoqueId] = (newMap[i.estoqueId] || 0) + i.qtd; });
+      const idsEstoque = new Set([...Object.keys(oldMap), ...Object.keys(newMap)]);
+      idsEstoque.forEach((id) => {
+        const delta = (oldMap[id] || 0) - (newMap[id] || 0);
+        if (delta !== 0) ajustarQuantidadeLocal(id, delta);
+      });
+      const vendaAtualizada = { ...venda, itens: novosItens, formaPagamento: novaForma, total: novoTotal };
+      if (caixaAtual && caixaAtual.vendas.some((v) => v.id === venda.id)) {
+        setCaixaAtual({ ...caixaAtual, vendas: caixaAtual.vendas.map((v) => (v.id === venda.id ? vendaAtualizada : v)) });
+      }
+      setSaveError(false);
+      return vendaAtualizada;
+    } catch (e) { setSaveError(true); return null; }
+  }
+
   async function buscarVendasPorData(dataISO) {
     const inicio = `${dataISO}T00:00:00`;
     const fim = `${dataISO}T23:59:59.999`;
@@ -418,7 +459,7 @@ export default function EnigmaSistema() {
       <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} />
       <main className="max-w-2xl mx-auto px-4 pt-5">
         {tab === "pdv" && (
-          <PDVTab caixaAtual={caixaAtual} estoque={estoque} onVenda={registrarVenda} onIrParaCaixa={() => setTab("caixa")} />
+          <PDVTab caixaAtual={caixaAtual} estoque={estoque} onVenda={registrarVenda} onIrParaCaixa={() => setTab("caixa")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
         {tab === "caixa" && <CaixaTab caixaAtual={caixaAtual} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
@@ -431,7 +472,7 @@ export default function EnigmaSistema() {
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
-        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} />}
+        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
       </main>
       <BottomNav tab={tab} setTab={(t) => { setTab(t); if (t === "os") setOsView("lista"); }} />
     </div>
@@ -487,7 +528,7 @@ function BottomNav({ tab, setTab }) {
 }
 
 /* ================= PDV ================= */
-function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa }) {
+function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
   const [modo, setModo] = useState("estoque"); // estoque | manual
   const [busca, setBusca] = useState("");
@@ -625,7 +666,15 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa }) {
           </>
         )}
       </Card>
-      {cupomAberto && <CupomVenda venda={cupomAberto} onFechar={() => setCupomAberto(null)} />}
+      {cupomAberto && (
+        <CupomVenda
+          venda={cupomAberto}
+          onFechar={() => setCupomAberto(null)}
+          onExcluirVenda={onExcluirVenda}
+          onEditarVenda={onEditarVenda}
+          onAtualizado={(nova) => setCupomAberto(nova)}
+        />
+      )}
     </div>
   );
 }
@@ -711,7 +760,7 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
 }
 
 /* ================= RELATÓRIO ================= */
-function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo }) {
+function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo, onExcluirVenda, onEditarVenda }) {
   const [modo, setModo] = useState("dia"); // dia | periodo
   const [data, setData] = useState(todayISO());
   const [vendasDoDia, setVendasDoDia] = useState([]);
@@ -745,6 +794,12 @@ function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo }) {
       .finally(() => { if (ativo) setCarregandoPeriodo(false); });
     return () => { ativo = false; };
   }, [dataInicio, dataFim, modo]);
+
+  function atualizarListaLocal(vendaAtualizadaOuNull, idOriginal) {
+    const id = vendaAtualizadaOuNull ? vendaAtualizadaOuNull.id : idOriginal;
+    setVendasDoDia((prev) => (vendaAtualizadaOuNull ? prev.map((v) => (v.id === id ? vendaAtualizadaOuNull : v)) : prev.filter((v) => v.id !== id)));
+    setVendasPeriodo((prev) => (vendaAtualizadaOuNull ? prev.map((v) => (v.id === id ? vendaAtualizadaOuNull : v)) : prev.filter((v) => v.id !== id)));
+  }
 
   const totais = totaisPorForma(vendasDoDia);
   const total = totalGeral(vendasDoDia);
@@ -865,46 +920,178 @@ function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo }) {
         </>
       )}
 
-      {cupomAberto && <CupomVenda venda={cupomAberto} onFechar={() => setCupomAberto(null)} />}
+      {cupomAberto && (
+        <CupomVenda
+          venda={cupomAberto}
+          onFechar={() => setCupomAberto(null)}
+          onExcluirVenda={onExcluirVenda}
+          onEditarVenda={onEditarVenda}
+          onAtualizado={(nova) => atualizarListaLocal(nova, cupomAberto.id)}
+        />
+      )}
     </div>
   );
 }
 
-function CupomVenda({ venda, onFechar }) {
+function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualizado }) {
+  const [modo, setModo] = useState("ver"); // ver | pin | editar | excluir-confirmar
+  const [acaoPendente, setAcaoPendente] = useState(null);
+  const [pin, setPin] = useState("");
+  const [erroPin, setErroPin] = useState(false);
+  const [itensEdit, setItensEdit] = useState(venda.itens.map((i) => ({ ...i })));
+  const [formaEdit, setFormaEdit] = useState(venda.formaPagamento);
+  const [salvando, setSalvando] = useState(false);
+
+  function pedirAcao(acao) {
+    setAcaoPendente(acao);
+    setModo("pin");
+    setPin("");
+    setErroPin(false);
+  }
+  function confirmarPin() {
+    if (pin !== PIN_EDICAO) { setErroPin(true); return; }
+    if (acaoPendente === "editar") {
+      setItensEdit(venda.itens.map((i) => ({ ...i })));
+      setFormaEdit(venda.formaPagamento);
+      setModo("editar");
+    } else if (acaoPendente === "excluir") {
+      setModo("excluir-confirmar");
+    }
+  }
+  function removerItemEdit(id) { setItensEdit(itensEdit.filter((i) => i.id !== id)); }
+  function mudarQtdEdit(id, qtd) { setItensEdit(itensEdit.map((i) => (i.id === id ? { ...i, qtd } : i))); }
+  function mudarValorEdit(id, valor) { setItensEdit(itensEdit.map((i) => (i.id === id ? { ...i, valor } : i))); }
+  const totalEdit = itensEdit.reduce((s, i) => s + (Number(i.valor) || 0) * i.qtd, 0);
+
+  async function salvarEdicao() {
+    if (itensEdit.length === 0) return;
+    setSalvando(true);
+    const atualizada = await onEditarVenda(venda, itensEdit.map((i) => ({ ...i, valor: Number(i.valor) || 0 })), formaEdit);
+    setSalvando(false);
+    if (atualizada) { onAtualizado(atualizada); onFechar(); }
+  }
+  async function confirmarExclusao() {
+    setSalvando(true);
+    const ok = await onExcluirVenda(venda);
+    setSalvando(false);
+    if (ok) { onAtualizado(null); onFechar(); }
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-20 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onFechar}>
+    <div className="fixed inset-0 bg-black/80 z-20 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={modo === "ver" ? onFechar : undefined}>
       <div className="bg-[#131318] border border-[#2A2A34] rounded-t-2xl sm:rounded-2xl w-full max-w-sm max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
             <div>
               <div className="text-[11px] tracking-[0.25em] text-[#8A8A96] uppercase">ENIGMA</div>
-              <div className="text-sm text-[#E5E5EA]">Cupom de venda</div>
+              <div className="text-sm text-[#E5E5EA]">
+                {modo === "ver" && "Cupom de venda"}
+                {modo === "pin" && "Código de acesso"}
+                {modo === "editar" && "Editar venda"}
+                {modo === "excluir-confirmar" && "Excluir venda"}
+              </div>
             </div>
             <button onClick={onFechar} className="text-[#8A8A96]"><X size={18} /></button>
           </div>
-          <div className="text-xs text-[#6E6E78] mb-3">{fmtDateTime(venda.timestamp)}</div>
-          <div className="divide-y divide-[#22222A] border-y border-[#2A2A34]">
-            {venda.itens.map((i, idx) => (
-              <div key={idx} className="flex items-center justify-between py-2">
-                <div>
-                  <div className="text-sm text-[#E5E5EA]">{i.descricao}</div>
-                  <div className="text-xs text-[#6E6E78]">{i.qtd}x {fmt(i.valor)}</div>
-                </div>
-                <span className="font-mono text-sm text-[#E5E5EA]">{fmt(i.valor * i.qtd)}</span>
+
+          {modo === "ver" && (
+            <>
+              <div className="text-xs text-[#6E6E78] mb-3">{fmtDateTime(venda.timestamp)}</div>
+              <div className="divide-y divide-[#22222A] border-y border-[#2A2A34]">
+                {venda.itens.map((i, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-2">
+                    <div>
+                      <div className="text-sm text-[#E5E5EA]">{i.descricao}</div>
+                      <div className="text-xs text-[#6E6E78]">{i.qtd}x {fmt(i.valor)}</div>
+                    </div>
+                    <span className="font-mono text-sm text-[#E5E5EA]">{fmt(i.valor * i.qtd)}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="flex justify-between items-center mt-3">
-            <span className="text-sm text-[#8A8A96]">Forma de pagamento</span>
-            <span className="text-sm text-[#E5E5EA]">{FORMAS.find((f) => f.id === venda.formaPagamento)?.label}</span>
-          </div>
-          <div className="flex justify-between items-center mt-1 pt-2 border-t border-[#2A2A34]">
-            <span className="text-sm text-[#C9C9D2]">Total</span>
-            <span className="font-mono text-xl text-white">{fmt(venda.total)}</span>
-          </div>
-          <Button className="w-full mt-4" onClick={() => window.print()}>
-            <span className="flex items-center justify-center gap-2"><Printer size={15} /> Imprimir cupom</span>
-          </Button>
+              <div className="flex justify-between items-center mt-3">
+                <span className="text-sm text-[#8A8A96]">Forma de pagamento</span>
+                <span className="text-sm text-[#E5E5EA]">{FORMAS.find((f) => f.id === venda.formaPagamento)?.label}</span>
+              </div>
+              <div className="flex justify-between items-center mt-1 pt-2 border-t border-[#2A2A34]">
+                <span className="text-sm text-[#C9C9D2]">Total</span>
+                <span className="font-mono text-xl text-white">{fmt(venda.total)}</span>
+              </div>
+              <Button className="w-full mt-4" onClick={() => window.print()}>
+                <span className="flex items-center justify-center gap-2"><Printer size={15} /> Imprimir cupom</span>
+              </Button>
+              {(onEditarVenda || onExcluirVenda) && (
+                <div className="flex gap-2 mt-2">
+                  <Button variant="ghost" className="flex-1" onClick={() => pedirAcao("editar")}>Editar</Button>
+                  <Button variant="danger" className="flex-1" onClick={() => pedirAcao("excluir")}>Excluir</Button>
+                </div>
+              )}
+            </>
+          )}
+
+          {modo === "pin" && (
+            <div>
+              <div className="text-xs text-[#8A8A96] mb-3">Digite o código de acesso pra {acaoPendente === "editar" ? "editar" : "excluir"} essa venda.</div>
+              <Input
+                type="password" inputMode="numeric" placeholder="Código de acesso" value={pin}
+                onChange={(e) => { setPin(e.target.value); setErroPin(false); }}
+                className="mb-2"
+              />
+              {erroPin && <div className="text-xs text-red-400 mb-2">Código incorreto.</div>}
+              <div className="flex gap-2 mt-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setModo("ver")}>Cancelar</Button>
+                <Button className="flex-1" onClick={confirmarPin}>Confirmar</Button>
+              </div>
+            </div>
+          )}
+
+          {modo === "editar" && (
+            <div>
+              <div className="divide-y divide-[#22222A] border-y border-[#2A2A34] mb-3">
+                {itensEdit.map((i) => (
+                  <div key={i.id} className="py-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm text-[#E5E5EA]">{i.descricao}</span>
+                      <button onClick={() => removerItemEdit(i.id)} className="text-[#6E6E78] hover:text-red-400"><Trash2 size={14} /></button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Stepper value={i.qtd} onChange={(v) => mudarQtdEdit(i.id, v)} />
+                      <Input inputMode="decimal" value={i.valor} onChange={(e) => mudarValorEdit(i.id, e.target.value.replace(",", "."))} className="flex-1" />
+                    </div>
+                  </div>
+                ))}
+                {itensEdit.length === 0 && <div className="text-xs text-[#5A5A64] py-3 text-center">Sem itens — use Excluir pra remover a venda inteira</div>}
+              </div>
+              <Label>Forma de pagamento</Label>
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                {FORMAS.map((f) => (
+                  <button key={f.id} onClick={() => setFormaEdit(f.id)} className={"py-2 rounded-lg text-[11px] border " + (formaEdit === f.id ? "border-fuchsia-500 text-fuchsia-300 bg-fuchsia-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-sm text-[#8A8A96]">Novo total</span>
+                <span className="font-mono text-lg text-white">{fmt(totalEdit)}</span>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setModo("ver")}>Cancelar</Button>
+                <Button className="flex-1" disabled={itensEdit.length === 0 || salvando} onClick={salvarEdicao}>{salvando ? "Salvando..." : "Salvar alterações"}</Button>
+              </div>
+            </div>
+          )}
+
+          {modo === "excluir-confirmar" && (
+            <div>
+              <div className="flex items-center gap-2 text-sm text-red-400 mb-3 px-3 py-2 rounded-lg border border-red-500/30 bg-red-500/10">
+                <AlertCircle size={16} /> Essa ação não pode ser desfeita.
+              </div>
+              <div className="text-sm text-[#C9C9D2] mb-4">Excluir a venda de {fmt(venda.total)} feita em {fmtDateTime(venda.timestamp)}? Itens vinculados ao estoque voltam pra quantidade disponível.</div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setModo("ver")}>Cancelar</Button>
+                <Button variant="danger" className="flex-1" disabled={salvando} onClick={confirmarExclusao}>{salvando ? "Excluindo..." : "Confirmar exclusão"}</Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
