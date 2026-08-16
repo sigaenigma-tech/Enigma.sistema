@@ -335,6 +335,24 @@ function EnigmaSistema() {
     editarProduto(id, { quantidade: Math.max(0, atual.quantidade + delta) });
   }
 
+
+  async function atualizarSeminovo(id, patch) {
+    const atual = seminovos.find((x) => x.id === id);
+    if (!atual) return null;
+    const body = { ...patch, updated_at: new Date().toISOString() };
+    try {
+      const rows = await sb(`seminovos?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(body) });
+      const novo = rows?.[0] || { ...atual, ...body };
+      setSeminovos((prev) => prev.map((x) => x.id === id ? novo : x));
+      setSaveError(false);
+      return novo;
+    } catch (e) {
+      console.error("Falha ao atualizar seminovo:", e);
+      setSaveError(true);
+      return null;
+    }
+  }
+
   /* ---------- PDV / caixa ---------- */
   async function abrirCaixa({ valorInicial, operador, observacao }) {
     try {
@@ -352,18 +370,50 @@ function EnigmaSistema() {
   async function registrarVenda({ itens, formaPagamento }) {
     if (!caixaAtual) return null;
     const total = itens.reduce((s, it) => s + it.valor * it.qtd, 0);
+    const seminovosVenda = itens.filter((i) => i.seminovoId);
     try {
+      // Revalida cada unidade antes de vender para impedir venda duplicada.
+      for (const item of seminovosVenda) {
+        const rows = await sb(`seminovos?select=id,status,dados&id=eq.${item.seminovoId}&limit=1`);
+        const atual = rows?.[0];
+        if (!atual || atual.status === "vendido") throw new Error(`Seminovo ${item.descricao} não está mais disponível.`);
+      }
+
       const rows = await sb("vendas", {
         method: "POST",
         body: JSON.stringify({ caixa_id: caixaAtual.id, itens, forma_pagamento: formaPagamento, total }),
       });
       const venda = rowToVenda(rows[0]);
+
+      // Baixa individual dos seminovos vendidos.
+      for (const item of seminovosVenda) {
+        const atual = seminovos.find((x) => x.id === item.seminovoId);
+        const dados = {
+          ...(atual?.dados || {}),
+          venda: {
+            vendaId: venda.id,
+            valorVenda: Number(item.valor) || 0,
+            formaPagamento,
+            vendidoEm: new Date().toISOString(),
+            custoAquisicao: Number(atual?.custo_aquisicao) || 0,
+            custoReparos: Number(atual?.custo_reparos_previsto) || 0,
+            lucroBruto: (Number(item.valor)||0) - (Number(atual?.custo_aquisicao)||0) - (Number(atual?.custo_reparos_previsto)||0),
+          }
+        };
+        await atualizarSeminovo(item.seminovoId, { status: "vendido", dados });
+      }
+
       setCaixaAtual({ ...caixaAtual, vendas: [...caixaAtual.vendas, venda] });
       setSaveError(false);
       const usados = itens.filter((i) => i.estoqueId);
       usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, -u.qtd));
       return venda;
-    } catch (e) { setSaveError(true); return null; }
+    } catch (e) {
+      console.error("Falha ao registrar venda:", e);
+      alert(e?.message || "Não foi possível finalizar a venda.");
+      setSaveError(true);
+      return null;
+    }
   }
   async function fecharCaixa({ valorContado, observacao }) {
     if (!caixaAtual) return;
@@ -392,6 +442,13 @@ function EnigmaSistema() {
       await sb(`vendas?id=eq.${venda.id}`, { method: "DELETE", prefer: "return=minimal" });
       const usados = (venda.itens || []).filter((i) => i.estoqueId);
       usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, u.qtd));
+      const semiItens = (venda.itens || []).filter((i) => i.seminovoId);
+      for (const i of semiItens) {
+        const atual = seminovos.find((x) => x.id === i.seminovoId);
+        const dados = { ...(atual?.dados || {}) };
+        if (dados.venda?.vendaId === venda.id) delete dados.venda;
+        await atualizarSeminovo(i.seminovoId, { status: "disponivel", dados });
+      }
       if (caixaAtual && caixaAtual.vendas.some((v) => v.id === venda.id)) {
         setCaixaAtual({ ...caixaAtual, vendas: caixaAtual.vendas.filter((v) => v.id !== venda.id) });
       }
@@ -627,7 +684,7 @@ function EnigmaSistema() {
           <AtendimentoTab osIndex={osIndex} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />
         )}
         {tab === "pdv" && (
-          <PDVTab caixaAtual={caixaAtual} estoque={estoque} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+          <PDVTab caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
         {tab === "financeiro" && <CaixaTab caixaAtual={caixaAtual} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
@@ -640,7 +697,7 @@ function EnigmaSistema() {
         {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
         {tab === "estoque" && (
-          <EstoqueTab estoque={estoque} seminovos={seminovos} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
+          <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab />}
@@ -685,7 +742,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.4.8</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.5</div>
     </aside>
   );
 }
@@ -871,16 +928,16 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.8</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.5</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
 }
 
 /* ================= PDV ================= */
-function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
+function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
-  const [modo, setModo] = useState("estoque"); // estoque | manual
+  const [modo, setModo] = useState("estoque"); // estoque | seminovo | manual
   const [busca, setBusca] = useState("");
   const [qtdSel, setQtdSel] = useState(1);
   const [descricao, setDescricao] = useState("");
@@ -903,11 +960,35 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, o
   }
 
   const resultados = estoque.filter((p) => p.categoria === "acessorio" && p.nome.toLowerCase().includes(busca.toLowerCase()));
+  const seminovosDisponiveis = seminovos.filter((x) => {
+    const preco = Number(x?.dados?.pdv?.precoVenda) || 0;
+    const q = busca.toLowerCase();
+    const match = !q || [x.marca,x.modelo,x.armazenamento,x.cor,x.imei,x.serial].some(v => String(v||"").toLowerCase().includes(q));
+    return x.status === "disponivel" && preco > 0 && match;
+  });
+
 
   function addDoEstoque(p) {
     setItens([...itens, { id: genId(), descricao: p.nome, tipo: "produto", valor: p.preco, qtd: qtdSel, estoqueId: p.id }]);
     setBusca(""); setQtdSel(1);
   }
+  function addSeminovo(x) {
+    if (itens.some((i) => i.seminovoId === x.id)) return;
+    const preco = Number(x?.dados?.pdv?.precoVenda) || 0;
+    if (!preco) return;
+    setItens([...itens, {
+      id: genId(),
+      descricao: `${x.marca} ${x.modelo} ${x.armazenamento||""}`.trim(),
+      tipo: "seminovo",
+      valor: preco,
+      qtd: 1,
+      seminovoId: x.id,
+      imei: x.imei || "",
+      serial: x.serial || "",
+    }]);
+    setBusca("");
+  }
+
   function addManual() {
     if (!descricao.trim() || !valorManual || Number(valorManual) <= 0) return;
     setItens([...itens, { id: genId(), descricao: descricao.trim(), tipo: tipoManual, valor: Number(valorManual), qtd: qtdManual }]);
@@ -928,14 +1009,14 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, o
     <div className="space-y-4">
       <Card>
         <div className="flex gap-2 mb-3">
-          {[{ id: "estoque", label: "Produto do estoque" }, { id: "manual", label: "Serviço / avulso" }].map((m) => (
-            <button key={m.id} onClick={() => setModo(m.id)} className={"flex-1 py-1.5 rounded-lg text-xs tracking-wide border " + (modo === m.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
+          {[{ id: "estoque", label: "Produtos" }, { id: "seminovo", label: "Seminovos" }, { id: "manual", label: "Serviço / avulso" }].map((m) => (
+            <button key={m.id} onClick={() => {setModo(m.id);setBusca("");}} className={"flex-1 py-1.5 rounded-lg text-xs tracking-wide border " + (modo === m.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
               {m.label}
             </button>
           ))}
         </div>
 
-        {modo === "estoque" ? (
+        {modo === "estoque" && (
           <>
             <div className="flex items-center gap-2 mb-2">
               <div className="relative flex-1">
@@ -959,7 +1040,27 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, o
               </div>
             )}
           </>
-        ) : (
+        )}
+        {modo === "seminovo" && (
+          <>
+            <div className="relative mb-2">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]" />
+              <Input placeholder="Buscar modelo, IMEI ou serial..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9" />
+            </div>
+            <div className="space-y-1">
+              {seminovosDisponiveis.length === 0 && <div className="text-xs text-[#5A5A64] py-3 text-center">Nenhum seminovo disponível com preço de venda definido.</div>}
+              {seminovosDisponiveis.map((x) => (
+                <button key={x.id} onClick={() => addSeminovo(x)} className="w-full rounded-xl bg-[#0F0F14] border border-cyan-400/15 p-3 text-left hover:border-cyan-400/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><div className="text-sm text-[#E5E5EA]">{x.marca} {x.modelo}</div><div className="text-[10px] text-[#6E6E78] mt-1">{x.armazenamento||"—"} · IMEI {x.imei||"—"}</div></div>
+                    <span className="font-mono text-sm text-cyan-300">{fmt(x?.dados?.pdv?.precoVenda)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {modo === "manual" && (
           <>
             <div className="flex gap-2 mb-2">
               {["servico", "produto"].map((t) => (
@@ -975,7 +1076,7 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, o
               <Button onClick={addManual} className="px-3"><Plus size={18} /></Button>
             </div>
           </>
-        )}
+                )}
       </Card>
 
       <Card>
@@ -988,7 +1089,7 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa, onExcluirVenda, o
               <div key={i.id} className="flex items-center justify-between py-2">
                 <div>
                   <div className="text-sm text-[#E5E5EA]">{i.descricao}</div>
-                  <div className="text-xs text-[#6E6E78]">{i.qtd}x {fmt(i.valor)}{i.estoqueId ? " · estoque" : ""}</div>
+                  <div className="text-xs text-[#6E6E78]">{i.qtd}x {fmt(i.valor)}{i.estoqueId ? " · estoque" : i.seminovoId ? " · seminovo · unidade única" : ""}</div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm text-[#E5E5EA]">{fmt(i.valor * i.qtd)}</span>
@@ -1470,7 +1571,7 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
 }
 
 /* ================= ESTOQUE ================= */
-function EstoqueTab({ estoque, seminovos = [], onAdd, onEdit, onRemove }) {
+function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onAdd, onEdit, onRemove }) {
   const [secao, setSecao] = useState("produtos");
   const [mostrarForm, setMostrarForm] = useState(false);
   const [nome, setNome] = useState("");
@@ -1549,14 +1650,16 @@ function EstoqueTab({ estoque, seminovos = [], onAdd, onEdit, onRemove }) {
           <div className="text-sm text-[#8A8A96]">Nenhum seminovo adquirido</div>
           <div className="text-[10px] text-[#5F5F69] mt-2">Aparelhos comprados em Avaliação de Usados aparecerão aqui automaticamente.</div>
         </Card> :
-        <div className="grid md:grid-cols-2 gap-3">{semiLista.map(item=><SeminovoCard key={item.id} item={item}/>)}</div>}
+        <div className="grid md:grid-cols-2 gap-3">{semiLista.map(item=><SeminovoCard key={item.id} item={item} onAtualizar={onAtualizarSeminovo}/>)}</div>}
       </>}
     </div>
   );
 }
 
-function SeminovoCard({ item }) {
+function SeminovoCard({ item, onAtualizar }) {
   const [aberto,setAberto]=useState(false);
+  const [precoVenda,setPrecoVenda]=useState(String(item?.dados?.pdv?.precoVenda || ""));
+  const [salvandoPreco,setSalvandoPreco]=useState(false);
   const dados=item.dados||{};
   const falhas=dados.falhas||[];
   const testes=dados.testes||{};
@@ -1659,9 +1762,14 @@ function SeminovoCard({ item }) {
       <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/[.025] p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <div className="text-[9px] tracking-[.22em] text-cyan-300">PRÓXIMA ETAPA</div>
-          <div className="text-xs text-[#777783] mt-1">{item.status==="disponivel"?"Aparelho pronto para integração com o PDV.":"Finalize a preparação antes de disponibilizar para venda."}</div>
+          <div className="text-xs text-[#777783] mt-1">{item.status==="disponivel"?"Aparelho disponível. Defina o preço para liberá-lo no PDV.":"Finalize a preparação antes de disponibilizar para venda."}</div>
         </div>
-        <button type="button" disabled className="rounded-lg border border-white/10 px-4 py-2 text-[10px] text-[#555560] cursor-not-allowed">ENVIAR AO PDV — EM BREVE</button>
+        {item.status==="disponivel" ? <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <Input inputMode="decimal" placeholder="Preço de venda" value={precoVenda} onChange={(e)=>setPrecoVenda(e.target.value.replace(",","."))} className="sm:w-36"/>
+          <button type="button" disabled={salvandoPreco || !(Number(precoVenda)>0)} onClick={async()=>{setSalvandoPreco(true);const dados={...(item.dados||{}),pdv:{...(item.dados?.pdv||{}),precoVenda:Number(precoVenda),enviadoEm:new Date().toISOString()}};const ok=await onAtualizar(item.id,{dados});setSalvandoPreco(false);if(ok)alert("Seminovo liberado no PDV.");}} className="rounded-lg border border-cyan-400/25 bg-cyan-400/[.05] px-4 py-2 text-[10px] text-cyan-300 disabled:opacity-40">
+            {salvandoPreco?"SALVANDO...":item?.dados?.pdv?.precoVenda?"ATUALIZAR PREÇO NO PDV":"ENVIAR AO PDV"}
+          </button>
+        </div> : <div className="text-[10px] text-[#5A5A64]">{item.status==="vendido"?"Venda concluída — item bloqueado para nova venda.":"Finalize a preparação antes de enviar ao PDV."}</div>}
       </div>
     </div>}
   </div>;
