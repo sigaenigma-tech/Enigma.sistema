@@ -794,7 +794,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.5</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.6</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1724,8 +1724,8 @@ function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
     const timer = setTimeout(async () => {
       setMarketLoading(true); setMarketMsg("");
       try {
-        const qMarca = encodeURIComponent(marca);
-        const qModelo = encodeURIComponent(modelo);
+        const qMarca = encodeURIComponent(`*${marca}*`);
+        const qModelo = encodeURIComponent(`*${modelo}*`);
         let url = `referencias_mercado?select=*&marca=ilike.${qMarca}&modelo=ilike.${qModelo}&order=updated_at.desc&limit=5`;
         const rows = await sb(url);
         if (cancelled) return;
@@ -2091,7 +2091,7 @@ function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-center justify-between gap-3"><div><div className="text-[9px] tracking-[.24em] text-cyan-300">TIMELINE INTERNA</div><div className="text-[10px] text-[#60606B] mt-1">Não aparece no Termo de Aquisição.</div></div><div className="text-[9px] font-mono text-[#555560]">{(Array.isArray(draft.oferta?.historico)?draft.oferta.historico:[]).length} EVENTOS</div></div>
           {!(Array.isArray(draft.oferta?.historico)?draft.oferta.historico:[]).length ? <div className="text-xs text-[#5F5F69] mt-4">Nenhuma movimentação registrada.</div> :
-          <div className="mt-4 flex flex-wrap items-center gap-2">{(draft.oferta.historico||[]).map((ev,i)=><React.Fragment key={ev.id||i}><div className={"rounded-lg border px-3 py-2 "+(ev.tipo==="aceite"?"border-green-500/25 bg-green-500/[.04]":ev.tipo==="contraproposta"?"border-amber-400/20 bg-amber-400/[.03]":ev.tipo==="recusa"?"border-red-500/20 bg-red-500/[.03]":"border-purple-500/20 bg-purple-500/[.03]")}><div className="text-[8px] tracking-[.18em] text-[#70707B]">{labelEventoNegociacao(ev)}</div><div className="text-xs font-mono text-white mt-1">{ev.valor ? fmt(ev.valor) : "—"}</div><div className="text-[8px] text-[#50505A] mt-1">{ev.em ? new Date(ev.em).toLocaleString("pt-BR") : ""}</div></div>{i<(draft.oferta.historico||[]).length-1 && <span className="text-[#44444E] text-xs px-1">→</span>}</React.Fragment>)}</div>}
+          <div className="mt-4 flex flex-wrap items-center gap-2">{(draft.oferta.historico||[]).map((ev,i)=><span key={ev.id||i} className="contents"><div className={"rounded-lg border px-3 py-2 "+(ev.tipo==="aceite"?"border-green-500/25 bg-green-500/[.04]":ev.tipo==="contraproposta"?"border-amber-400/20 bg-amber-400/[.03]":ev.tipo==="recusa"?"border-red-500/20 bg-red-500/[.03]":"border-purple-500/20 bg-purple-500/[.03]")}><div className="text-[8px] tracking-[.18em] text-[#70707B]">{labelEventoNegociacao(ev)}</div><div className="text-xs font-mono text-white mt-1">{ev.valor ? fmt(ev.valor) : "—"}</div><div className="text-[8px] text-[#50505A] mt-1">{ev.em ? new Date(ev.em).toLocaleString("pt-BR") : ""}</div></div>{i<(draft.oferta.historico||[]).length-1 && <span className="text-[#44444E] text-xs px-1">→</span>}</span>)}</div>}
         </div>
 
         {draft.oferta?.statusNegociacao==="fechada" && <div className="mt-5">
