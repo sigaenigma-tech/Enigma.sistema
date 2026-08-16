@@ -59,6 +59,8 @@ function rowToOSDetail(r) {
     fotos: r.fotos || [], pecasUsadas: r.pecas_usadas || [], timeline: r.timeline || [], notificacoes: r.notificacoes || [],
     termos: r.termos ?? TERMO_PADRAO, assinaturaCliente: r.assinatura_cliente || null, status: r.status,
     valorMaoDeObra: r.valor_mao_de_obra ?? "", valorFinal: r.valor_final ?? "",
+    diagnosticoTecnico: r.diagnostico_tecnico || "", orcamento: r.orcamento || {}, entrega: r.entrega || {},
+    acessoriosRecebidos: r.acessorios_recebidos || "", previsaoEntrega: r.previsao_entrega || "",
   };
 }
 function osDetailToRow(d) {
@@ -69,6 +71,8 @@ function osDetailToRow(d) {
     termos: d.termos, assinatura_cliente: d.assinaturaCliente, status: d.status,
     valor_mao_de_obra: d.valorMaoDeObra === "" || d.valorMaoDeObra === null ? null : Number(d.valorMaoDeObra),
     valor_final: d.valorFinal === "" || d.valorFinal === null ? null : Number(d.valorFinal),
+    diagnostico_tecnico: d.diagnosticoTecnico || "", orcamento: d.orcamento || {}, entrega: d.entrega || {},
+    acessorios_recebidos: d.acessoriosRecebidos || "", previsao_entrega: d.previsaoEntrega || null,
   };
 }
 
@@ -424,6 +428,8 @@ export default function EnigmaSistema() {
       termos: TERMO_PADRAO,
       assinatura_cliente: null,
       status: "recebido", valor_mao_de_obra: null, valor_final: null,
+      diagnostico_tecnico: "", orcamento: { status: "rascunho", desconto: 0 }, entrega: { garantiaDias: 90, observacoes: "" },
+      acessorios_recebidos: form.acessoriosRecebidos || "", previsao_entrega: form.previsaoEntrega || null,
     };
     try {
       const rows = await sb("ordens_servico", { method: "POST", body: JSON.stringify(novaOS) });
@@ -529,7 +535,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.1</div>
     </aside>
   );
 }
@@ -715,7 +721,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1482,46 +1488,53 @@ function NovaOS({ onCriar, onCancelar }) {
   const [aparelhoMarcaModelo, setAparelhoMarcaModelo] = useState("");
   const [aparelhoSerial, setAparelhoSerial] = useState("");
   const [problemaRelatado, setProblemaRelatado] = useState("");
+  const [acessoriosRecebidos, setAcessoriosRecebidos] = useState("");
+  const [previsaoEntrega, setPrevisaoEntrega] = useState("");
   const podeCriar = clienteNome.trim() && aparelhoMarcaModelo.trim() && problemaRelatado.trim();
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <div className="flex items-center gap-2 mb-3 text-[#C9C9D2]"><User size={15} className="text-purple-400" /><span className="text-sm tracking-wide">Cliente</span></div>
-        <Label>Nome</Label>
-        <Input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} className="mb-3" />
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div>
-            <Label>Telefone</Label>
-            <Input value={clienteTelefone} onChange={(e) => setClienteTelefone(e.target.value)} placeholder="(00) 00000-0000" />
+    <div className="space-y-4 max-w-4xl">
+      <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Entrada de assistência</div>
+        <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
+        <div className="text-xs text-[#777782] mt-1">Registre o essencial agora. Diagnóstico, orçamento e aprovação entram no fluxo depois.</div>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card className="!rounded-2xl">
+          <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><User size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Cliente</span></div>
+          <Label>Nome *</Label>
+          <Input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} placeholder="Nome completo" className="mb-3" />
+          <div className="grid sm:grid-cols-2 gap-2 mb-3">
+            <div><Label>WhatsApp</Label><Input value={clienteTelefone} onChange={(e) => setClienteTelefone(e.target.value)} placeholder="(00) 00000-0000" /></div>
+            <div><Label>CPF</Label><Input value={clienteCpf} onChange={(e) => setClienteCpf(e.target.value)} placeholder="000.000.000-00" /></div>
           </div>
-          <div>
-            <Label>CPF</Label>
-            <Input value={clienteCpf} onChange={(e) => setClienteCpf(e.target.value)} placeholder="000.000.000-00" />
+          <Label>Endereço</Label>
+          <Input value={clienteEndereco} onChange={(e) => setClienteEndereco(e.target.value)} placeholder="Rua, número, bairro" />
+        </Card>
+        <Card className="!rounded-2xl">
+          <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><Smartphone size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Aparelho</span></div>
+          <div className="flex gap-2 mb-3">
+            {[{id:"smartphone",label:"Celular"},{id:"tablet",label:"Tablet"},{id:"notebook",label:"Notebook"},{id:"outro",label:"Outro"}].map((t) => (
+              <button key={t.id} onClick={() => setAparelhoTipo(t.id)} className={"flex-1 py-2 rounded-lg text-[11px] uppercase tracking-wide border " + (aparelhoTipo === t.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>{t.label}</button>
+            ))}
           </div>
+          <Label>Marca / modelo *</Label>
+          <Input value={aparelhoMarcaModelo} onChange={(e) => setAparelhoMarcaModelo(e.target.value)} placeholder="Ex: iPhone 13 Pro" className="mb-3" />
+          <Label>Número de série / IMEI</Label>
+          <Input value={aparelhoSerial} onChange={(e) => setAparelhoSerial(e.target.value)} placeholder="Opcional" className="mb-3" />
+          <Label>Acessórios recebidos</Label>
+          <Input value={acessoriosRecebidos} onChange={(e) => setAcessoriosRecebidos(e.target.value)} placeholder="Ex: aparelho + carregador + capa" />
+        </Card>
+      </div>
+      <Card className="!rounded-2xl">
+        <div className="grid lg:grid-cols-[1fr_220px] gap-4">
+          <div><Label>Problema relatado pelo cliente *</Label><Textarea rows={4} value={problemaRelatado} onChange={(e) => setProblemaRelatado(e.target.value)} placeholder="Descreva com as palavras do cliente o que está acontecendo." /></div>
+          <div><Label>Previsão inicial</Label><Input type="date" value={previsaoEntrega} onChange={(e) => setPrevisaoEntrega(e.target.value)} /><div className="text-[11px] text-[#62626D] mt-2">Opcional. Pode ser alterada durante o diagnóstico.</div></div>
         </div>
-        <Label>Endereço</Label>
-        <Input value={clienteEndereco} onChange={(e) => setClienteEndereco(e.target.value)} placeholder="Rua, número, bairro, cidade" />
       </Card>
-      <Card>
-        <div className="flex items-center gap-2 mb-3 text-[#C9C9D2]"><Smartphone size={15} className="text-purple-400" /><span className="text-sm tracking-wide">Aparelho</span></div>
-        <div className="flex gap-2 mb-3">
-          {["smartphone", "notebook", "outro"].map((t) => (
-            <button key={t} onClick={() => setAparelhoTipo(t)} className={"flex-1 py-1.5 rounded-lg text-xs uppercase tracking-wide border " + (aparelhoTipo === t ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>{t}</button>
-          ))}
-        </div>
-        <Label>Marca / modelo</Label>
-        <Input value={aparelhoMarcaModelo} onChange={(e) => setAparelhoMarcaModelo(e.target.value)} placeholder="Ex: iPhone 12, Dell Inspiron 15" className="mb-3" />
-        <Label>Número de série / IMEI (opcional)</Label>
-        <Input value={aparelhoSerial} onChange={(e) => setAparelhoSerial(e.target.value)} />
-      </Card>
-      <Card>
-        <Label>Problema relatado pelo cliente</Label>
-        <Textarea rows={3} value={problemaRelatado} onChange={(e) => setProblemaRelatado(e.target.value)} />
-      </Card>
-      <div className="flex gap-2">
-        <Button variant="ghost" className="flex-1" onClick={onCancelar}>Cancelar</Button>
-        <Button className="flex-1" disabled={!podeCriar} onClick={() => onCriar({ clienteNome, clienteTelefone, clienteCpf, clienteEndereco, aparelhoTipo, aparelhoMarcaModelo, aparelhoSerial, problemaRelatado })}>Abrir OS</Button>
+      <div className="flex gap-2 justify-end">
+        <Button variant="ghost" className="min-w-28" onClick={onCancelar}>Cancelar</Button>
+        <Button className="min-w-40" disabled={!podeCriar} onClick={() => onCriar({ clienteNome, clienteTelefone, clienteCpf, clienteEndereco, aparelhoTipo, aparelhoMarcaModelo, aparelhoSerial, problemaRelatado, acessoriosRecebidos, previsaoEntrega })}><span className="flex items-center justify-center gap-2"><Plus size={15}/> Abrir OS</span></Button>
       </div>
     </div>
   );
@@ -1598,6 +1611,28 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
     setMostrarAvanco(false); setObsAvanco(""); setNovoStatusSel(null);
   }
 
+
+  function registrarAprovacao(status) {
+    const agora = new Date().toISOString();
+    const orcamento = { ...(detail.orcamento || {}), status, atualizadoEm: agora };
+    const novoStatus = status === "aprovado" ? "em_reparo" : status === "recusado" ? "cancelado" : detail.status;
+    const evento = status === "aprovado" ? "Orçamento aprovado pelo cliente" : "Orçamento recusado pelo cliente";
+    onSalvar({ ...detail, orcamento, status: novoStatus, timeline: [...detail.timeline, { id: genId(), status: novoStatus, timestamp: agora, obs: evento }] });
+  }
+
+  function finalizarEntrega() {
+    const agora = new Date().toISOString();
+    onSalvar({ ...detail, status: "entregue", entrega: { ...(detail.entrega || {}), entregueEm: agora }, timeline: [...detail.timeline, { id: genId(), status: "entregue", timestamp: agora, obs: "Aparelho entregue ao cliente" }] });
+  }
+
+  function abrirWhatsApp() {
+    const numero = String(detail.cliente.telefone || "").replace(/\D/g, "");
+    if (!numero) return;
+    const br = numero.startsWith("55") ? numero : `55${numero}`;
+    const msg = `Olá, ${detail.cliente.nome}! Aqui é da ENIGMA. Sobre a OS #${detail.numero} do seu ${detail.aparelho.marcaModelo}: `;
+    window.open(`https://wa.me/${br}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+  }
+
   const proximoDoFluxo = (() => {
     const i = FLUXO_PRINCIPAL.indexOf(detail.status);
     return i >= 0 && i < FLUXO_PRINCIPAL.length - 1 ? FLUXO_PRINCIPAL[i + 1] : null;
@@ -1605,7 +1640,10 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
 
   const pecasResultados = estoque.filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
   const totalPecas = detail.pecasUsadas.reduce((s, p) => s + p.preco * p.qtd, 0);
-  const valorEstimado = (Number(detail.valorMaoDeObra) || 0) + totalPecas;
+  const desconto = Number(detail.orcamento?.desconto) || 0;
+  const valorEstimado = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + totalPecas - desconto);
+  const aprovacao = detail.orcamento?.status || "rascunho";
+  const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
 
   return (
     <div className="space-y-4">
@@ -1618,12 +1656,18 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
           </div>
           <div className="flex flex-col items-end gap-2">
             <StatusBadge status={detail.status} />
-            <button onClick={() => window.print()} className="flex items-center gap-1 text-[11px] text-[#8A8A96] border border-[#2A2A34] rounded-full px-2.5 py-1">
-              <Printer size={12} /> Imprimir
-            </button>
+            <div className="flex gap-2">
+              {detail.cliente.telefone && <button onClick={abrirWhatsApp} className="flex items-center gap-1 text-[11px] text-green-300 border border-green-500/20 bg-green-500/[.06] rounded-full px-2.5 py-1"><Phone size={12} /> WhatsApp</button>}
+              <button onClick={() => window.print()} className="flex items-center gap-1 text-[11px] text-[#8A8A96] border border-[#2A2A34] rounded-full px-2.5 py-1">
+                <Printer size={12} /> Imprimir
+              </button>
+            </div>
           </div>
         </div>
         <div className="text-xs text-[#8A8A96] mt-2 border-t border-[#2A2A34] pt-2">{detail.problemaRelatado}</div>
+        <div className="mt-4 grid grid-cols-6 gap-1">
+          {FLUXO_PRINCIPAL.map((id, idx) => <div key={id} className="min-w-0"><div className={"h-1 rounded-full " + (idx <= etapaAtual ? "bg-purple-500" : "bg-[#2A2A34]")} /><div className={"hidden lg:block text-[9px] mt-1 truncate " + (idx <= etapaAtual ? "text-purple-300" : "text-[#555560]")}>{statusInfo(id).label}</div></div>)}
+        </div>
 
         {!mostrarAvanco ? (
           <div className="flex gap-2 mt-3">
@@ -1653,7 +1697,7 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
       </Card>
 
       <div className="flex gap-2 overflow-x-auto">
-        {[{ id: "entrada", label: "Entrada" }, { id: "checklist", label: "Checklist técnico" }, { id: "fotos", label: "Fotos" }, { id: "pecas", label: "Peças" }, { id: "termo", label: "Termo / Assinatura" }, { id: "linha", label: "Linha do tempo" }, { id: "orcamento", label: "Orçamento" }].map((t) => (
+        {[{ id: "entrada", label: "Entrada" }, { id: "checklist", label: "Diagnóstico" }, { id: "orcamento", label: "Orçamento / Aprovação" }, { id: "pecas", label: "Peças" }, { id: "fotos", label: "Fotos" }, { id: "entrega", label: "Entrega / Garantia" }, { id: "termo", label: "Termo / Assinatura" }, { id: "linha", label: "Histórico" }].map((t) => (
           <button key={t.id} onClick={() => setSub(t.id)} className={"shrink-0 px-3 py-1.5 rounded-full text-xs tracking-wide border " + (sub === t.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
             {t.label}
           </button>
@@ -1671,6 +1715,10 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
                 <Input placeholder="CPF" value={detail.cliente.cpf || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, cpf: e.target.value } })} />
               </div>
               <Input placeholder="Endereço" value={detail.cliente.endereco || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, endereco: e.target.value } })} />
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2 mt-3">
+              <div><Label>Acessórios recebidos</Label><Input value={detail.acessoriosRecebidos || ""} onChange={(e) => onSalvar({ ...detail, acessoriosRecebidos: e.target.value })} placeholder="Aparelho + carregador..." /></div>
+              <div><Label>Previsão de entrega</Label><Input type="date" value={detail.previsaoEntrega || ""} onChange={(e) => onSalvar({ ...detail, previsaoEntrega: e.target.value })} /></div>
             </div>
           </Card>
           <Card>
@@ -1719,6 +1767,10 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
           <div className="flex gap-2 mt-3 pt-3 border-t border-[#2A2A34]">
             <Input placeholder="Adicionar item ao checklist" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} />
             <Button onClick={addChecklistItem} className="px-3"><Plus size={16} /></Button>
+          </div>
+          <div className="mt-5 pt-4 border-t border-[#2A2A34]">
+            <Label>Diagnóstico técnico</Label>
+            <Textarea rows={5} value={detail.diagnosticoTecnico || ""} onChange={(e) => onSalvar({ ...detail, diagnosticoTecnico: e.target.value })} placeholder="Descreva o defeito encontrado, testes realizados e solução recomendada." />
           </div>
         </Card>
       )}
@@ -1872,14 +1924,48 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
       )}
 
       {sub === "orcamento" && (
-        <Card>
-          <Label>Mão de obra</Label>
-          <Input inputMode="decimal" placeholder="R$ 0,00" value={detail.valorMaoDeObra} onChange={(e) => onSalvar({ ...detail, valorMaoDeObra: e.target.value.replace(",", ".") })} className="mb-3" />
-          <div className="flex justify-between text-sm mb-1"><span className="text-[#8A8A96]">Peças</span><span className="font-mono text-[#E5E5EA]">{fmt(totalPecas)}</span></div>
-          <div className="flex justify-between items-center mb-3 pt-2 border-t border-[#2A2A34]"><span className="text-sm text-[#C9C9D2]">Total estimado</span><span className="font-mono text-lg text-white">{fmt(valorEstimado)}</span></div>
-          <Label>Valor final cobrado</Label>
-          <Input inputMode="decimal" placeholder="R$ 0,00" value={detail.valorFinal} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })} />
-        </Card>
+        <div className="space-y-4">
+          <Card className="!rounded-2xl">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div><div className="text-sm font-medium text-white">Orçamento da OS</div><div className="text-xs text-[#74747F] mt-1">Monte o valor e registre a decisão do cliente.</div></div>
+              <span className={"text-[10px] uppercase tracking-[.14em] px-2.5 py-1.5 rounded-full border " + (aprovacao === "aprovado" ? "text-green-300 border-green-500/30 bg-green-500/10" : aprovacao === "recusado" ? "text-red-300 border-red-500/30 bg-red-500/10" : "text-amber-300 border-amber-500/30 bg-amber-500/10")}>{aprovacao === "aprovado" ? "Aprovado" : aprovacao === "recusado" ? "Recusado" : "Pendente"}</span>
+            </div>
+            <div className="grid md:grid-cols-3 gap-3">
+              <div><Label>Mão de obra</Label><Input inputMode="decimal" placeholder="R$ 0,00" value={detail.valorMaoDeObra} onChange={(e) => onSalvar({ ...detail, valorMaoDeObra: e.target.value.replace(",", ".") })} /></div>
+              <div><Label>Peças</Label><div className="h-[42px] rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 flex items-center font-mono text-[#E5E5EA]">{fmt(totalPecas)}</div></div>
+              <div><Label>Desconto</Label><Input inputMode="decimal" placeholder="R$ 0,00" value={detail.orcamento?.desconto ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), desconto: e.target.value.replace(",", ".") } })} /></div>
+            </div>
+            <div className="mt-4 rounded-xl border border-purple-500/20 bg-purple-500/[.06] p-4 flex items-center justify-between"><div><div className="text-[10px] uppercase tracking-[.18em] text-purple-300">Total proposto</div><div className="text-xs text-[#777782] mt-1">Mão de obra + peças − desconto</div></div><div className="font-mono text-2xl text-white">{fmt(valorEstimado)}</div></div>
+            <div className="mt-4"><Label>Observação do orçamento</Label><Textarea rows={3} value={detail.orcamento?.observacao || ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), observacao: e.target.value } })} placeholder="Ex: peça sob encomenda, prazo estimado de 2 dias úteis..." /></div>
+          </Card>
+          <Card className="!rounded-2xl">
+            <Label>Aprovação do cliente</Label>
+            <div className="text-xs text-[#73737E] mb-3">Registre somente depois que o cliente autorizar ou recusar o orçamento.</div>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <Button onClick={() => registrarAprovacao("aprovado")}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Aprovar orçamento</span></Button>
+              <Button variant="danger" onClick={() => registrarAprovacao("recusado")}><span className="flex items-center justify-center gap-2"><XCircle size={16}/> Registrar recusa</span></Button>
+            </div>
+            {detail.orcamento?.atualizadoEm && <div className="text-[11px] text-[#666672] mt-3">Última decisão registrada em {fmtDateTime(detail.orcamento.atualizadoEm)}.</div>}
+          </Card>
+        </div>
+      )}
+
+      {sub === "entrega" && (
+        <div className="space-y-4">
+          <Card className="!rounded-2xl">
+            <div className="flex items-center justify-between gap-3 mb-4"><div><div className="text-sm font-medium text-white">Entrega e garantia</div><div className="text-xs text-[#74747F] mt-1">Finalize a OS somente quando o aparelho sair da loja.</div></div><StatusBadge status={detail.status}/></div>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <div><Label>Garantia do serviço (dias)</Label><Input type="number" min="0" value={detail.entrega?.garantiaDias ?? 90} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), garantiaDias: Number(e.target.value) } })} /></div>
+              <div><Label>Valor final cobrado</Label><Input inputMode="decimal" placeholder={fmt(valorEstimado)} value={detail.valorFinal} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })} /></div>
+            </div>
+            <Label>Observações de saída</Label><Textarea rows={4} value={detail.entrega?.observacoes || ""} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), observacoes: e.target.value } })} placeholder="Testes realizados na entrega, orientações ao cliente, condição final..." />
+          </Card>
+          <Card className="!rounded-2xl">
+            <div className="grid sm:grid-cols-3 gap-3 text-sm mb-4"><div><Label>Orçamento</Label><div className="text-white capitalize">{aprovacao === "rascunho" ? "pendente" : aprovacao}</div></div><div><Label>Garantia</Label><div className="text-white">{detail.entrega?.garantiaDias ?? 90} dias</div></div><div><Label>Total</Label><div className="font-mono text-white">{fmt(detail.valorFinal || valorEstimado)}</div></div></div>
+            <Button className="w-full" disabled={detail.status === "entregue"} onClick={finalizarEntrega}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> {detail.status === "entregue" ? "Entrega já finalizada" : "Finalizar entrega e encerrar OS"}</span></Button>
+            {detail.entrega?.entregueEm && <div className="text-[11px] text-green-300 text-center mt-3">Entregue em {fmtDateTime(detail.entrega.entregueEm)}</div>}
+          </Card>
+        </div>
       )}
 
       {fotoAmpliada && (
