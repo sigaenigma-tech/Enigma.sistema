@@ -685,7 +685,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.4.7</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.4.8</div>
     </aside>
   );
 }
@@ -871,7 +871,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.7</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.8</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1559,26 +1559,110 @@ function SeminovoCard({ item }) {
   const [aberto,setAberto]=useState(false);
   const dados=item.dados||{};
   const falhas=dados.falhas||[];
+  const testes=dados.testes||{};
+  const inspecao=dados.inspecao||{};
+  const aq=dados.aquisicao||{};
   const statusLabel=item.status==="disponivel"?"Disponível":item.status==="vendido"?"Vendido":"Em preparação";
   const statusCls=item.status==="disponivel"?"text-green-400 border-green-500/25 bg-green-500/[.04]":item.status==="vendido"?"text-[#777783] border-white/10 bg-white/[.02]":"text-amber-300 border-amber-400/25 bg-amber-400/[.035]";
-  return <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-b from-cyan-400/[.035] to-transparent p-4">
-    <button className="w-full text-left" onClick={()=>setAberto(!aberto)}>
+  const custoTotal=(Number(item.custo_aquisicao)||0)+(Number(item.custo_reparos_previsto)||0);
+  const scoreEstetico=Number(inspecao.esteticaGeral ?? inspecao.estetica ?? inspecao.notaEstetica ?? 0);
+  const testeEntries=Object.entries(testes).filter(([k])=>!["score","funcional","testados","falhas"].includes(k));
+  const okCount=testeEntries.filter(([,v])=>v==="ok").length;
+  const falhaCount=testeEntries.filter(([,v])=>v==="falha").length;
+
+  return <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-b from-cyan-400/[.035] to-transparent overflow-hidden">
+    <button className="w-full text-left p-4" onClick={()=>setAberto(!aberto)}>
       <div className="flex items-start justify-between gap-3">
-        <div><div className="text-[9px] tracking-[.22em] text-cyan-300">SEMINOVO // {String(item.id||"").slice(0,8).toUpperCase()}</div><div className="text-base text-white mt-1">{item.marca} {item.modelo}</div><div className="text-xs text-[#6F6F7A] mt-1">{item.armazenamento || "—"} · {item.cor || "—"}</div></div>
+        <div>
+          <div className="text-[9px] tracking-[.22em] text-cyan-300">SEMINOVO // {String(item.id||"").slice(0,8).toUpperCase()}</div>
+          <div className="text-base text-white mt-1">{item.marca} {item.modelo}</div>
+          <div className="text-xs text-[#6F6F7A] mt-1">{item.armazenamento || "—"} · {item.cor || "—"}</div>
+        </div>
         <span className={"rounded-full border px-2.5 py-1 text-[9px] "+statusCls}>{statusLabel}</span>
       </div>
       <div className="grid grid-cols-2 gap-2 mt-4">
         <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#656570]">CUSTO AQUISIÇÃO</div><div className="font-mono text-sm mt-1">{fmt(item.custo_aquisicao)}</div></div>
-        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#656570]">REPAROS PREVISTOS</div><div className="font-mono text-sm mt-1">{fmt(item.custo_reparos_previsto)}</div></div>
+        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#656570]">CUSTO TOTAL</div><div className="font-mono text-sm mt-1">{fmt(custoTotal)}</div></div>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-[10px] text-[#64646F]">
+        <span>{falhaCount ? `${falhaCount} falha(s)` : "Sem falhas funcionais"}</span>
+        <span>{aberto?"Fechar ficha ↑":"Abrir ficha completa ↓"}</span>
       </div>
     </button>
-    {aberto && <div className="mt-4 pt-4 border-t border-white/8 space-y-2 text-xs">
-      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">IMEI</span><span className="font-mono text-right">{item.imei||"—"}</span></div>
-      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Serial</span><span className="font-mono text-right">{item.serial||"—"}</span></div>
-      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Bateria</span><span>{item.bateria ? `${item.bateria}%` : "—"}</span></div>
-      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Custo total projetado</span><span className="font-mono">{fmt((Number(item.custo_aquisicao)||0)+(Number(item.custo_reparos_previsto)||0))}</span></div>
-      <div className="pt-2"><div className="text-[9px] tracking-[.18em] text-[#666672]">FALHAS / PREPARAÇÃO</div><div className="text-[#A0A0AA] mt-1">{falhas.length?falhas.join(" • "):"Nenhuma falha funcional registrada."}</div></div>
-      <div className="text-[9px] text-[#50505A] pt-1">Origem: Avaliação de Usados · vínculo {String(item.avaliacao_id||"").slice(0,8)}</div>
+
+    {aberto && <div className="border-t border-white/8 bg-black/20 p-4 space-y-5">
+      <div className="grid md:grid-cols-4 gap-2">
+        <MetricCyber label="AQUISIÇÃO" value={fmt(item.custo_aquisicao)} sub="valor pago"/>
+        <MetricCyber label="REPAROS PREVISTOS" value={fmt(item.custo_reparos_previsto)} sub={falhas.length?`${falhas.length} falha(s)`:"sem reparos"}/>
+        <MetricCyber label="CUSTO PROJETADO" value={fmt(custoTotal)} sub="aquisição + reparos"/>
+        <MetricCyber label="BATERIA" value={item.bateria ? `${item.bateria}%` : "—"} sub="saúde registrada"/>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-white/10 p-4">
+          <div className="text-[9px] tracking-[.22em] text-cyan-300 mb-3">IDENTIFICAÇÃO</div>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Marca / Modelo</span><span>{item.marca} {item.modelo}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Armazenamento</span><span>{item.armazenamento||"—"}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Cor</span><span>{item.cor||"—"}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">IMEI</span><span className="font-mono text-right break-all">{item.imei||"—"}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Serial</span><span className="font-mono text-right break-all">{item.serial||"—"}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Avaliação</span><span className="font-mono">{String(item.avaliacao_id||"").slice(0,8)}</span></div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 p-4">
+          <div className="text-[9px] tracking-[.22em] text-purple-300 mb-3">DIAGNÓSTICO</div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-white/8 p-2 text-center"><div className="text-[8px] text-[#656570]">ESTÉTICA</div><div className="font-mono text-sm mt-1">{scoreEstetico?`${scoreEstetico}%`:"—"}</div></div>
+            <div className="rounded-lg border border-white/8 p-2 text-center"><div className="text-[8px] text-[#656570]">TESTES OK</div><div className="font-mono text-sm mt-1 text-green-300">{okCount}</div></div>
+            <div className="rounded-lg border border-white/8 p-2 text-center"><div className="text-[8px] text-[#656570]">FALHAS</div><div className="font-mono text-sm mt-1 text-red-300">{falhaCount}</div></div>
+          </div>
+          <div className="text-[10px] text-[#666672] mt-3">Avarias registradas</div>
+          <div className="text-xs text-[#A0A0AA] mt-1">{inspecao.avarias || inspecao.observacoes || "Nenhuma observação estética registrada."}</div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="text-[9px] tracking-[.22em] text-[#9A9AA5]">TESTE FUNCIONAL</div>
+          <div className="text-[9px] font-mono text-[#5F5F69]">{testeEntries.length} ITENS</div>
+        </div>
+        {!testeEntries.length ? <div className="text-xs text-[#666672]">Nenhum teste funcional detalhado disponível.</div> :
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {testeEntries.map(([k,v])=><div key={k} className={"rounded-lg border px-3 py-2 flex items-center justify-between gap-2 "+(v==="falha"?"border-red-500/20 bg-red-500/[.03]":v==="ok"?"border-green-500/20 bg-green-500/[.03]":"border-white/8 bg-white/[.01]")}>
+            <span className="text-[10px] text-[#A0A0AA]">{String(k).replaceAll("_"," ")}</span>
+            <span className={"text-[9px] font-mono uppercase "+(v==="falha"?"text-red-300":v==="ok"?"text-green-300":"text-[#777783]")}>{String(v)}</span>
+          </div>)}
+        </div>}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-amber-400/15 bg-amber-400/[.025] p-4">
+          <div className="text-[9px] tracking-[.22em] text-amber-300 mb-3">PREPARAÇÃO / REPAROS</div>
+          {falhas.length ? <div className="space-y-2">{falhas.map((f,i)=><div key={i} className="rounded-lg border border-white/8 px-3 py-2 text-xs flex justify-between gap-2"><span>{String(f).replaceAll("_"," ")}</span><span className="text-amber-300">Pendente</span></div>)}</div> :
+          <div className="text-xs text-green-300">Nenhuma falha funcional. Aparelho elegível para venda.</div>}
+          <div className="mt-3 pt-3 border-t border-white/8 flex justify-between text-xs"><span className="text-[#6F6F7A]">Custo previsto</span><span className="font-mono">{fmt(item.custo_reparos_previsto)}</span></div>
+        </div>
+
+        <div className="rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-4">
+          <div className="text-[9px] tracking-[.22em] text-purple-300 mb-3">AQUISIÇÃO</div>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Valor pago</span><span className="font-mono">{fmt(item.custo_aquisicao)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Forma de pagamento</span><span>{aq.formaPagamento || aq.forma || "—"}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Registro</span><span className="font-mono">{aq.registroAquisicao || "—"}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Data</span><span>{aq.compradoEm ? new Date(aq.compradoEm).toLocaleString("pt-BR") : "—"}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/[.025] p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <div className="text-[9px] tracking-[.22em] text-cyan-300">PRÓXIMA ETAPA</div>
+          <div className="text-xs text-[#777783] mt-1">{item.status==="disponivel"?"Aparelho pronto para integração com o PDV.":"Finalize a preparação antes de disponibilizar para venda."}</div>
+        </div>
+        <button type="button" disabled className="rounded-lg border border-white/10 px-4 py-2 text-[10px] text-[#555560] cursor-not-allowed">ENVIAR AO PDV — EM BREVE</button>
+      </div>
     </div>}
   </div>;
 }
