@@ -262,6 +262,7 @@ function EnigmaSistema() {
   const [osView, setOsView] = useState("lista"); // lista | nova | detalhe
   const [osDetailId, setOsDetailId] = useState(null);
   const [osDetail, setOsDetail] = useState(null);
+  const [avaliacoes, setAvaliacoes] = useState([]);
   const patchTimer = useRef(null);
 
   useEffect(() => {
@@ -281,6 +282,12 @@ function EnigmaSistema() {
           setCaixaAtual(c);
         }
         setSaveError(false);
+        try {
+          const avRows = await sb("avaliacoes_usados?select=*&order=created_at.desc");
+          setAvaliacoes(avRows || []);
+        } catch (avErr) {
+          console.warn("Módulo de avaliações ainda não disponível:", avErr);
+        }
       } catch (err) {
         setSaveError(true);
       }
@@ -482,6 +489,39 @@ function EnigmaSistema() {
     if (peca.estoqueId) ajustarQuantidadeLocal(peca.estoqueId, peca.qtd);
   }
 
+
+  /* ---------- Avaliação / compra de usados ---------- */
+  async function salvarAvaliacaoUsado(payload) {
+    try {
+      const body = {
+        vendedor: payload.vendedor || {},
+        aparelho: payload.aparelho || {},
+        inspecao: payload.inspecao || {},
+        testes: payload.testes || {},
+        precificacao: payload.precificacao || {},
+        oferta: payload.oferta || {},
+        aquisicao: payload.aquisicao || {},
+        etapa: payload.etapa || "identificar",
+        status: payload.status || "avaliacao",
+        updated_at: new Date().toISOString(),
+      };
+      if (payload.id) {
+        const rows = await sb(`avaliacoes_usados?id=eq.${payload.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        const atualizado = rows?.[0] || { ...payload, ...body };
+        setAvaliacoes((prev) => prev.map((a) => a.id === payload.id ? atualizado : a));
+        return atualizado;
+      }
+      const rows = await sb("avaliacoes_usados", { method: "POST", body: JSON.stringify(body) });
+      const criado = rows?.[0];
+      if (criado) setAvaliacoes((prev) => [criado, ...prev]);
+      return criado;
+    } catch (e) {
+      console.error(e);
+      setSaveError(true);
+      throw e;
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center">
@@ -521,6 +561,7 @@ function EnigmaSistema() {
           <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
         {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
+        {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} onSalvar={salvarAvaliacaoUsado} />}
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
@@ -538,6 +579,7 @@ const NAV_ITEMS = [
   { id: "os", label: "Ordens de Serviço", short: "OS", icon: ClipboardList },
   { id: "pdv", label: "PDV", icon: ShoppingBag },
   { id: "clientes", label: "Clientes", icon: Users },
+  { id: "avaliacao", label: "Avaliação de Usados", short: "Usados", icon: Smartphone },
   { id: "estoque", label: "Estoque", icon: Package },
   { id: "financeiro", label: "Financeiro", icon: Wallet },
   { id: "relatorio", label: "Relatórios", icon: BarChart3 },
@@ -752,7 +794,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1458,6 +1500,203 @@ function ProdutoCard({ p, onEdit, onRemove }) {
 }
 
 /* ================= OS: LISTA ================= */
+
+const AVAL_STEPS = [
+  { id: "identificar", label: "IDENTIFICAR" },
+  { id: "inspecionar", label: "INSPECIONAR" },
+  { id: "testar", label: "TESTAR" },
+  { id: "precificar", label: "PRECIFICAR" },
+  { id: "oferta", label: "OFERTA" },
+  { id: "aquisicao", label: "AQUISIÇÃO" },
+];
+const TESTES_USADO = [
+  "Tela / Display", "Touch", "Face ID / Touch ID", "Câmera frontal", "Câmeras traseiras",
+  "Microfone", "Alto-falantes", "Conector de carga", "Wi-Fi", "Bluetooth", "Botões",
+  "Bateria", "Sensores", "Chip / Rede", "IMEI / Serial",
+];
+function clamp(n, min, max) { return Math.max(min, Math.min(max, Number(n) || 0)); }
+function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
+  const [view, setView] = useState("lista");
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  function nova() {
+    setDraft({
+      etapa: "identificar", status: "avaliacao",
+      vendedor: { nome: "", cpf: "", telefone: "", endereco: "" },
+      aparelho: { marca: "Apple", modelo: "", cor: "", armazenamento: "", imei: "", serial: "", bateria: "", contaRemovida: false, notaFiscal: false },
+      inspecao: { estetica: 80, observacoes: "", avarias: "" },
+      testes: Object.fromEntries(TESTES_USADO.map((x) => [x, "nao_testado"])),
+      precificacao: { mercadoMin: "", mercadoMax: "", reparos: "", custoOperacional: "", margemDesejada: 25, risco: 5 },
+      oferta: { valorOfertado: "", observacoes: "" },
+      aquisicao: { valorFechado: "", formaPagamento: "pix", termoAceito: false, observacoes: "" },
+    });
+    setView("form");
+  }
+  function abrir(a) {
+    setDraft({
+      ...a,
+      vendedor: a.vendedor || {}, aparelho: a.aparelho || {}, inspecao: a.inspecao || {},
+      testes: a.testes || {}, precificacao: a.precificacao || {}, oferta: a.oferta || {}, aquisicao: a.aquisicao || {},
+    });
+    setView("form");
+  }
+  const p = draft?.precificacao || {};
+  const mercadoMedio = ((Number(p.mercadoMin)||0) + (Number(p.mercadoMax)||0)) / 2;
+  const reparos = Number(p.reparos)||0, operacional = Number(p.custoOperacional)||0;
+  const margem = clamp(p.margemDesejada, 0, 90) / 100;
+  const risco = clamp(p.risco, 0, 50) / 100;
+  const compraMax = Math.max(0, mercadoMedio * (1 - margem - risco) - reparos - operacional);
+  const estetica = clamp(draft?.inspecao?.estetica ?? 0, 0, 100);
+  const testeVals = Object.values(draft?.testes || {});
+  const okCount = testeVals.filter(v => v === "ok").length;
+  const falhaCount = testeVals.filter(v => v === "falha").length;
+  const testados = testeVals.filter(v => v !== "nao_testado").length;
+  const funcional = testados ? Math.round(okCount / testados * 100) : 0;
+  const riscoLabel = falhaCount >= 3 || Number(p.risco) >= 15 ? "ALTO" : falhaCount || Number(p.risco) >= 8 ? "MÉDIO" : "BAIXO";
+
+  async function persist(nextDraft = draft) {
+    setSaving(true);
+    try {
+      const saved = await onSalvar(nextDraft);
+      if (saved) setDraft(saved);
+    } finally { setSaving(false); }
+  }
+  async function goStep(id) {
+    const next = { ...draft, etapa: id };
+    setDraft(next);
+    await persist(next);
+  }
+  function upd(group, key, value) {
+    setDraft(d => ({ ...d, [group]: { ...(d[group] || {}), [key]: value } }));
+  }
+
+  if (view === "lista") return (
+    <div className="space-y-5">
+      <div className="relative overflow-hidden rounded-3xl border border-purple-500/20 bg-[#0B0B11] p-6 md:p-8 shadow-[0_0_60px_rgba(124,58,237,.08)]">
+        <div className="absolute inset-0 opacity-[.06]" style={{backgroundImage:"linear-gradient(rgba(139,92,246,.7) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.7) 1px,transparent 1px)",backgroundSize:"28px 28px"}}/>
+        <div className="relative flex flex-col md:flex-row md:items-end justify-between gap-5">
+          <div>
+            <div className="text-[10px] tracking-[.32em] text-purple-300 uppercase mb-2">ENIGMA // DEVICE ACQUISITION</div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-white">Avaliação de aparelhos usados</h1>
+            <p className="text-sm text-[#858590] mt-2 max-w-2xl">Inspeção técnica, análise financeira, oferta e aquisição em um único fluxo.</p>
+          </div>
+          <Button onClick={nova} className="flex items-center justify-center gap-2"><Plus size={16}/> Nova avaliação</Button>
+        </div>
+      </div>
+      <div className="grid md:grid-cols-3 gap-3">
+        <MetricCyber label="EM ANÁLISE" value={avaliacoes.filter(a=>a.status==="avaliacao").length} sub="avaliações abertas"/>
+        <MetricCyber label="COMPRADOS" value={avaliacoes.filter(a=>a.status==="comprado").length} sub="aquisições concluídas"/>
+        <MetricCyber label="BASE" value={avaliacoes.length} sub="aparelhos avaliados"/>
+      </div>
+      <Card className="!rounded-2xl">
+        <div className="flex items-center justify-between mb-4"><div><div className="font-medium">Avaliações recentes</div><div className="text-xs text-[#73737F]">Histórico de análise e compra</div></div></div>
+        {!avaliacoes.length ? <div className="py-14 text-center text-[#666672]"><Smartphone className="mx-auto mb-3 opacity-50"/><div>Nenhuma avaliação registrada.</div></div> :
+          <div className="space-y-2">{avaliacoes.map(a=><button key={a.id} onClick={()=>abrir(a)} className="w-full text-left rounded-xl border border-white/10 bg-white/[.02] hover:border-purple-500/30 p-4 flex items-center justify-between gap-3">
+            <div><div className="text-sm text-white">{a.aparelho?.marca} {a.aparelho?.modelo || "Aparelho"}</div><div className="text-xs text-[#74747F] mt-1">{a.vendedor?.nome || "Vendedor não informado"} · {a.aparelho?.armazenamento || "—"}</div></div>
+            <div className="text-right"><div className="text-[10px] tracking-widest text-purple-300 uppercase">{a.status==="comprado"?"COMPRADO":a.etapa||"AVALIAÇÃO"}</div><ChevronRight size={16} className="ml-auto mt-1 text-[#666672]"/></div>
+          </button>)}</div>}
+      </Card>
+    </div>
+  );
+
+  const stepIndex = Math.max(0, AVAL_STEPS.findIndex(x=>x.id===draft.etapa));
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <button onClick={()=>setView("lista")} className="text-sm text-[#9999A5] hover:text-white flex items-center gap-2"><ChevronLeft size={16}/> Avaliações</button>
+        <div className="flex gap-2"><Button variant="ghost" onClick={()=>persist()} disabled={saving}>{saving?"Salvando...":"Salvar"}</Button></div>
+      </div>
+
+      <div className="relative overflow-hidden rounded-3xl border border-purple-500/20 bg-[#090A0F] p-5 md:p-7">
+        <div className="absolute inset-0 opacity-[.055]" style={{backgroundImage:"linear-gradient(rgba(34,197,94,.8) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.8) 1px,transparent 1px)",backgroundSize:"24px 24px"}}/>
+        <div className="relative">
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+            <div><div className="text-[10px] tracking-[.3em] uppercase text-purple-300">ENIGMA // SCAN SESSION</div><div className="text-xl font-semibold mt-1">{draft.aparelho?.marca || "Aparelho"} {draft.aparelho?.modelo || "não identificado"}</div><div className="text-xs text-[#777783] mt-1 font-mono">IMEI {draft.aparelho?.imei || "AGUARDANDO IDENTIFICAÇÃO"}</div></div>
+            <div className="rounded-xl border border-green-500/20 bg-green-500/[.05] px-4 py-3"><div className="text-[9px] tracking-[.22em] text-green-400">RISK ENGINE</div><div className={"text-lg font-mono mt-1 "+(riscoLabel==="ALTO"?"text-red-400":riscoLabel==="MÉDIO"?"text-amber-300":"text-green-400")}>{riscoLabel}</div></div>
+          </div>
+          <div className="grid grid-cols-6 gap-1 md:gap-2">{AVAL_STEPS.map((st,i)=><button key={st.id} onClick={()=>i<=stepIndex?setDraft(d=>({...d,etapa:st.id})):null} className={"min-w-0 rounded-lg border px-1 md:px-3 py-2 text-[8px] md:text-[10px] tracking-wider transition "+(i===stepIndex?"border-purple-400/50 bg-purple-500/10 text-white":i<stepIndex?"border-green-500/20 bg-green-500/[.04] text-green-400":"border-white/8 text-[#50505A]")}>{st.label}</button>)}</div>
+        </div>
+      </div>
+
+      {draft.etapa==="identificar" && <Card className="!rounded-2xl">
+        <SectionCyber code="01" title="Identificação" sub="Quem está vendendo e qual aparelho está sendo avaliado"/>
+        <div className="grid md:grid-cols-2 gap-6 mt-5">
+          <div className="space-y-3"><div className="text-xs tracking-widest text-purple-300">VENDEDOR</div>
+            <Field label="Nome completo"><Input value={draft.vendedor.nome||""} onChange={e=>upd("vendedor","nome",e.target.value)}/></Field>
+            <div className="grid grid-cols-2 gap-3"><Field label="CPF"><Input value={draft.vendedor.cpf||""} onChange={e=>upd("vendedor","cpf",e.target.value)}/></Field><Field label="Telefone"><Input value={draft.vendedor.telefone||""} onChange={e=>upd("vendedor","telefone",e.target.value)}/></Field></div>
+            <Field label="Endereço"><Input value={draft.vendedor.endereco||""} onChange={e=>upd("vendedor","endereco",e.target.value)}/></Field>
+          </div>
+          <div className="space-y-3"><div className="text-xs tracking-widest text-purple-300">DISPOSITIVO</div>
+            <div className="grid grid-cols-2 gap-3"><Field label="Marca"><Input value={draft.aparelho.marca||""} onChange={e=>upd("aparelho","marca",e.target.value)}/></Field><Field label="Modelo"><Input value={draft.aparelho.modelo||""} onChange={e=>upd("aparelho","modelo",e.target.value)}/></Field></div>
+            <div className="grid grid-cols-2 gap-3"><Field label="Armazenamento"><Input placeholder="128 GB" value={draft.aparelho.armazenamento||""} onChange={e=>upd("aparelho","armazenamento",e.target.value)}/></Field><Field label="Cor"><Input value={draft.aparelho.cor||""} onChange={e=>upd("aparelho","cor",e.target.value)}/></Field></div>
+            <Field label="IMEI"><Input value={draft.aparelho.imei||""} onChange={e=>upd("aparelho","imei",e.target.value)}/></Field>
+            <Field label="Serial"><Input value={draft.aparelho.serial||""} onChange={e=>upd("aparelho","serial",e.target.value)}/></Field>
+          </div>
+        </div>
+        <FlowNext onClick={()=>goStep("inspecionar")} label="Salvar identificação e iniciar inspeção"/>
+      </Card>}
+
+      {draft.etapa==="inspecionar" && <Card className="!rounded-2xl">
+        <SectionCyber code="02" title="Inspeção física" sub="Estado visual, bateria, procedência e avarias"/>
+        <div className="grid md:grid-cols-3 gap-4 mt-5">
+          <ScoreDial label="ESTÉTICA" value={estetica}/>
+          <div className="md:col-span-2 space-y-4">
+            <Field label={`Nota estética · ${estetica}%`}><input type="range" min="0" max="100" value={estetica} onChange={e=>upd("inspecao","estetica",e.target.value)} className="w-full accent-purple-500"/></Field>
+            <div className="grid grid-cols-2 gap-3"><Field label="Saúde da bateria (%)"><Input type="number" value={draft.aparelho.bateria||""} onChange={e=>upd("aparelho","bateria",e.target.value)}/></Field><Field label="Procedência"><div className="flex gap-2"><ToggleMini active={draft.aparelho.contaRemovida} onClick={()=>upd("aparelho","contaRemovida",!draft.aparelho.contaRemovida)} text="Conta removida"/><ToggleMini active={draft.aparelho.notaFiscal} onClick={()=>upd("aparelho","notaFiscal",!draft.aparelho.notaFiscal)} text="Nota fiscal"/></div></Field></div>
+            <Field label="Avarias identificadas"><Textarea rows={3} placeholder="Trincas, riscos, amassados..." value={draft.inspecao.avarias||""} onChange={e=>upd("inspecao","avarias",e.target.value)}/></Field>
+            <Field label="Observações da inspeção"><Textarea rows={2} value={draft.inspecao.observacoes||""} onChange={e=>upd("inspecao","observacoes",e.target.value)}/></Field>
+          </div>
+        </div>
+        <div className="mt-5 rounded-xl border border-dashed border-purple-500/20 bg-purple-500/[.025] p-4 text-xs text-[#81818D]"><Camera size={16} className="inline mr-2 text-purple-300"/>Vistoria fotográfica dedicada será conectada ao mesmo Storage usado pelas OS na próxima evolução deste módulo.</div>
+        <FlowNext onClick={()=>goStep("testar")} label="Concluir inspeção e iniciar testes"/>
+      </Card>}
+
+      {draft.etapa==="testar" && <Card className="!rounded-2xl">
+        <SectionCyber code="03" title="Diagnóstico de compra" sub="Teste funcional guiado do aparelho"/>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-5">{TESTES_USADO.map(t=><div key={t} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="text-sm mb-3">{t}</div><div className="grid grid-cols-3 gap-1">{[["nao_testado","—"],["ok","OK"],["falha","FALHA"]].map(([v,l])=><button key={v} onClick={()=>upd("testes",t,v)} className={"rounded-md py-1.5 text-[10px] border "+(draft.testes[t]===v?(v==="ok"?"border-green-500/40 bg-green-500/10 text-green-400":v==="falha"?"border-red-500/40 bg-red-500/10 text-red-400":"border-purple-500/40 bg-purple-500/10 text-purple-300"):"border-white/8 text-[#666672]")}>{l}</button>)}</div></div>)}</div>
+        <div className="grid grid-cols-3 gap-3 mt-5"><MetricCyber label="TESTADOS" value={`${testados}/${TESTES_USADO.length}`} sub="itens"/><MetricCyber label="FUNCIONAL" value={`${funcional}%`} sub="índice atual"/><MetricCyber label="FALHAS" value={falhaCount} sub="atenção"/></div>
+        <FlowNext onClick={()=>goStep("precificar")} label="Concluir testes e precificar"/>
+      </Card>}
+
+      {draft.etapa==="precificar" && <div className="grid lg:grid-cols-5 gap-4">
+        <Card className="!rounded-2xl lg:col-span-3"><SectionCyber code="04" title="Motor de precificação" sub="Referência de mercado + custos + margem + risco"/>
+          <div className="grid grid-cols-2 gap-3 mt-5"><Field label="Mercado mínimo"><Input type="number" value={p.mercadoMin||""} onChange={e=>upd("precificacao","mercadoMin",e.target.value)}/></Field><Field label="Mercado máximo"><Input type="number" value={p.mercadoMax||""} onChange={e=>upd("precificacao","mercadoMax",e.target.value)}/></Field></div>
+          <div className="grid grid-cols-2 gap-3 mt-3"><Field label="Reparos previstos"><Input type="number" value={p.reparos||""} onChange={e=>upd("precificacao","reparos",e.target.value)}/></Field><Field label="Custo operacional"><Input type="number" value={p.custoOperacional||""} onChange={e=>upd("precificacao","custoOperacional",e.target.value)}/></Field></div>
+          <div className="grid grid-cols-2 gap-3 mt-3"><Field label="Margem desejada (%)"><Input type="number" value={p.margemDesejada??25} onChange={e=>upd("precificacao","margemDesejada",e.target.value)}/></Field><Field label="Reserva de risco (%)"><Input type="number" value={p.risco??5} onChange={e=>upd("precificacao","risco",e.target.value)}/></Field></div>
+          <div className="mt-4 text-[11px] text-[#696975]">Nesta V2.4 a referência de mercado é informada manualmente. A consulta automática será conectada depois, com fontes e regras de filtragem próprias.</div>
+        </Card>
+        <div className="lg:col-span-2 rounded-2xl border border-purple-500/25 bg-gradient-to-b from-purple-500/[.08] to-green-500/[.025] p-5 flex flex-col justify-between">
+          <div><div className="text-[9px] tracking-[.3em] text-purple-300">ENIGMA BUY ENGINE</div><div className="text-sm text-[#8B8B97] mt-5">Mercado médio</div><div className="text-2xl font-mono">{fmt(mercadoMedio)}</div></div>
+          <div className="my-6"><div className="text-[10px] tracking-[.22em] text-green-400">COMPRA SEGURA ATÉ</div><div className="text-4xl font-mono text-white mt-2 drop-shadow-[0_0_14px_rgba(34,197,94,.25)]">{fmt(compraMax)}</div><div className="text-xs text-[#747480] mt-2">considerando margem, risco e custos informados</div></div>
+          <Button onClick={()=>goStep("oferta")} disabled={!mercadoMedio}>Gerar oferta <ArrowRight size={15} className="inline ml-2"/></Button>
+        </div>
+      </div>}
+
+      {draft.etapa==="oferta" && <Card className="!rounded-2xl"><SectionCyber code="05" title="Oferta" sub="Defina o valor proposto ao vendedor"/>
+        <div className="grid md:grid-cols-3 gap-4 mt-5"><MetricCyber label="MERCADO MÉDIO" value={fmt(mercadoMedio)} sub="referência"/><MetricCyber label="LIMITE SEGURO" value={fmt(compraMax)} sub="calculado"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.05] p-4"><Label>Valor ofertado</Label><Input type="number" value={draft.oferta.valorOfertado||""} onChange={e=>upd("oferta","valorOfertado",e.target.value)}/></div></div>
+        <Field label="Observações da negociação"><Textarea className="mt-4" rows={3} value={draft.oferta.observacoes||""} onChange={e=>upd("oferta","observacoes",e.target.value)}/></Field>
+        <FlowNext onClick={()=>goStep("aquisicao")} label="Oferta aceita · preparar aquisição"/>
+      </Card>}
+
+      {draft.etapa==="aquisicao" && <Card className="!rounded-2xl"><SectionCyber code="06" title="Aquisição" sub="Fechamento, termo e entrada futura no estoque de seminovos"/>
+        <div className="grid md:grid-cols-2 gap-5 mt-5">
+          <div className="space-y-3"><Field label="Valor fechado"><Input type="number" value={draft.aquisicao.valorFechado||draft.oferta.valorOfertado||""} onChange={e=>upd("aquisicao","valorFechado",e.target.value)}/></Field><Field label="Forma de pagamento"><select value={draft.aquisicao.formaPagamento||"pix"} onChange={e=>upd("aquisicao","formaPagamento",e.target.value)} className="w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5"><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option></select></Field></div>
+          <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><div className="text-xs tracking-widest text-purple-300 mb-3">TERMO DE AQUISIÇÃO</div><p className="text-xs leading-5 text-[#858590]">O vendedor declara ser legítimo proprietário do aparelho identificado nesta avaliação e declara, sob sua responsabilidade, a procedência lícita do bem e a veracidade das informações fornecidas.</p><button onClick={()=>upd("aquisicao","termoAceito",!draft.aquisicao.termoAceito)} className={"mt-4 w-full rounded-lg border p-3 text-left text-sm "+(draft.aquisicao.termoAceito?"border-green-500/30 bg-green-500/[.06] text-green-300":"border-white/10 text-[#8A8A96]")}><CheckCircle2 size={16} className="inline mr-2"/>Declaração conferida para assinatura</button><div className="text-[10px] text-amber-300/70 mt-3">Antes do uso comercial, valide o texto jurídico definitivo com profissional habilitado.</div></div>
+        </div>
+        <div className="mt-5 flex flex-col sm:flex-row gap-3"><Button variant="ghost" onClick={()=>persist()}>Salvar como avaliação</Button><Button disabled={!draft.aquisicao.termoAceito || !Number(draft.aquisicao.valorFechado||draft.oferta.valorOfertado)} onClick={async()=>{const next={...draft,status:"comprado",aquisicao:{...draft.aquisicao,valorFechado:draft.aquisicao.valorFechado||draft.oferta.valorOfertado,compradoEm:new Date().toISOString()}};setDraft(next);await persist(next);alert("Aquisição registrada. O módulo de estoque de seminovos será conectado na próxima evolução.");}}>Registrar compra</Button></div>
+      </Card>}
+    </div>
+  );
+}
+function Field({label,children}) { return <div><Label>{label}</Label>{children}</div>; }
+function SectionCyber({code,title,sub}) { return <div className="flex items-start gap-3"><div className="font-mono text-xs text-purple-300 border border-purple-500/25 rounded-md px-2 py-1">{code}</div><div><div className="font-medium text-white">{title}</div><div className="text-xs text-[#747480] mt-0.5">{sub}</div></div></div>; }
+function FlowNext({onClick,label}) { return <div className="mt-6 pt-4 border-t border-white/8 flex justify-end"><Button onClick={onClick}>{label} <ArrowRight size={15} className="inline ml-2"/></Button></div>; }
+function ToggleMini({active,onClick,text}) { return <button type="button" onClick={onClick} className={"flex-1 rounded-lg border px-2 py-2 text-[10px] "+(active?"border-green-500/30 bg-green-500/[.06] text-green-300":"border-white/10 text-[#777783]")}>{active?<Check size={12} className="inline mr-1"/>:null}{text}</button>; }
+function MetricCyber({label,value,sub}) { return <div className="rounded-xl border border-white/10 bg-[#111117] p-4"><div className="text-[9px] tracking-[.22em] text-[#73737F]">{label}</div><div className="text-xl font-mono text-white mt-2">{value}</div><div className="text-[10px] text-[#5F5F69] mt-1">{sub}</div></div>; }
+function ScoreDial({label,value}) { return <div className="rounded-2xl border border-purple-500/20 bg-purple-500/[.035] p-5 flex flex-col items-center justify-center min-h-48"><div className="w-28 h-28 rounded-full border-[7px] border-purple-500/20 flex items-center justify-center shadow-[inset_0_0_28px_rgba(139,92,246,.12),0_0_28px_rgba(139,92,246,.08)]"><div className="text-center"><div className="text-2xl font-mono">{value}%</div><div className="text-[8px] tracking-[.2em] text-purple-300 mt-1">{label}</div></div></div></div>; }
+
+
 function ListaOS({ index, onAbrir, onNova }) {
   const [filtro, setFiltro] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
