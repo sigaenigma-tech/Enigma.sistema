@@ -794,7 +794,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1515,6 +1515,106 @@ const TESTES_USADO = [
   "Bateria", "Sensores", "Chip / Rede", "IMEI / Serial",
 ];
 function clamp(n, min, max) { return Math.max(min, Math.min(max, Number(n) || 0)); }
+
+function calcEnigmaScore(draft) {
+  if (!draft) return 0;
+  const estetica = clamp(draft?.inspecao?.estetica ?? 0, 0, 100);
+  const bateria = clamp(draft?.aparelho?.bateria ?? 0, 0, 100);
+  const vals = Object.values(draft?.testes || {});
+  const tested = vals.filter(v => v !== "nao_testado").length;
+  const oks = vals.filter(v => v === "ok").length;
+  const funcional = tested ? (oks / tested) * 100 : 50;
+  const falhas = vals.filter(v => v === "falha").length;
+  const falhaPenalty = Math.min(35, falhas * 5);
+  const score = (estetica * 0.30) + (funcional * 0.45) + ((bateria || 70) * 0.25) - falhaPenalty;
+  return Math.round(clamp(score, 0, 100));
+}
+function ofertaClassificacao(valor, compraMax) {
+  const v = Number(valor) || 0;
+  const m = Number(compraMax) || 0;
+  if (!v || !m) return { label: "AGUARDANDO OFERTA", cls: "text-[#777783]", bg: "border-white/10 bg-white/[.02]" };
+  const r = v / m;
+  if (r <= 0.85) return { label: "EXCELENTE COMPRA", cls: "text-green-400", bg: "border-green-500/25 bg-green-500/[.055]" };
+  if (r <= 1) return { label: "COMPRA SEGURA", cls: "text-cyan-300", bg: "border-cyan-400/25 bg-cyan-400/[.045]" };
+  if (r <= 1.10) return { label: "MARGEM REDUZIDA", cls: "text-amber-300", bg: "border-amber-400/25 bg-amber-400/[.045]" };
+  return { label: "NÃO RECOMENDADO", cls: "text-red-400", bg: "border-red-500/25 bg-red-500/[.05]" };
+}
+function imprimirTermoAquisicao(draft, calc) {
+  const v = draft?.vendedor || {};
+  const a = draft?.aparelho || {};
+  const aq = draft?.aquisicao || {};
+  const ins = draft?.inspecao || {};
+  const numero = draft?.id ? String(draft.id).slice(0,8).toUpperCase() : ("TEMP-"+Date.now().toString().slice(-8));
+  const valor = Number(aq.valorFechado || draft?.oferta?.valorOfertado || 0);
+  const moeda = (n) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Termo de Aquisição ${numero}</title>
+  <style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:32px;line-height:1.45;font-size:13px}
+  h1{font-size:20px;margin:0 0 4px} h2{font-size:14px;margin:22px 0 8px;border-bottom:1px solid #bbb;padding-bottom:4px}
+  .muted{color:#666}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.box{border:1px solid #bbb;border-radius:8px;padding:12px;margin-top:10px}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:60px}.line{border-top:1px solid #111;padding-top:6px;text-align:center}
+  @media print{body{margin:16mm}}
+  </style></head><body>
+  <h1>ENIGMA — TERMO DE AQUISIÇÃO DE APARELHO USADO</h1>
+  <div class="muted">Registro ${numero} • emitido em ${new Date().toLocaleString("pt-BR")}</div>
+
+  <h2>1. Identificação do vendedor</h2>
+  <div class="grid">
+    <div><b>Nome:</b> ${v.nome || "________________________________"}</div>
+    <div><b>CPF:</b> ${v.cpf || "________________"}</div>
+    <div><b>Telefone:</b> ${v.telefone || "________________"}</div>
+    <div><b>Endereço:</b> ${v.endereco || "________________________________"}</div>
+  </div>
+
+  <h2>2. Identificação do aparelho</h2>
+  <div class="grid">
+    <div><b>Marca/Modelo:</b> ${(a.marca||"")} ${(a.modelo||"")}</div>
+    <div><b>Cor/Armazenamento:</b> ${(a.cor||"")} ${(a.armazenamento||"")}</div>
+    <div><b>IMEI:</b> ${a.imei || "________________"}</div>
+    <div><b>Nº de série:</b> ${a.serial || "________________"}</div>
+    <div><b>Saúde da bateria:</b> ${a.bateria ? a.bateria+"%" : "—"}</div>
+    <div><b>Conta vinculada removida:</b> ${a.contaRemovida ? "Sim" : "Não informado"}</div>
+  </div>
+
+  <h2>3. Estado e avaliação</h2>
+  <div class="box">
+    <b>Estado estético:</b> ${ins.estetica ?? "—"}%<br/>
+    <b>Avarias observadas:</b> ${ins.avarias || "Nenhuma informada."}<br/>
+    <b>Observações:</b> ${ins.observacoes || "Sem observações adicionais."}<br/>
+    <b>ENIGMA SCORE:</b> ${calc.score}/100<br/>
+    <b>Referência média de mercado:</b> ${calc.mercadoMedioFmt}<br/>
+    <b>Limite recomendado de compra:</b> ${calc.compraMaxFmt}
+  </div>
+
+  <h2>4. Condições da aquisição</h2>
+  <div class="grid">
+    <div><b>Valor pago:</b> ${moeda(valor)}</div>
+    <div><b>Forma de pagamento:</b> ${aq.formaPagamento || "________________"}</div>
+  </div>
+
+  <h2>5. Declarações do vendedor</h2>
+  <div class="box">
+  O vendedor declara, sob sua responsabilidade, ser o legítimo proprietário do aparelho acima identificado, possuir poderes para aliená-lo e que o bem possui procedência lícita, não sendo produto de furto, roubo, apropriação indevida ou qualquer outra origem ilícita. Declara ainda que as informações fornecidas são verdadeiras e completas e que informou, de boa-fé, os defeitos, bloqueios, restrições, reparos anteriores e demais condições relevantes de que tenha conhecimento. O vendedor autoriza a ENIGMA a registrar os dados desta aquisição para fins de comprovação de procedência, controle interno e eventual atendimento de obrigação legal.
+  </div>
+
+  <h2>6. Ciência sobre a inspeção</h2>
+  <div class="box">
+  O aparelho foi recebido e avaliado no estado descrito neste termo e nos registros vinculados à avaliação. A aquisição ocorre pelo valor e condições acima, após inspeção visual e funcional compatível com o procedimento interno da ENIGMA.
+  </div>
+
+  <div class="sign">
+    <div class="line">VENDEDOR<br/>${v.nome || "Nome e assinatura"}</div>
+    <div class="line">ENIGMA<br/>Responsável pelo recebimento</div>
+  </div>
+
+  <p style="margin-top:45px;font-size:10px;color:#666">Modelo operacional gerado pelo ENIGMA OS. Recomenda-se validação jurídica profissional antes da adoção definitiva em operação comercial.</p>
+  <script>window.onload=()=>window.print()</script>
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permita pop-ups para imprimir o termo."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
   const [view, setView] = useState("lista");
   const [draft, setDraft] = useState(null);
@@ -1554,6 +1654,10 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
   const testados = testeVals.filter(v => v !== "nao_testado").length;
   const funcional = testados ? Math.round(okCount / testados * 100) : 0;
   const riscoLabel = falhaCount >= 3 || Number(p.risco) >= 15 ? "ALTO" : falhaCount || Number(p.risco) >= 8 ? "MÉDIO" : "BAIXO";
+  const enigmaScore = calcEnigmaScore(draft);
+  const ofertaInfo = ofertaClassificacao(draft?.oferta?.valorOfertado, compraMax);
+  const margemProjetada = Math.max(0, mercadoMedio - (Number(draft?.oferta?.valorOfertado)||0) - reparos - operacional);
+
 
   async function persist(nextDraft = draft) {
     setSaving(true);
@@ -1613,7 +1717,10 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
         <div className="relative">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
             <div><div className="text-[10px] tracking-[.3em] uppercase text-purple-300">ENIGMA // SCAN SESSION</div><div className="text-xl font-semibold mt-1">{draft.aparelho?.marca || "Aparelho"} {draft.aparelho?.modelo || "não identificado"}</div><div className="text-xs text-[#777783] mt-1 font-mono">IMEI {draft.aparelho?.imei || "AGUARDANDO IDENTIFICAÇÃO"}</div></div>
-            <div className="rounded-xl border border-green-500/20 bg-green-500/[.05] px-4 py-3"><div className="text-[9px] tracking-[.22em] text-green-400">RISK ENGINE</div><div className={"text-lg font-mono mt-1 "+(riscoLabel==="ALTO"?"text-red-400":riscoLabel==="MÉDIO"?"text-amber-300":"text-green-400")}>{riscoLabel}</div></div>
+            <div className="flex gap-2">
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.05] px-4 py-3 min-w-[120px]"><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA SCORE</div><div className="text-2xl font-mono mt-1 text-white">{enigmaScore}<span className="text-xs text-[#6D6D78]">/100</span></div></div>
+              <div className="rounded-xl border border-green-500/20 bg-green-500/[.05] px-4 py-3"><div className="text-[9px] tracking-[.22em] text-green-400">RISK ENGINE</div><div className={"text-lg font-mono mt-1 "+(riscoLabel==="ALTO"?"text-red-400":riscoLabel==="MÉDIO"?"text-amber-300":"text-green-400")}>{riscoLabel}</div></div>
+            </div>
           </div>
           <div className="grid grid-cols-6 gap-1 md:gap-2">{AVAL_STEPS.map((st,i)=><button key={st.id} onClick={()=>i<=stepIndex?setDraft(d=>({...d,etapa:st.id})):null} className={"min-w-0 rounded-lg border px-1 md:px-3 py-2 text-[8px] md:text-[10px] tracking-wider transition "+(i===stepIndex?"border-purple-400/50 bg-purple-500/10 text-white":i<stepIndex?"border-green-500/20 bg-green-500/[.04] text-green-400":"border-white/8 text-[#50505A]")}>{st.label}</button>)}</div>
         </div>
@@ -1655,7 +1762,7 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
       {draft.etapa==="testar" && <Card className="!rounded-2xl">
         <SectionCyber code="03" title="Diagnóstico de compra" sub="Teste funcional guiado do aparelho"/>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-5">{TESTES_USADO.map(t=><div key={t} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="text-sm mb-3">{t}</div><div className="grid grid-cols-3 gap-1">{[["nao_testado","—"],["ok","OK"],["falha","FALHA"]].map(([v,l])=><button key={v} onClick={()=>upd("testes",t,v)} className={"rounded-md py-1.5 text-[10px] border "+(draft.testes[t]===v?(v==="ok"?"border-green-500/40 bg-green-500/10 text-green-400":v==="falha"?"border-red-500/40 bg-red-500/10 text-red-400":"border-purple-500/40 bg-purple-500/10 text-purple-300"):"border-white/8 text-[#666672]")}>{l}</button>)}</div></div>)}</div>
-        <div className="grid grid-cols-3 gap-3 mt-5"><MetricCyber label="TESTADOS" value={`${testados}/${TESTES_USADO.length}`} sub="itens"/><MetricCyber label="FUNCIONAL" value={`${funcional}%`} sub="índice atual"/><MetricCyber label="FALHAS" value={falhaCount} sub="atenção"/></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5"><MetricCyber label="TESTADOS" value={`${testados}/${TESTES_USADO.length}`} sub="itens"/><MetricCyber label="FUNCIONAL" value={`${funcional}%`} sub="índice atual"/><MetricCyber label="FALHAS" value={falhaCount} sub="atenção"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.055] p-4"><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA SCORE</div><div className="text-3xl font-mono text-white mt-2">{enigmaScore}</div><div className="h-1.5 rounded bg-white/5 mt-3 overflow-hidden"><div className="h-full bg-purple-500" style={{width:`${enigmaScore}%`}}/></div></div></div>
         <FlowNext onClick={()=>goStep("precificar")} label="Concluir testes e precificar"/>
       </Card>}
 
@@ -1668,13 +1775,19 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
         </Card>
         <div className="lg:col-span-2 rounded-2xl border border-purple-500/25 bg-gradient-to-b from-purple-500/[.08] to-green-500/[.025] p-5 flex flex-col justify-between">
           <div><div className="text-[9px] tracking-[.3em] text-purple-300">ENIGMA BUY ENGINE</div><div className="text-sm text-[#8B8B97] mt-5">Mercado médio</div><div className="text-2xl font-mono">{fmt(mercadoMedio)}</div></div>
-          <div className="my-6"><div className="text-[10px] tracking-[.22em] text-green-400">COMPRA SEGURA ATÉ</div><div className="text-4xl font-mono text-white mt-2 drop-shadow-[0_0_14px_rgba(34,197,94,.25)]">{fmt(compraMax)}</div><div className="text-xs text-[#747480] mt-2">considerando margem, risco e custos informados</div></div>
+          <div className="my-5 space-y-2">
+            <div className="flex justify-between text-xs"><span className="text-[#747480]">Mercado médio</span><span className="font-mono">{fmt(mercadoMedio)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-[#747480]">Reparos previstos</span><span className="font-mono text-amber-300">− {fmt(reparos)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-[#747480]">Custo operacional</span><span className="font-mono text-amber-300">− {fmt(operacional)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-[#747480]">Margem + risco</span><span className="font-mono text-purple-300">− {Math.round((margem+risco)*100)}%</span></div>
+            <div className="pt-4 mt-3 border-t border-white/10"><div className="text-[10px] tracking-[.22em] text-green-400">COMPRA SEGURA ATÉ</div><div className="text-4xl font-mono text-white mt-2 drop-shadow-[0_0_14px_rgba(34,197,94,.25)]">{fmt(compraMax)}</div><div className="text-xs text-[#747480] mt-2">resultado do motor ENIGMA</div></div>
+          </div>
           <Button onClick={()=>goStep("oferta")} disabled={!mercadoMedio}>Gerar oferta <ArrowRight size={15} className="inline ml-2"/></Button>
         </div>
       </div>}
 
       {draft.etapa==="oferta" && <Card className="!rounded-2xl"><SectionCyber code="05" title="Oferta" sub="Defina o valor proposto ao vendedor"/>
-        <div className="grid md:grid-cols-3 gap-4 mt-5"><MetricCyber label="MERCADO MÉDIO" value={fmt(mercadoMedio)} sub="referência"/><MetricCyber label="LIMITE SEGURO" value={fmt(compraMax)} sub="calculado"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.05] p-4"><Label>Valor ofertado</Label><Input type="number" value={draft.oferta.valorOfertado||""} onChange={e=>upd("oferta","valorOfertado",e.target.value)}/></div></div>
+        <div className="grid md:grid-cols-4 gap-4 mt-5"><MetricCyber label="MERCADO MÉDIO" value={fmt(mercadoMedio)} sub="referência"/><MetricCyber label="LIMITE SEGURO" value={fmt(compraMax)} sub="calculado"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.05] p-4"><Label>Valor ofertado</Label><Input type="number" value={draft.oferta.valorOfertado||""} onChange={e=>upd("oferta","valorOfertado",e.target.value)}/></div><div className={"rounded-xl border p-4 "+ofertaInfo.bg}><div className="text-[9px] tracking-[.22em] text-[#747480]">DECISÃO ENIGMA</div><div className={"text-sm font-mono mt-2 "+ofertaInfo.cls}>{ofertaInfo.label}</div><div className="text-[10px] text-[#666672] mt-2">Margem projetada: {fmt(margemProjetada)}</div></div></div>
         <Field label="Observações da negociação"><Textarea className="mt-4" rows={3} value={draft.oferta.observacoes||""} onChange={e=>upd("oferta","observacoes",e.target.value)}/></Field>
         <FlowNext onClick={()=>goStep("aquisicao")} label="Oferta aceita · preparar aquisição"/>
       </Card>}
@@ -1684,7 +1797,8 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
           <div className="space-y-3"><Field label="Valor fechado"><Input type="number" value={draft.aquisicao.valorFechado||draft.oferta.valorOfertado||""} onChange={e=>upd("aquisicao","valorFechado",e.target.value)}/></Field><Field label="Forma de pagamento"><select value={draft.aquisicao.formaPagamento||"pix"} onChange={e=>upd("aquisicao","formaPagamento",e.target.value)} className="w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5"><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option></select></Field></div>
           <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><div className="text-xs tracking-widest text-purple-300 mb-3">TERMO DE AQUISIÇÃO</div><p className="text-xs leading-5 text-[#858590]">O vendedor declara ser legítimo proprietário do aparelho identificado nesta avaliação e declara, sob sua responsabilidade, a procedência lícita do bem e a veracidade das informações fornecidas.</p><button onClick={()=>upd("aquisicao","termoAceito",!draft.aquisicao.termoAceito)} className={"mt-4 w-full rounded-lg border p-3 text-left text-sm "+(draft.aquisicao.termoAceito?"border-green-500/30 bg-green-500/[.06] text-green-300":"border-white/10 text-[#8A8A96]")}><CheckCircle2 size={16} className="inline mr-2"/>Declaração conferida para assinatura</button><div className="text-[10px] text-amber-300/70 mt-3">Antes do uso comercial, valide o texto jurídico definitivo com profissional habilitado.</div></div>
         </div>
-        <div className="mt-5 flex flex-col sm:flex-row gap-3"><Button variant="ghost" onClick={()=>persist()}>Salvar como avaliação</Button><Button disabled={!draft.aquisicao.termoAceito || !Number(draft.aquisicao.valorFechado||draft.oferta.valorOfertado)} onClick={async()=>{const next={...draft,status:"comprado",aquisicao:{...draft.aquisicao,valorFechado:draft.aquisicao.valorFechado||draft.oferta.valorOfertado,compradoEm:new Date().toISOString()}};setDraft(next);await persist(next);alert("Aquisição registrada. O módulo de estoque de seminovos será conectado na próxima evolução.");}}>Registrar compra</Button></div>
+        <div className="mt-5 rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-4 flex flex-col md:flex-row md:items-center justify-between gap-3"><div><div className="text-[9px] tracking-[.25em] text-purple-300">DOCUMENTAÇÃO DE AQUISIÇÃO</div><div className="text-xs text-[#777783] mt-1">Gere o termo preenchido para assinatura física do vendedor e da ENIGMA.</div></div><Button variant="ghost" onClick={()=>imprimirTermoAquisicao(draft,{score:enigmaScore,mercadoMedioFmt:fmt(mercadoMedio),compraMaxFmt:fmt(compraMax)})}><Printer size={15} className="inline mr-2"/>Gerar / Imprimir termo</Button></div>
+        <div className="mt-5 flex flex-col sm:flex-row gap-3"><Button variant="ghost" onClick={()=>persist()}>Salvar como avaliação</Button><Button disabled={!draft.aquisicao.termoAceito || !Number(draft.aquisicao.valorFechado||draft.oferta.valorOfertado)} onClick={async()=>{const next={...draft,status:"comprado",aquisicao:{...draft.aquisicao,valorFechado:draft.aquisicao.valorFechado||draft.oferta.valorOfertado,compradoEm:new Date().toISOString(),registroAquisicao:draft.aquisicao.registroAquisicao||("AQ-"+Date.now())}};setDraft(next);await persist(next);alert("Aquisição registrada. Guarde o termo assinado junto ao registro desta compra.");}}>Registrar compra</Button></div>
       </Card>}
     </div>
   );
