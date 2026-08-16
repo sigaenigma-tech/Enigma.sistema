@@ -794,7 +794,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1517,17 +1517,23 @@ const TESTES_USADO = [
 function clamp(n, min, max) { return Math.max(min, Math.min(max, Number(n) || 0)); }
 
 function calcEnigmaScore(draft) {
-  if (!draft) return 0;
-  const estetica = clamp(draft?.inspecao?.estetica ?? 0, 0, 100);
-  const bateria = clamp(draft?.aparelho?.bateria ?? 0, 0, 100);
+  if (!draft) return null;
+  const scanner = draft?.inspecao?.scanner || {};
+  const estVals = Object.values(scanner).map(x => Number(x?.score)).filter(Number.isFinite);
   const vals = Object.values(draft?.testes || {});
   const tested = vals.filter(v => v !== "nao_testado").length;
   const oks = vals.filter(v => v === "ok").length;
-  const funcional = tested ? (oks / tested) * 100 : 50;
-  const falhas = vals.filter(v => v === "falha").length;
-  const falhaPenalty = Math.min(35, falhas * 5);
-  const score = (estetica * 0.30) + (funcional * 0.45) + ((bateria || 70) * 0.25) - falhaPenalty;
-  return Math.round(clamp(score, 0, 100));
+  const bateriaRaw = draft?.aparelho?.bateria;
+  const bateriaInformada = bateriaRaw !== "" && bateriaRaw !== null && bateriaRaw !== undefined;
+  const parts = [];
+  if (estVals.length) parts.push({v: estVals.reduce((a,b)=>a+b,0)/estVals.length, w:.35});
+  if (tested) parts.push({v:(oks/tested)*100, w:.45});
+  if (bateriaInformada) parts.push({v:clamp(bateriaRaw,0,100), w:.20});
+  if (!parts.length) return null;
+  const totalW = parts.reduce((a,b)=>a+b.w,0);
+  const base = parts.reduce((a,b)=>a+b.v*b.w,0)/totalW;
+  const falhas = vals.filter(v=>v==="falha").length;
+  return Math.round(clamp(base - Math.min(30,falhas*4),0,100));
 }
 function ofertaClassificacao(valor, compraMax) {
   const v = Number(valor) || 0;
@@ -1581,7 +1587,7 @@ function imprimirTermoAquisicao(draft, calc) {
     <b>Estado estético:</b> ${ins.estetica ?? "—"}%<br/>
     <b>Avarias observadas:</b> ${ins.avarias || "Nenhuma informada."}<br/>
     <b>Observações:</b> ${ins.observacoes || "Sem observações adicionais."}<br/>
-    <b>ENIGMA SCORE:</b> ${calc.score}/100<br/>
+    <b>ENIGMA SCORE:</b> ${calc.score == null ? "Não calculado" : calc.score+"/100"}<br/>
     <b>Referência média de mercado:</b> ${calc.mercadoMedioFmt}<br/>
     <b>Limite recomendado de compra:</b> ${calc.compraMaxFmt}
   </div>
@@ -1615,6 +1621,37 @@ function imprimirTermoAquisicao(draft, calc) {
   w.document.open(); w.document.write(html); w.document.close();
 }
 
+
+const SCANNER_PARTES = [
+  { id:"tela", label:"Tela", icon:"▣", peso:.28 },
+  { id:"carcaca", label:"Carcaça / Laterais", icon:"◫", peso:.24 },
+  { id:"traseira", label:"Traseira", icon:"◇", peso:.18 },
+  { id:"lentes", label:"Lentes / Câmeras", icon:"◎", peso:.18 },
+  { id:"botoes", label:"Botões / Conectores", icon:"⌁", peso:.12 },
+];
+const ESTADOS_ESTETICA = [
+  { id:"excelente", label:"Excelente", score:98, desc:"Praticamente sem marcas de uso.", impacto:0 },
+  { id:"muito_bom", label:"Muito bom", score:88, desc:"Marcas leves, sem comprometer apresentação.", impacto:2 },
+  { id:"bom", label:"Bom", score:76, desc:"Sinais normais de uso visíveis.", impacto:5 },
+  { id:"regular", label:"Regular", score:60, desc:"Riscos ou marcas relevantes.", impacto:10 },
+  { id:"ruim", label:"Ruim", score:40, desc:"Desgaste forte ou dano estético.", impacto:18 },
+  { id:"muito_danificado", label:"Muito danificado", score:20, desc:"Danos severos, exige intervenção.", impacto:28 },
+];
+function calcEsteticaScanner(scanner) {
+  const items = SCANNER_PARTES.map(p => ({...p, dado:scanner?.[p.id]})).filter(x => Number.isFinite(Number(x.dado?.score)));
+  if (!items.length) return null;
+  const w = items.reduce((a,b)=>a+b.peso,0);
+  return Math.round(items.reduce((a,b)=>a+Number(b.dado.score)*b.peso,0)/w);
+}
+function calcImpactoScanner(scanner, mercadoMedio) {
+  if (!mercadoMedio) return 0;
+  return SCANNER_PARTES.reduce((total,p)=>{
+    const d=scanner?.[p.id];
+    const estado=ESTADOS_ESTETICA.find(e=>e.id===d?.estado);
+    return total + (estado ? mercadoMedio*(estado.impacto/100)*p.peso : 0);
+  },0);
+}
+
 function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
   const [view, setView] = useState("lista");
   const [draft, setDraft] = useState(null);
@@ -1625,7 +1662,7 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
       etapa: "identificar", status: "avaliacao",
       vendedor: { nome: "", cpf: "", telefone: "", endereco: "" },
       aparelho: { marca: "Apple", modelo: "", cor: "", armazenamento: "", imei: "", serial: "", bateria: "", contaRemovida: false, notaFiscal: false },
-      inspecao: { estetica: 80, observacoes: "", avarias: "" },
+      inspecao: { estetica: null, observacoes: "", avarias: "", scanner: {} },
       testes: Object.fromEntries(TESTES_USADO.map((x) => [x, "nao_testado"])),
       precificacao: { mercadoMin: "", mercadoMax: "", reparos: "", custoOperacional: "", margemDesejada: 25, risco: 5 },
       oferta: { valorOfertado: "", observacoes: "" },
@@ -1646,8 +1683,11 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
   const reparos = Number(p.reparos)||0, operacional = Number(p.custoOperacional)||0;
   const margem = clamp(p.margemDesejada, 0, 90) / 100;
   const risco = clamp(p.risco, 0, 50) / 100;
-  const compraMax = Math.max(0, mercadoMedio * (1 - margem - risco) - reparos - operacional);
-  const estetica = clamp(draft?.inspecao?.estetica ?? 0, 0, 100);
+  const impactoEsteticoBase = calcImpactoScanner(draft?.inspecao?.scanner || {}, mercadoMedio);
+  const compraMax = Math.max(0, mercadoMedio * (1 - margem - risco) - reparos - operacional - impactoEsteticoBase);
+  const scanner = draft?.inspecao?.scanner || {};
+  const esteticaCalc = calcEsteticaScanner(scanner);
+  const estetica = esteticaCalc ?? null;
   const testeVals = Object.values(draft?.testes || {});
   const okCount = testeVals.filter(v => v === "ok").length;
   const falhaCount = testeVals.filter(v => v === "falha").length;
@@ -1655,6 +1695,7 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
   const funcional = testados ? Math.round(okCount / testados * 100) : 0;
   const riscoLabel = falhaCount >= 3 || Number(p.risco) >= 15 ? "ALTO" : falhaCount || Number(p.risco) >= 8 ? "MÉDIO" : "BAIXO";
   const enigmaScore = calcEnigmaScore(draft);
+  const impactoEstetico = impactoEsteticoBase;
   const ofertaInfo = ofertaClassificacao(draft?.oferta?.valorOfertado, compraMax);
   const margemProjetada = Math.max(0, mercadoMedio - (Number(draft?.oferta?.valorOfertado)||0) - reparos - operacional);
 
@@ -1718,7 +1759,7 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
             <div><div className="text-[10px] tracking-[.3em] uppercase text-purple-300">ENIGMA // SCAN SESSION</div><div className="text-xl font-semibold mt-1">{draft.aparelho?.marca || "Aparelho"} {draft.aparelho?.modelo || "não identificado"}</div><div className="text-xs text-[#777783] mt-1 font-mono">IMEI {draft.aparelho?.imei || "AGUARDANDO IDENTIFICAÇÃO"}</div></div>
             <div className="flex gap-2">
-              <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.05] px-4 py-3 min-w-[120px]"><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA SCORE</div><div className="text-2xl font-mono mt-1 text-white">{enigmaScore}<span className="text-xs text-[#6D6D78]">/100</span></div></div>
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.05] px-4 py-3 min-w-[120px]"><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA SCORE</div><div className="text-2xl font-mono mt-1 text-white">{enigmaScore == null ? "—" : enigmaScore}<span className="text-xs text-[#6D6D78]">{enigmaScore == null ? "" : "/100"}</span></div><div className="text-[9px] text-[#666672] mt-1">{enigmaScore == null ? "AGUARDANDO AVALIAÇÃO" : "ANÁLISE EM PROGRESSO"}</div></div>
               <div className="rounded-xl border border-green-500/20 bg-green-500/[.05] px-4 py-3"><div className="text-[9px] tracking-[.22em] text-green-400">RISK ENGINE</div><div className={"text-lg font-mono mt-1 "+(riscoLabel==="ALTO"?"text-red-400":riscoLabel==="MÉDIO"?"text-amber-300":"text-green-400")}>{riscoLabel}</div></div>
             </div>
           </div>
@@ -1745,24 +1786,52 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
       </Card>}
 
       {draft.etapa==="inspecionar" && <Card className="!rounded-2xl">
-        <SectionCyber code="02" title="Inspeção física" sub="Estado visual, bateria, procedência e avarias"/>
-        <div className="grid md:grid-cols-3 gap-4 mt-5">
-          <ScoreDial label="ESTÉTICA" value={estetica}/>
-          <div className="md:col-span-2 space-y-4">
-            <Field label={`Nota estética · ${estetica}%`}><input type="range" min="0" max="100" value={estetica} onChange={e=>upd("inspecao","estetica",e.target.value)} className="w-full accent-purple-500"/></Field>
-            <div className="grid grid-cols-2 gap-3"><Field label="Saúde da bateria (%)"><Input type="number" value={draft.aparelho.bateria||""} onChange={e=>upd("aparelho","bateria",e.target.value)}/></Field><Field label="Procedência"><div className="flex gap-2"><ToggleMini active={draft.aparelho.contaRemovida} onClick={()=>upd("aparelho","contaRemovida",!draft.aparelho.contaRemovida)} text="Conta removida"/><ToggleMini active={draft.aparelho.notaFiscal} onClick={()=>upd("aparelho","notaFiscal",!draft.aparelho.notaFiscal)} text="Nota fiscal"/></div></Field></div>
-            <Field label="Avarias identificadas"><Textarea rows={3} placeholder="Trincas, riscos, amassados..." value={draft.inspecao.avarias||""} onChange={e=>upd("inspecao","avarias",e.target.value)}/></Field>
-            <Field label="Observações da inspeção"><Textarea rows={2} value={draft.inspecao.observacoes||""} onChange={e=>upd("inspecao","observacoes",e.target.value)}/></Field>
+        <SectionCyber code="02" title="Scanner estético ENIGMA" sub="Avalie cada região do aparelho. A nota geral é calculada automaticamente."/>
+        <div className="grid lg:grid-cols-[280px_1fr] gap-5 mt-5">
+          <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-b from-purple-500/[.07] to-transparent p-5 flex flex-col items-center justify-center min-h-[330px]">
+            <div className="text-[9px] tracking-[.28em] text-purple-300 mb-4">PHYSICAL SCAN</div>
+            <div className="w-36 h-36 rounded-full border-[7px] border-purple-500/20 flex items-center justify-center shadow-[inset_0_0_34px_rgba(139,92,246,.13),0_0_34px_rgba(139,92,246,.09)]">
+              <div className="text-center"><div className="text-3xl font-mono">{estetica == null ? "—" : `${estetica}%`}</div><div className="text-[8px] tracking-[.2em] text-purple-300 mt-1">{estetica == null ? "NÃO AVALIADO" : "ESTÉTICA GERAL"}</div></div>
+            </div>
+            <div className="w-full mt-5 space-y-2">
+              {SCANNER_PARTES.map(part=>{const d=scanner[part.id]; return <div key={part.id} className="flex items-center justify-between text-[11px]"><span className="text-[#777783]">{part.label}</span><span className={d?"text-white font-mono":"text-[#484852]"}>{d ? `${d.score}%` : "—"}</span></div>})}
+            </div>
+          </div>
+          <div className="space-y-3">
+            {SCANNER_PARTES.map(part=>{
+              const atual=scanner[part.id];
+              return <div key={part.id} className="rounded-xl border border-white/10 bg-white/[.018] p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div><div className="text-sm text-white"><span className="text-purple-300 mr-2 font-mono">{part.icon}</span>{part.label}</div><div className="text-[10px] text-[#666672] mt-1">{atual ? ESTADOS_ESTETICA.find(e=>e.id===atual.estado)?.desc : "Selecione o estado observado."}</div></div>
+                  <div className="text-lg font-mono text-white">{atual ? `${atual.score}%` : "—"}</div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-1.5">
+                  {ESTADOS_ESTETICA.map(est=><button key={est.id} type="button" onClick={()=>{const novo={...scanner,[part.id]:{estado:est.id,score:est.score}};setDraft(d=>({...d,inspecao:{...(d.inspecao||{}),scanner:novo,estetica:calcEsteticaScanner(novo)}}));}} className={"rounded-lg border px-2 py-2 text-[9px] leading-tight transition "+(atual?.estado===est.id?"border-purple-400/50 bg-purple-500/12 text-white shadow-[0_0_14px_rgba(139,92,246,.08)]":"border-white/8 text-[#73737F] hover:border-purple-500/25 hover:text-white")}>{est.label}</button>)}
+                </div>
+              </div>
+            })}
           </div>
         </div>
-        <div className="mt-5 rounded-xl border border-dashed border-purple-500/20 bg-purple-500/[.025] p-4 text-xs text-[#81818D]"><Camera size={16} className="inline mr-2 text-purple-300"/>Vistoria fotográfica dedicada será conectada ao mesmo Storage usado pelas OS na próxima evolução deste módulo.</div>
-        <FlowNext onClick={()=>goStep("testar")} label="Concluir inspeção e iniciar testes"/>
+        <div className="grid md:grid-cols-3 gap-3 mt-5">
+          <MetricCyber label="ÁREAS AVALIADAS" value={`${Object.keys(scanner).filter(k=>scanner[k]?.score!=null).length}/${SCANNER_PARTES.length}`} sub="scanner físico"/>
+          <MetricCyber label="ESTÉTICA GERAL" value={estetica == null ? "—" : `${estetica}%`} sub={estetica == null ? "aguardando" : "calculada automaticamente"}/>
+          <MetricCyber label="IMPACTO ESTÉTICO" value={mercadoMedio ? `− ${fmt(impactoEstetico)}` : "Calculado na precificação"} sub="estimativa sobre referência"/>
+        </div>
+        <div className="grid md:grid-cols-2 gap-4 mt-5">
+          <div className="space-y-3">
+            <Field label="Saúde da bateria (%)"><Input type="number" placeholder="Ex.: 87" value={draft.aparelho.bateria||""} onChange={e=>upd("aparelho","bateria",e.target.value)}/></Field>
+            <Field label="Procedência"><div className="flex gap-2"><ToggleMini active={draft.aparelho.contaRemovida} onClick={()=>upd("aparelho","contaRemovida",!draft.aparelho.contaRemovida)} text="Conta removida"/><ToggleMini active={draft.aparelho.notaFiscal} onClick={()=>upd("aparelho","notaFiscal",!draft.aparelho.notaFiscal)} text="Nota fiscal"/></div></Field>
+          </div>
+          <div className="space-y-3"><Field label="Avarias específicas"><Textarea rows={2} placeholder="Trincas, amassados, riscos profundos..." value={draft.inspecao.avarias||""} onChange={e=>upd("inspecao","avarias",e.target.value)}/></Field><Field label="Observações"><Textarea rows={2} value={draft.inspecao.observacoes||""} onChange={e=>upd("inspecao","observacoes",e.target.value)}/></Field></div>
+        </div>
+        <div className="mt-5 rounded-xl border border-dashed border-purple-500/20 bg-purple-500/[.025] p-4 text-xs text-[#81818D]"><Camera size={16} className="inline mr-2 text-purple-300"/>A vistoria fotográfica dedicada continua preparada para a próxima conexão com o Storage.</div>
+        <FlowNext onClick={()=>goStep("testar")} label="Concluir scanner e iniciar testes"/>
       </Card>}
 
       {draft.etapa==="testar" && <Card className="!rounded-2xl">
         <SectionCyber code="03" title="Diagnóstico de compra" sub="Teste funcional guiado do aparelho"/>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-5">{TESTES_USADO.map(t=><div key={t} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><div className="text-sm mb-3">{t}</div><div className="grid grid-cols-3 gap-1">{[["nao_testado","—"],["ok","OK"],["falha","FALHA"]].map(([v,l])=><button key={v} onClick={()=>upd("testes",t,v)} className={"rounded-md py-1.5 text-[10px] border "+(draft.testes[t]===v?(v==="ok"?"border-green-500/40 bg-green-500/10 text-green-400":v==="falha"?"border-red-500/40 bg-red-500/10 text-red-400":"border-purple-500/40 bg-purple-500/10 text-purple-300"):"border-white/8 text-[#666672]")}>{l}</button>)}</div></div>)}</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5"><MetricCyber label="TESTADOS" value={`${testados}/${TESTES_USADO.length}`} sub="itens"/><MetricCyber label="FUNCIONAL" value={`${funcional}%`} sub="índice atual"/><MetricCyber label="FALHAS" value={falhaCount} sub="atenção"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.055] p-4"><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA SCORE</div><div className="text-3xl font-mono text-white mt-2">{enigmaScore}</div><div className="h-1.5 rounded bg-white/5 mt-3 overflow-hidden"><div className="h-full bg-purple-500" style={{width:`${enigmaScore}%`}}/></div></div></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5"><MetricCyber label="TESTADOS" value={`${testados}/${TESTES_USADO.length}`} sub="itens"/><MetricCyber label="FUNCIONAL" value={`${funcional}%`} sub="índice atual"/><MetricCyber label="FALHAS" value={falhaCount} sub="atenção"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.055] p-4"><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA SCORE</div><div className="text-3xl font-mono text-white mt-2">{enigmaScore == null ? "—" : enigmaScore}</div><div className="h-1.5 rounded bg-white/5 mt-3 overflow-hidden"><div className="h-full bg-purple-500 transition-all" style={{width:`${enigmaScore || 0}%`}}/></div></div></div>
         <FlowNext onClick={()=>goStep("precificar")} label="Concluir testes e precificar"/>
       </Card>}
 
@@ -1778,7 +1847,7 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
           <div className="my-5 space-y-2">
             <div className="flex justify-between text-xs"><span className="text-[#747480]">Mercado médio</span><span className="font-mono">{fmt(mercadoMedio)}</span></div>
             <div className="flex justify-between text-xs"><span className="text-[#747480]">Reparos previstos</span><span className="font-mono text-amber-300">− {fmt(reparos)}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-[#747480]">Custo operacional</span><span className="font-mono text-amber-300">− {fmt(operacional)}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-[#747480]">Custo operacional</span><span className="font-mono text-amber-300">− {fmt(operacional)}</span></div><div className="flex justify-between text-xs"><span className="text-[#747480]">Impacto estético</span><span className="font-mono text-amber-300">− {fmt(impactoEstetico)}</span></div>
             <div className="flex justify-between text-xs"><span className="text-[#747480]">Margem + risco</span><span className="font-mono text-purple-300">− {Math.round((margem+risco)*100)}%</span></div>
             <div className="pt-4 mt-3 border-t border-white/10"><div className="text-[10px] tracking-[.22em] text-green-400">COMPRA SEGURA ATÉ</div><div className="text-4xl font-mono text-white mt-2 drop-shadow-[0_0_14px_rgba(34,197,94,.25)]">{fmt(compraMax)}</div><div className="text-xs text-[#747480] mt-2">resultado do motor ENIGMA</div></div>
           </div>
