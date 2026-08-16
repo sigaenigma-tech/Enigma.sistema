@@ -448,7 +448,7 @@ export default function EnigmaSistema() {
   function removerPecaDaOS(peca) {
     if (!osDetail) return;
     salvarDetalheOS({ ...osDetail, pecasUsadas: osDetail.pecasUsadas.filter((p) => p.id !== peca.id) });
-    ajustarQuantidadeLocal(peca.estoqueId, peca.qtd);
+    if (peca.estoqueId) ajustarQuantidadeLocal(peca.estoqueId, peca.qtd);
   }
 
   if (loading) {
@@ -535,7 +535,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.2</div>
     </aside>
   );
 }
@@ -721,7 +721,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1542,21 +1542,53 @@ function NovaOS({ onCriar, onCancelar }) {
 
 /* ================= OS: DETALHE ================= */
 function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
-  const [sub, setSub] = useState("checklist");
+  const [sub, setSub] = useState("entrada");
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [novoItem, setNovoItem] = useState("");
-  const [obsAvanco, setObsAvanco] = useState("");
-  const [mostrarAvanco, setMostrarAvanco] = useState(false);
-  const [novoStatusSel, setNovoStatusSel] = useState(null);
+  const [novoItemCondicao, setNovoItemCondicao] = useState("");
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  const [fotoEtapa, setFotoEtapa] = useState("entrada");
+  const [fotoTipo, setFotoTipo] = useState("frente");
+  const [fotoObs, setFotoObs] = useState("");
   const [buscaPeca, setBuscaPeca] = useState("");
   const [qtdPeca, setQtdPeca] = useState(1);
-  const [novoItemCondicao, setNovoItemCondicao] = useState("");
+  const [mostrarAvulsa, setMostrarAvulsa] = useState(false);
+  const [pecaAvulsa, setPecaAvulsa] = useState({ nome: "", qtd: 1, custo: "", preco: "" });
   const [notifMeio, setNotifMeio] = useState("whatsapp");
+
+  useEffect(() => {
+    if (!detail) return;
+    const mapa = { recebido: "entrada", diagnostico: "checklist", aguardando_aprovacao: "orcamento", em_reparo: "pecas", pronto: "entrega", entregue: "entrega", cancelado: "linha" };
+    setSub(mapa[detail.status] || "entrada");
+  }, [detail?.id]);
 
   if (!detail) {
     return <div className="flex justify-center py-16"><div className="w-6 h-6 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" /></div>;
+  }
+
+  const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
+  const statusMinimo = (id) => Math.max(0, FLUXO_PRINCIPAL.indexOf(id));
+  const pode = (id) => etapaAtual >= statusMinimo(id);
+  const totalPecas = (detail.pecasUsadas || []).reduce((s, p) => s + (Number(p.preco) || 0) * (Number(p.qtd) || 0), 0);
+  const desconto = Number(detail.orcamento?.desconto) || 0;
+  const valorEstimado = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + totalPecas - desconto);
+  const aprovacao = detail.orcamento?.status || "rascunho";
+  const pecasResultados = estoque.filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
+  const testesFinais = detail.entrega?.testesFinais || [
+    { id: "liga", item: "Liga / desliga", status: false },
+    { id: "carga", item: "Carregamento", status: false },
+    { id: "tela", item: "Tela / touch", status: false },
+    { id: "audio", item: "Áudio / microfone", status: false },
+    { id: "rede", item: "Wi‑Fi / Bluetooth / rede", status: false },
+    { id: "camera", item: "Câmeras", status: false },
+  ];
+  const testesOk = testesFinais.every((t) => t.status === true);
+
+  function registrarEvento(status, obs, extra = {}) {
+    const agora = new Date().toISOString();
+    const timeline = [...(detail.timeline || []), { id: genId(), status, timestamp: agora, obs }];
+    onSalvar({ ...detail, ...extra, status, timeline });
   }
 
   function toggleChecklist(itemId) {
@@ -1583,46 +1615,158 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
   }
   function removeCondicaoItem(itemId) { onSalvar({ ...detail, condicaoAparelho: (detail.condicaoAparelho || []).filter((c) => c.id !== itemId) }); }
 
-  function registrarNotificacao() {
-    const notificacoes = [...(detail.notificacoes || []), { id: genId(), timestamp: new Date().toISOString(), meio: notifMeio }];
-    onSalvar({ ...detail, notificacoes });
+  function concluirEntrada() {
+    if (!detail.cliente?.nome?.trim() || !detail.aparelho?.marcaModelo?.trim() || !detail.problemaRelatado?.trim()) {
+      alert("Preencha cliente, aparelho e problema relatado antes de iniciar o diagnóstico.");
+      return;
+    }
+    registrarEvento("diagnostico", "Entrada concluída. Diagnóstico iniciado.");
+    setSub("checklist");
+  }
+
+  function prepararOrcamento() {
+    if (!detail.diagnosticoTecnico?.trim()) {
+      alert("Descreva o diagnóstico técnico antes de montar o orçamento.");
+      return;
+    }
+    const agora = new Date().toISOString();
+    onSalvar({
+      ...detail,
+      timeline: [...(detail.timeline || []), { id: genId(), status: detail.status, timestamp: agora, obs: "Diagnóstico concluído. Orçamento em elaboração." }]
+    });
+    setSub("orcamento");
+  }
+
+  function enviarOrcamento() {
+    if (valorEstimado <= 0) {
+      alert("Informe mão de obra e/ou peças para gerar o orçamento.");
+      return;
+    }
+    const agora = new Date().toISOString();
+    const orcamento = { ...(detail.orcamento || {}), status: "pendente", enviadoEm: agora, valorProposto: valorEstimado };
+    onSalvar({
+      ...detail,
+      orcamento,
+      status: "aguardando_aprovacao",
+      timeline: [...(detail.timeline || []), { id: genId(), status: "aguardando_aprovacao", timestamp: agora, obs: `Orçamento de ${fmt(valorEstimado)} enviado ao cliente.` }]
+    });
+  }
+
+  function registrarAprovacao(status) {
+    if (detail.status !== "aguardando_aprovacao") {
+      alert("Primeiro envie o orçamento ao cliente.");
+      return;
+    }
+    const agora = new Date().toISOString();
+    const orcamento = { ...(detail.orcamento || {}), status, atualizadoEm: agora };
+    const novoStatus = status === "aprovado" ? "em_reparo" : "cancelado";
+    const evento = status === "aprovado" ? "Orçamento aprovado pelo cliente. Reparo liberado." : "Orçamento recusado pelo cliente.";
+    onSalvar({ ...detail, orcamento, status: novoStatus, timeline: [...(detail.timeline || []), { id: genId(), status: novoStatus, timestamp: agora, obs: evento }] });
+    if (status === "aprovado") setSub("pecas");
+  }
+
+  function adicionarPecaAvulsa() {
+    if (!pecaAvulsa.nome.trim() || Number(pecaAvulsa.preco) <= 0) {
+      alert("Informe a descrição e o valor cobrado da peça avulsa.");
+      return;
+    }
+    const peca = {
+      id: genId(), origem: "avulsa", estoqueId: null, nome: pecaAvulsa.nome.trim(),
+      qtd: Math.max(1, Number(pecaAvulsa.qtd) || 1),
+      custo: Number(String(pecaAvulsa.custo).replace(",", ".")) || 0,
+      preco: Number(String(pecaAvulsa.preco).replace(",", ".")) || 0,
+    };
+    onSalvar({ ...detail, pecasUsadas: [...(detail.pecasUsadas || []), peca] });
+    setPecaAvulsa({ nome: "", qtd: 1, custo: "", preco: "" });
+    setMostrarAvulsa(false);
+  }
+
+  async function uploadFotoStorage(file) {
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const key = `os-${detail.numero}/${Date.now()}-${genId()}.${ext}`;
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/os-fotos/${key}`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": file.type || "image/jpeg",
+        "x-upsert": "false",
+      },
+      body: file,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return `${SUPABASE_URL}/storage/v1/object/public/os-fotos/${key}`;
   }
 
   async function handleFotos(e) {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    if (!files.length) return;
     setUploading(true);
     try {
       const novas = [];
       for (const file of files) {
-        const dataUrl = await resizeImage(file);
-        novas.push({ id: genId(), dataUrl, legenda: "", timestamp: new Date().toISOString() });
+        let dataUrl;
+        try { dataUrl = await uploadFotoStorage(file); }
+        catch { dataUrl = await resizeImage(file); }
+        novas.push({
+          id: genId(), dataUrl, etapa: fotoEtapa, tipo: fotoTipo,
+          legenda: fotoObs.trim(), timestamp: new Date().toISOString()
+        });
       }
-      await onSalvar({ ...detail, fotos: [...detail.fotos, ...novas] });
-    } catch (err) {}
-    setUploading(false);
-    if (fileRef.current) fileRef.current.value = "";
+      await onSalvar({ ...detail, fotos: [...(detail.fotos || []), ...novas] });
+      setFotoObs("");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
-  function removeFoto(id) { onSalvar({ ...detail, fotos: detail.fotos.filter((f) => f.id !== id) }); }
+  function removeFoto(id) { onSalvar({ ...detail, fotos: (detail.fotos || []).filter((f) => f.id !== id) }); }
 
-  function confirmarAvanco() {
-    if (!novoStatusSel) return;
-    onSalvar({ ...detail, status: novoStatusSel, timeline: [...detail.timeline, { id: genId(), status: novoStatusSel, timestamp: new Date().toISOString(), obs: obsAvanco }] });
-    setMostrarAvanco(false); setObsAvanco(""); setNovoStatusSel(null);
+  function atualizarTeste(id) {
+    const novos = testesFinais.map((t) => t.id === id ? { ...t, status: !t.status } : t);
+    onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), testesFinais: novos } });
   }
 
-
-  function registrarAprovacao(status) {
+  function finalizarReparo() {
+    if (!testesOk) {
+      alert("Conclua todos os testes finais antes de liberar o aparelho.");
+      return;
+    }
     const agora = new Date().toISOString();
-    const orcamento = { ...(detail.orcamento || {}), status, atualizadoEm: agora };
-    const novoStatus = status === "aprovado" ? "em_reparo" : status === "recusado" ? "cancelado" : detail.status;
-    const evento = status === "aprovado" ? "Orçamento aprovado pelo cliente" : "Orçamento recusado pelo cliente";
-    onSalvar({ ...detail, orcamento, status: novoStatus, timeline: [...detail.timeline, { id: genId(), status: novoStatus, timestamp: agora, obs: evento }] });
+    onSalvar({
+      ...detail,
+      status: "pronto",
+      entrega: { ...(detail.entrega || {}), testesFinais, prontoEm: agora },
+      timeline: [...(detail.timeline || []), { id: genId(), status: "pronto", timestamp: agora, obs: "Reparo finalizado e aparelho liberado para retirada." }]
+    });
   }
 
   function finalizarEntrega() {
+    const pagamentoOk = detail.entrega?.pagamentoStatus === "pago" || Number(detail.valorFinal || valorEstimado) === 0;
+    if (detail.status !== "pronto") {
+      alert("Finalize o reparo e marque o aparelho como pronto antes da entrega.");
+      return;
+    }
+    if (!pagamentoOk) {
+      alert("Registre o pagamento antes de finalizar a entrega.");
+      return;
+    }
+    if (!detail.entrega?.assinaturaEntrega?.dataUrl) {
+      alert("Colete a assinatura de retirada antes de finalizar a entrega.");
+      return;
+    }
     const agora = new Date().toISOString();
-    onSalvar({ ...detail, status: "entregue", entrega: { ...(detail.entrega || {}), entregueEm: agora }, timeline: [...detail.timeline, { id: genId(), status: "entregue", timestamp: agora, obs: "Aparelho entregue ao cliente" }] });
+    onSalvar({
+      ...detail,
+      status: "entregue",
+      entrega: { ...(detail.entrega || {}), entregueEm: agora },
+      timeline: [...(detail.timeline || []), { id: genId(), status: "entregue", timestamp: agora, obs: "Aparelho entregue ao cliente." }]
+    });
+  }
+
+  function registrarNotificacao() {
+    const notificacoes = [...(detail.notificacoes || []), { id: genId(), timestamp: new Date().toISOString(), meio: notifMeio }];
+    onSalvar({ ...detail, notificacoes });
   }
 
   function abrirWhatsApp() {
@@ -1633,243 +1777,322 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
     window.open(`https://wa.me/${br}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
   }
 
-  const proximoDoFluxo = (() => {
-    const i = FLUXO_PRINCIPAL.indexOf(detail.status);
-    return i >= 0 && i < FLUXO_PRINCIPAL.length - 1 ? FLUXO_PRINCIPAL[i + 1] : null;
-  })();
+  const tabs = [
+    { id: "entrada", label: "Entrada", min: "recebido" },
+    { id: "checklist", label: "Diagnóstico", min: "diagnostico" },
+    { id: "orcamento", label: "Orçamento / Aprovação", min: "diagnostico" },
+    { id: "pecas", label: "Peças", min: "diagnostico" },
+    { id: "fotos", label: "Fotos", min: "recebido" },
+    { id: "entrega", label: "Entrega / Garantia", min: "em_reparo" },
+    { id: "termo", label: "Termos / Assinaturas", min: "recebido" },
+    { id: "linha", label: "Histórico", min: "recebido" },
+  ];
 
-  const pecasResultados = estoque.filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
-  const totalPecas = detail.pecasUsadas.reduce((s, p) => s + p.preco * p.qtd, 0);
-  const desconto = Number(detail.orcamento?.desconto) || 0;
-  const valorEstimado = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + totalPecas - desconto);
-  const aprovacao = detail.orcamento?.status || "rascunho";
-  const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
+  const fotosDaEtapa = (etapa) => (detail.fotos || []).filter((f) => (f.etapa || "geral") === etapa);
 
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="flex items-start justify-between mb-2">
+      <Card className="!rounded-2xl">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-sm text-[#E5E5EA]">OS #{detail.numero} · {detail.cliente.nome}</div>
-            <div className="text-xs text-[#8A8A96] mt-0.5">{detail.aparelho.marcaModelo}{detail.aparelho.serial ? ` · ${detail.aparelho.serial}` : ""}</div>
-            {detail.cliente.telefone && <div className="text-xs text-[#6E6E78] mt-0.5 flex items-center gap-1"><Phone size={11} /> {detail.cliente.telefone}</div>}
+            <div className="text-base font-semibold text-white">OS #{detail.numero} · {detail.cliente.nome}</div>
+            <div className="text-xs text-[#8A8A96] mt-1">{detail.aparelho.marcaModelo}{detail.aparelho.serial ? ` · ${detail.aparelho.serial}` : ""}</div>
+            <div className="text-xs text-[#777782] mt-1">{detail.problemaRelatado}</div>
           </div>
           <div className="flex flex-col items-end gap-2">
             <StatusBadge status={detail.status} />
             <div className="flex gap-2">
-              {detail.cliente.telefone && <button onClick={abrirWhatsApp} className="flex items-center gap-1 text-[11px] text-green-300 border border-green-500/20 bg-green-500/[.06] rounded-full px-2.5 py-1"><Phone size={12} /> WhatsApp</button>}
-              <button onClick={() => window.print()} className="flex items-center gap-1 text-[11px] text-[#8A8A96] border border-[#2A2A34] rounded-full px-2.5 py-1">
-                <Printer size={12} /> Imprimir
-              </button>
+              {detail.cliente.telefone && <button onClick={abrirWhatsApp} className="flex items-center gap-1 text-[11px] text-green-300 border border-green-500/20 bg-green-500/[.06] rounded-full px-2.5 py-1"><Phone size={12}/> WhatsApp</button>}
+              <button onClick={() => window.print()} className="flex items-center gap-1 text-[11px] text-[#8A8A96] border border-[#2A2A34] rounded-full px-2.5 py-1"><Printer size={12}/> Imprimir</button>
             </div>
           </div>
-        </div>
-        <div className="text-xs text-[#8A8A96] mt-2 border-t border-[#2A2A34] pt-2">{detail.problemaRelatado}</div>
-        <div className="mt-4 grid grid-cols-6 gap-1">
-          {FLUXO_PRINCIPAL.map((id, idx) => <div key={id} className="min-w-0"><div className={"h-1 rounded-full " + (idx <= etapaAtual ? "bg-purple-500" : "bg-[#2A2A34]")} /><div className={"hidden lg:block text-[9px] mt-1 truncate " + (idx <= etapaAtual ? "text-purple-300" : "text-[#555560]")}>{statusInfo(id).label}</div></div>)}
         </div>
 
-        {!mostrarAvanco ? (
-          <div className="flex gap-2 mt-3">
-            {proximoDoFluxo && (
-              <Button className="flex-1" onClick={() => { setNovoStatusSel(proximoDoFluxo); setMostrarAvanco(true); }}>
-                <span className="flex items-center justify-center gap-1">Avançar para {statusInfo(proximoDoFluxo).label} <ArrowRight size={14} /></span>
-              </Button>
-            )}
-            <Button variant="ghost" onClick={() => { setNovoStatusSel(detail.status); setMostrarAvanco(true); }}>Outro status</Button>
-          </div>
-        ) : (
-          <div className="mt-3 space-y-2">
-            <div className="flex flex-wrap gap-2">
-              {STATUS_OS.map((s) => (
-                <button key={s.id} onClick={() => setNovoStatusSel(s.id)} className="text-[11px] px-2.5 py-1.5 rounded-full border tracking-wide" style={novoStatusSel === s.id ? { color: s.color, borderColor: s.color, backgroundColor: s.color + "20" } : { color: "#8A8A96", borderColor: "#2A2A34" }}>
-                  {s.label}
-                </button>
-              ))}
+        <div className="mt-5 grid grid-cols-6 gap-1.5">
+          {FLUXO_PRINCIPAL.map((id, idx) => (
+            <div key={id} className="min-w-0">
+              <div className={"h-1.5 rounded-full transition-all " + (idx <= etapaAtual ? "bg-gradient-to-r from-purple-500 to-fuchsia-500" : "bg-[#25252D]")} />
+              <div className={"hidden md:block text-[10px] mt-1.5 truncate " + (idx === etapaAtual ? "text-white" : idx < etapaAtual ? "text-purple-300" : "text-[#555560]")}>{statusInfo(id).label}</div>
             </div>
-            <Input placeholder="Observação (opcional)" value={obsAvanco} onChange={(e) => setObsAvanco(e.target.value)} />
-            <div className="flex gap-2">
-              <Button variant="ghost" className="flex-1" onClick={() => setMostrarAvanco(false)}>Cancelar</Button>
-              <Button className="flex-1" onClick={confirmarAvanco}>Confirmar</Button>
-            </div>
-          </div>
-        )}
+          ))}
+        </div>
+        <div className="mt-3 text-[11px] text-[#686873]">O andamento é controlado pelas ações de cada etapa. Etapas futuras ficam bloqueadas até o fluxo avançar.</div>
       </Card>
 
-      <div className="flex gap-2 overflow-x-auto">
-        {[{ id: "entrada", label: "Entrada" }, { id: "checklist", label: "Diagnóstico" }, { id: "orcamento", label: "Orçamento / Aprovação" }, { id: "pecas", label: "Peças" }, { id: "fotos", label: "Fotos" }, { id: "entrega", label: "Entrega / Garantia" }, { id: "termo", label: "Termo / Assinatura" }, { id: "linha", label: "Histórico" }].map((t) => (
-          <button key={t.id} onClick={() => setSub(t.id)} className={"shrink-0 px-3 py-1.5 rounded-full text-xs tracking-wide border " + (sub === t.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
-            {t.label}
-          </button>
-        ))}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {tabs.map((t) => {
+          const liberada = pode(t.min);
+          return (
+            <button
+              key={t.id}
+              disabled={!liberada}
+              onClick={() => liberada && setSub(t.id)}
+              className={"shrink-0 px-3 py-1.5 rounded-full text-xs tracking-wide border transition " +
+                (sub === t.id ? "border-purple-500 text-purple-300 bg-purple-500/10" :
+                 liberada ? "border-[#2A2A34] text-[#8A8A96] hover:text-white" :
+                 "border-[#202027] text-[#44444D] cursor-not-allowed")}
+            >
+              {!liberada && <Lock size={10} className="inline mr-1"/>}{t.label}
+            </button>
+          );
+        })}
       </div>
 
       {sub === "entrada" && (
         <div className="space-y-4">
           <Card>
-            <Label>Dados do proprietário</Label>
-            <div className="grid grid-cols-1 gap-2 mt-1">
-              <Input placeholder="Nome" value={detail.cliente.nome} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, nome: e.target.value } })} />
-              <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Telefone" value={detail.cliente.telefone || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, telefone: e.target.value } })} />
-                <Input placeholder="CPF" value={detail.cliente.cpf || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, cpf: e.target.value } })} />
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div><div className="text-sm font-medium text-white">Recebimento do aparelho</div><div className="text-xs text-[#73737E] mt-1">Confira os dados e registre a condição física antes de iniciar o diagnóstico.</div></div>
+              {detail.status === "recebido" && <span className="text-[10px] text-blue-300 border border-blue-500/20 bg-blue-500/10 rounded-full px-2 py-1">ETAPA ATUAL</span>}
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Cliente</Label>
+                <Input placeholder="Nome" value={detail.cliente.nome || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, nome: e.target.value } })}/>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input placeholder="Telefone" value={detail.cliente.telefone || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, telefone: e.target.value } })}/>
+                  <Input placeholder="CPF" value={detail.cliente.cpf || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, cpf: e.target.value } })}/>
+                </div>
+                <Input placeholder="Endereço" value={detail.cliente.endereco || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, endereco: e.target.value } })}/>
               </div>
-              <Input placeholder="Endereço" value={detail.cliente.endereco || ""} onChange={(e) => onSalvar({ ...detail, cliente: { ...detail.cliente, endereco: e.target.value } })} />
+              <div className="space-y-2">
+                <Label>Aparelho</Label>
+                <Input placeholder="Marca / modelo" value={detail.aparelho.marcaModelo || ""} onChange={(e) => onSalvar({ ...detail, aparelho: { ...detail.aparelho, marcaModelo: e.target.value } })}/>
+                <Input placeholder="Serial / IMEI" value={detail.aparelho.serial || ""} onChange={(e) => onSalvar({ ...detail, aparelho: { ...detail.aparelho, serial: e.target.value } })}/>
+                <Input placeholder="Acessórios recebidos" value={detail.acessoriosRecebidos || ""} onChange={(e) => onSalvar({ ...detail, acessoriosRecebidos: e.target.value })}/>
+                <Input type="date" value={detail.previsaoEntrega || ""} onChange={(e) => onSalvar({ ...detail, previsaoEntrega: e.target.value })}/>
+              </div>
             </div>
-            <div className="grid sm:grid-cols-2 gap-2 mt-3">
-              <div><Label>Acessórios recebidos</Label><Input value={detail.acessoriosRecebidos || ""} onChange={(e) => onSalvar({ ...detail, acessoriosRecebidos: e.target.value })} placeholder="Aparelho + carregador..." /></div>
-              <div><Label>Previsão de entrega</Label><Input type="date" value={detail.previsaoEntrega || ""} onChange={(e) => onSalvar({ ...detail, previsaoEntrega: e.target.value })} /></div>
-            </div>
+            <div className="mt-3"><Label>Problema relatado</Label><Textarea rows={3} value={detail.problemaRelatado || ""} onChange={(e) => onSalvar({ ...detail, problemaRelatado: e.target.value })}/></div>
           </Card>
+
           <Card>
             <Label>Condição física na entrada</Label>
-            <div className="text-[11px] text-[#6E6E78] mb-2">Toque no item: não verificado → sem avaria → com avaria</div>
-            <div className="divide-y divide-[#22222A]">
+            <div className="text-[11px] text-[#6E6E78] mb-2">Toque no item: não verificado → sem avaria → com avaria.</div>
+            <div className="grid md:grid-cols-2 gap-x-5">
               {(detail.condicaoAparelho || []).map((c) => (
-                <div key={c.id} className="flex items-center justify-between py-2.5">
+                <div key={c.id} className="flex items-center justify-between py-2 border-b border-[#22222A]">
                   <button onClick={() => toggleCondicao(c.id)} className="flex items-center gap-2.5 flex-1 text-left">
-                    {c.status === "ok" && <CheckCircle2 size={17} className="text-green-500 shrink-0" />}
-                    {c.status === "defeito" && <XCircle size={17} className="text-red-500 shrink-0" />}
-                    {c.status === "nao_testado" && <Circle size={17} className="text-[#4A4A54] shrink-0" />}
+                    {c.status === "ok" && <CheckCircle2 size={16} className="text-green-500"/>}
+                    {c.status === "defeito" && <XCircle size={16} className="text-red-500"/>}
+                    {c.status === "nao_testado" && <Circle size={16} className="text-[#4A4A54]"/>}
                     <span className={"text-sm " + (c.status === "defeito" ? "text-red-300" : "text-[#E5E5EA]")}>{c.item}</span>
                   </button>
-                  <button onClick={() => removeCondicaoItem(c.id)} className="text-[#5A5A64] hover:text-red-400 ml-2"><Trash2 size={14} /></button>
+                  <button onClick={() => removeCondicaoItem(c.id)} className="text-[#555560] hover:text-red-400"><Trash2 size={13}/></button>
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 mt-3 pt-3 border-t border-[#2A2A34]">
-              <Input placeholder="Adicionar item" value={novoItemCondicao} onChange={(e) => setNovoItemCondicao(e.target.value)} />
-              <Button onClick={addCondicaoItem} className="px-3"><Plus size={16} /></Button>
+            <div className="flex gap-2 mt-3">
+              <Input placeholder="Adicionar item de vistoria" value={novoItemCondicao} onChange={(e) => setNovoItemCondicao(e.target.value)}/>
+              <Button onClick={addCondicaoItem} className="px-3"><Plus size={15}/></Button>
             </div>
-            <Label><span className="mt-3 block">Observações gerais</span></Label>
-            <Textarea rows={2} placeholder="Ex: risco no canto superior direito da tela" value={detail.observacoesCondicao || ""} onChange={(e) => onSalvar({ ...detail, observacoesCondicao: e.target.value })} />
+            <div className="mt-3"><Label>Observações de avaria</Label><Textarea rows={2} value={detail.observacoesCondicao || ""} onChange={(e) => onSalvar({ ...detail, observacoesCondicao: e.target.value })} placeholder="Ex: trinca no canto superior direito, amassado na lateral..."/></div>
+            {detail.status === "recebido" && <Button className="w-full mt-4" onClick={concluirEntrada}><span className="flex items-center justify-center gap-2">Concluir entrada e iniciar diagnóstico <ArrowRight size={15}/></span></Button>}
           </Card>
         </div>
       )}
 
       {sub === "checklist" && (
         <Card>
-          <Label>Diagnóstico técnico</Label>
-          <div className="text-[11px] text-[#6E6E78] mb-2">Toque no item: não testado → OK → defeito</div>
-          <div className="divide-y divide-[#22222A]">
+          <div className="flex items-start justify-between mb-3">
+            <div><div className="text-sm font-medium text-white">Diagnóstico técnico</div><div className="text-xs text-[#73737E] mt-1">Registre somente o que foi efetivamente testado.</div></div>
+            {detail.status === "diagnostico" && <span className="text-[10px] text-blue-300 border border-blue-500/20 bg-blue-500/10 rounded-full px-2 py-1">EM DIAGNÓSTICO</span>}
+          </div>
+          <div className="grid md:grid-cols-2 gap-x-5">
             {detail.checklist.map((c) => (
-              <div key={c.id} className="flex items-center justify-between py-2.5">
+              <div key={c.id} className="flex items-center justify-between py-2 border-b border-[#22222A]">
                 <button onClick={() => toggleChecklist(c.id)} className="flex items-center gap-2.5 flex-1 text-left">
-                  {c.status === "ok" && <CheckCircle2 size={17} className="text-green-500 shrink-0" />}
-                  {c.status === "defeito" && <XCircle size={17} className="text-red-500 shrink-0" />}
-                  {c.status === "nao_testado" && <Circle size={17} className="text-[#4A4A54] shrink-0" />}
+                  {c.status === "ok" && <CheckCircle2 size={16} className="text-green-500"/>}
+                  {c.status === "defeito" && <XCircle size={16} className="text-red-500"/>}
+                  {c.status === "nao_testado" && <Circle size={16} className="text-[#4A4A54]"/>}
                   <span className={"text-sm " + (c.status === "defeito" ? "text-red-300" : "text-[#E5E5EA]")}>{c.item}</span>
                 </button>
-                <button onClick={() => removeChecklistItem(c.id)} className="text-[#5A5A64] hover:text-red-400 ml-2"><Trash2 size={14} /></button>
+                <button onClick={() => removeChecklistItem(c.id)} className="text-[#555560] hover:text-red-400"><Trash2 size={13}/></button>
               </div>
             ))}
           </div>
-          <div className="flex gap-2 mt-3 pt-3 border-t border-[#2A2A34]">
-            <Input placeholder="Adicionar item ao checklist" value={novoItem} onChange={(e) => setNovoItem(e.target.value)} />
-            <Button onClick={addChecklistItem} className="px-3"><Plus size={16} /></Button>
+          <div className="flex gap-2 mt-3">
+            <Input placeholder="Adicionar item ao checklist" value={novoItem} onChange={(e) => setNovoItem(e.target.value)}/>
+            <Button onClick={addChecklistItem} className="px-3"><Plus size={15}/></Button>
           </div>
-          <div className="mt-5 pt-4 border-t border-[#2A2A34]">
-            <Label>Diagnóstico técnico</Label>
-            <Textarea rows={5} value={detail.diagnosticoTecnico || ""} onChange={(e) => onSalvar({ ...detail, diagnosticoTecnico: e.target.value })} placeholder="Descreva o defeito encontrado, testes realizados e solução recomendada." />
+          <div className="mt-4 pt-4 border-t border-[#2A2A34]">
+            <Label>Laudo / diagnóstico</Label>
+            <Textarea rows={4} value={detail.diagnosticoTecnico || ""} onChange={(e) => onSalvar({ ...detail, diagnosticoTecnico: e.target.value })} placeholder="Defeito encontrado, testes realizados e solução recomendada."/>
           </div>
+          {detail.status === "diagnostico" && <Button className="w-full mt-4" onClick={prepararOrcamento}><span className="flex items-center justify-center gap-2">Concluir diagnóstico e montar orçamento <ArrowRight size={15}/></span></Button>}
         </Card>
       )}
 
-      {sub === "fotos" && (
-        <Card>
-          <Label>Fotos do aparelho</Label>
-          <div className="text-[11px] text-[#6E6E78] mb-3">Registre a condição na entrada, durante o reparo e na saída.</div>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleFotos} />
-          <Button variant="ghost" className="w-full mb-3" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            <span className="flex items-center justify-center gap-2"><Camera size={16} /> {uploading ? "Processando..." : "Adicionar foto"}</span>
-          </Button>
-          {detail.fotos.length === 0 ? (
-            <div className="text-sm text-[#5A5A64] text-center py-6 flex flex-col items-center gap-2"><ImageIcon size={22} className="text-[#3A3A46]" />Nenhuma foto ainda</div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {detail.fotos.map((f) => (
-                <div key={f.id} className="relative group">
-                  <img src={f.dataUrl} onClick={() => setFotoAmpliada(f)} className="w-full aspect-square object-cover rounded-lg border border-[#2A2A34] cursor-pointer" />
-                  <button onClick={() => removeFoto(f.id)} className="absolute top-1 right-1 bg-black/70 rounded-full p-1 text-white"><X size={12} /></button>
-                </div>
-              ))}
+      {sub === "orcamento" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div><div className="text-sm font-medium text-white">Orçamento</div><div className="text-xs text-[#73737E] mt-1">Peças entram automaticamente a partir da aba Peças.</div></div>
+              <span className={"text-[10px] uppercase tracking-[.14em] px-2.5 py-1.5 rounded-full border " + (aprovacao === "aprovado" ? "text-green-300 border-green-500/30 bg-green-500/10" : aprovacao === "recusado" ? "text-red-300 border-red-500/30 bg-red-500/10" : "text-amber-300 border-amber-500/30 bg-amber-500/10")}>{aprovacao === "aprovado" ? "Aprovado" : aprovacao === "recusado" ? "Recusado" : detail.status === "aguardando_aprovacao" ? "Aguardando cliente" : "Rascunho"}</span>
             </div>
-          )}
-        </Card>
+            <div className="grid md:grid-cols-3 gap-3">
+              <div><Label>Mão de obra</Label><Input inputMode="decimal" value={detail.valorMaoDeObra ?? ""} onChange={(e) => onSalvar({ ...detail, valorMaoDeObra: e.target.value.replace(",", ".") })} placeholder="R$ 0,00"/></div>
+              <div><Label>Peças</Label><div className="h-[42px] rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 flex items-center justify-between"><span className="font-mono text-[#E5E5EA]">{fmt(totalPecas)}</span><button onClick={() => setSub("pecas")} className="text-[11px] text-purple-300">editar</button></div></div>
+              <div><Label>Desconto</Label><Input inputMode="decimal" value={detail.orcamento?.desconto ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), desconto: e.target.value.replace(",", ".") } })} placeholder="R$ 0,00"/></div>
+            </div>
+            <div className="mt-4 rounded-xl border border-purple-500/20 bg-purple-500/[.06] p-4 flex items-center justify-between">
+              <div><div className="text-[10px] uppercase tracking-[.18em] text-purple-300">Total proposto</div><div className="text-xs text-[#777782] mt-1">Mão de obra + peças − desconto</div></div>
+              <div className="font-mono text-2xl text-white">{fmt(valorEstimado)}</div>
+            </div>
+            <div className="mt-4"><Label>Observação do orçamento</Label><Textarea rows={3} value={detail.orcamento?.observacao || ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), observacao: e.target.value } })} placeholder="Prazo, condição da peça, observações..."/></div>
+            {detail.status === "diagnostico" && <Button className="w-full mt-4" onClick={enviarOrcamento}><span className="flex items-center justify-center gap-2">Enviar orçamento e aguardar aprovação <ArrowRight size={15}/></span></Button>}
+          </Card>
+
+          <Card>
+            <Label>Decisão do cliente</Label>
+            <div className="text-xs text-[#73737E] mb-3">{detail.status === "aguardando_aprovacao" ? "Orçamento enviado. Registre a decisão quando o cliente responder." : aprovacao === "aprovado" ? "Orçamento aprovado e reparo liberado." : "Envie o orçamento antes de registrar a decisão."}</div>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <Button disabled={detail.status !== "aguardando_aprovacao"} onClick={() => registrarAprovacao("aprovado")}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Aprovar orçamento</span></Button>
+              <Button variant="danger" disabled={detail.status !== "aguardando_aprovacao"} onClick={() => registrarAprovacao("recusado")}><span className="flex items-center justify-center gap-2"><XCircle size={16}/> Registrar recusa</span></Button>
+            </div>
+            {detail.orcamento?.atualizadoEm && <div className="text-[11px] text-[#666672] mt-3">Última decisão: {fmtDateTime(detail.orcamento.atualizadoEm)}.</div>}
+          </Card>
+        </div>
       )}
 
       {sub === "pecas" && (
-        <Card>
-          <Label>Peças usadas no reparo</Label>
-          <div className="text-[11px] text-[#6E6E78] mb-3">Ao adicionar, a peça sai automaticamente do estoque.</div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]" />
-              <Input placeholder="Buscar peça no estoque" value={buscaPeca} onChange={(e) => setBuscaPeca(e.target.value)} className="pl-9" />
+        <div className="space-y-4">
+          <Card>
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div><div className="text-sm font-medium text-white">Peças do reparo</div><div className="text-xs text-[#73737E] mt-1">Use estoque quando existir ou lance uma peça avulsa/sob encomenda.</div></div>
+              <Button variant="ghost" onClick={() => setMostrarAvulsa(!mostrarAvulsa)}><span className="flex items-center gap-2"><Plus size={14}/> Peça avulsa</span></Button>
             </div>
-            <Stepper value={qtdPeca} onChange={setQtdPeca} />
-          </div>
-          {buscaPeca && (
-            <div className="space-y-1 mb-3 max-h-40 overflow-y-auto">
-              {pecasResultados.length === 0 && <div className="text-xs text-[#5A5A64] py-2">Nenhuma peça encontrada</div>}
+            <div className="flex items-center gap-2 mb-2">
+              <div className="relative flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input className="pl-9" placeholder="Buscar peça no estoque" value={buscaPeca} onChange={(e) => setBuscaPeca(e.target.value)}/></div>
+              <Stepper value={qtdPeca} onChange={setQtdPeca}/>
+            </div>
+            {buscaPeca && <div className="space-y-1 max-h-44 overflow-y-auto mb-3">
+              {pecasResultados.length === 0 && <div className="text-xs text-[#5A5A64] py-3">Nenhuma peça cadastrada com esse nome.</div>}
               {pecasResultados.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0F0F14] border border-[#2A2A34]">
-                  <div>
-                    <div className="text-sm text-[#E5E5EA]">{p.nome}</div>
-                    <div className="text-xs text-[#6E6E78]">{fmt(p.preco)} · <EstoqueBadge item={p} /> disponível</div>
-                  </div>
-                  <Button
-                    className="px-3 py-1.5"
-                    disabled={p.quantidade < qtdPeca}
-                    onClick={() => { onAddPeca(p, qtdPeca); setBuscaPeca(""); setQtdPeca(1); }}
-                  >
-                    <Plus size={14} />
-                  </Button>
+                <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-[#0F0F14] border border-[#2A2A34]">
+                  <div><div className="text-sm text-white">{p.nome}</div><div className="text-xs text-[#6E6E78]">{fmt(p.preco)} · estoque {p.quantidade}</div></div>
+                  <Button disabled={p.quantidade < qtdPeca} className="px-3" onClick={() => { onAddPeca(p, qtdPeca); setBuscaPeca(""); setQtdPeca(1); }}><Plus size={14}/></Button>
                 </div>
               ))}
-            </div>
-          )}
-          {detail.pecasUsadas.length === 0 ? (
-            <div className="text-sm text-[#5A5A64] text-center py-4">Nenhuma peça adicionada</div>
-          ) : (
-            <div className="divide-y divide-[#22222A]">
-              {detail.pecasUsadas.map((p) => (
-                <div key={p.id} className="flex items-center justify-between py-2">
-                  <div>
-                    <div className="text-sm text-[#E5E5EA]">{p.nome}</div>
-                    <div className="text-xs text-[#6E6E78]">{p.qtd}x {fmt(p.preco)}</div>
+            </div>}
+
+            {mostrarAvulsa && <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.04] p-4 mb-4">
+              <Label>Nova peça avulsa</Label>
+              <div className="grid md:grid-cols-4 gap-2 mt-2">
+                <Input className="md:col-span-2" placeholder="Descrição da peça" value={pecaAvulsa.nome} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, nome: e.target.value })}/>
+                <Input type="number" min="1" placeholder="Qtd." value={pecaAvulsa.qtd} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, qtd: e.target.value })}/>
+                <Input inputMode="decimal" placeholder="Valor cobrado" value={pecaAvulsa.preco} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, preco: e.target.value })}/>
+              </div>
+              <div className="grid md:grid-cols-[1fr_auto] gap-2 mt-2">
+                <Input inputMode="decimal" placeholder="Custo da peça (opcional)" value={pecaAvulsa.custo} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, custo: e.target.value })}/>
+                <Button onClick={adicionarPecaAvulsa}>Adicionar ao orçamento</Button>
+              </div>
+              <div className="text-[11px] text-[#666672] mt-2">Peça avulsa entra no orçamento, mas não altera o estoque.</div>
+            </div>}
+
+            {(detail.pecasUsadas || []).length === 0 ? <div className="text-sm text-[#5A5A64] text-center py-5">Nenhuma peça adicionada</div> :
+              <div className="divide-y divide-[#22222A]">
+                {detail.pecasUsadas.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between py-3">
+                    <div><div className="text-sm text-white">{p.nome}</div><div className="text-xs text-[#6E6E78]">{p.qtd}x {fmt(p.preco)} · {p.estoqueId ? "estoque" : "avulsa"}</div></div>
+                    <div className="flex items-center gap-3"><span className="font-mono text-sm">{fmt(p.preco * p.qtd)}</span><button onClick={() => onRemovePeca(p)} className="text-[#666672] hover:text-red-400"><Trash2 size={15}/></button></div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm text-[#E5E5EA]">{fmt(p.preco * p.qtd)}</span>
-                    <button onClick={() => onRemovePeca(p)} className="text-[#6E6E78] hover:text-red-400"><Trash2 size={15} /></button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>}
+            {(detail.pecasUsadas || []).length > 0 && <div className="flex justify-between border-t border-[#2A2A34] pt-3 mt-3"><span className="text-sm text-[#8A8A96]">Total em peças</span><span className="font-mono text-white">{fmt(totalPecas)}</span></div>}
+          </Card>
+        </div>
+      )}
+
+      {sub === "fotos" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div><div className="text-sm font-medium text-white">Vistoria fotográfica</div><div className="text-xs text-[#73737E] mt-1">Cada foto fica identificada por momento, ângulo e horário.</div></div>
+              <Camera size={18} className="text-purple-300"/>
             </div>
-          )}
-          {detail.pecasUsadas.length > 0 && (
-            <div className="flex justify-between mt-3 pt-3 border-t border-[#2A2A34]">
-              <span className="text-sm text-[#8A8A96]">Total em peças</span>
-              <span className="font-mono text-[#E5E5EA]">{fmt(totalPecas)}</span>
+
+            <div className="grid sm:grid-cols-3 gap-2">
+              <div><Label>Momento</Label><select value={fotoEtapa} onChange={(e) => setFotoEtapa(e.target.value)} className="w-full h-[42px] bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 text-sm outline-none"><option value="entrada">Entrada</option><option value="reparo">Durante o reparo</option><option value="saida">Saída</option></select></div>
+              <div><Label>Tipo / ângulo</Label><select value={fotoTipo} onChange={(e) => setFotoTipo(e.target.value)} className="w-full h-[42px] bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 text-sm outline-none"><option value="frente">Frente</option><option value="verso">Verso</option><option value="lateral_esquerda">Lateral esquerda</option><option value="lateral_direita">Lateral direita</option><option value="avaria">Avaria / detalhe</option><option value="adicional">Foto adicional</option></select></div>
+              <div><Label>Observação</Label><Input placeholder="Ex: trinca no canto..." value={fotoObs} onChange={(e) => setFotoObs(e.target.value)}/></div>
             </div>
-          )}
-        </Card>
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handleFotos}/>
+            <Button variant="ghost" className="w-full mt-3" onClick={() => fileRef.current?.click()} disabled={uploading}><span className="flex items-center justify-center gap-2"><Camera size={16}/> {uploading ? "Enviando..." : "Adicionar foto nesta etapa"}</span></Button>
+            <div className="text-[11px] text-[#60606A] mt-2">A V2.2 tenta salvar no Supabase Storage; se o bucket ainda não estiver disponível, mantém compatibilidade com o formato antigo.</div>
+          </Card>
+
+          {["entrada","reparo","saida"].map((etapa) => {
+            const fs = fotosDaEtapa(etapa);
+            const titulo = etapa === "entrada" ? "Entrada" : etapa === "reparo" ? "Durante o reparo" : "Saída";
+            return <Card key={etapa}>
+              <div className="flex items-center justify-between mb-3"><Label>{titulo}</Label><span className="text-[11px] text-[#666672]">{fs.length} foto(s)</span></div>
+              {fs.length === 0 ? <div className="text-sm text-[#555560] text-center py-5">Nenhuma foto nesta etapa</div> :
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {fs.map((f) => <div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] overflow-hidden">
+                    <div className="relative"><img src={f.dataUrl} onClick={() => setFotoAmpliada(f)} className="w-full aspect-square object-cover cursor-pointer"/><button onClick={() => removeFoto(f.id)} className="absolute top-1 right-1 bg-black/70 rounded-full p-1 text-white"><X size={12}/></button></div>
+                    <div className="p-2"><div className="text-[10px] uppercase tracking-wide text-purple-300">{(f.tipo || "foto").replaceAll("_"," ")}</div>{f.legenda && <div className="text-xs text-[#B7B7C0] mt-1">{f.legenda}</div>}<div className="text-[10px] text-[#555560] mt-1">{f.timestamp ? fmtDateTime(f.timestamp) : ""}</div></div>
+                  </div>)}
+                </div>}
+            </Card>;
+          })}
+        </div>
+      )}
+
+      {sub === "entrega" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="flex items-start justify-between gap-3 mb-4"><div><div className="text-sm font-medium text-white">Finalização do reparo</div><div className="text-xs text-[#73737E] mt-1">Faça os testes finais antes de liberar para retirada.</div></div><StatusBadge status={detail.status}/></div>
+            <div className="grid md:grid-cols-2 gap-2">
+              {testesFinais.map((t) => <button key={t.id} onClick={() => atualizarTeste(t.id)} className={"flex items-center gap-2 p-3 rounded-lg border text-left text-sm " + (t.status ? "border-green-500/30 bg-green-500/[.06] text-green-200" : "border-[#2A2A34] bg-[#0F0F14] text-[#B8B8C1]")}><CheckCircle2 size={16} className={t.status ? "text-green-400" : "text-[#44444D]"}/>{t.item}</button>)}
+            </div>
+            {detail.status === "em_reparo" && <Button className="w-full mt-4" disabled={!testesOk} onClick={finalizarReparo}><span className="flex items-center justify-center gap-2">Finalizar reparo e liberar para retirada <ArrowRight size={15}/></span></Button>}
+            {!testesOk && detail.status === "em_reparo" && <div className="text-[11px] text-amber-300/80 text-center mt-2">Conclua todos os testes para liberar o aparelho.</div>}
+          </Card>
+
+          <Card>
+            <div className="text-sm font-medium text-white mb-4">Entrega e garantia</div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div><Label>Garantia (dias)</Label><Input type="number" min="0" value={detail.entrega?.garantiaDias ?? 90} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), garantiaDias: Number(e.target.value) } })}/></div>
+              <div><Label>Valor final</Label><Input inputMode="decimal" value={detail.valorFinal ?? ""} placeholder={fmt(valorEstimado)} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })}/></div>
+              <div><Label>Pagamento</Label><select value={detail.entrega?.pagamentoStatus || "pendente"} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), pagamentoStatus: e.target.value } })} className="w-full h-[42px] bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 text-sm"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></div>
+              <div><Label>Forma</Label><select value={detail.entrega?.formaPagamento || "pix"} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), formaPagamento: e.target.value } })} className="w-full h-[42px] bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 text-sm"><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="outro">Outro</option></select></div>
+            </div>
+            <div className="mt-3"><Label>Observações de saída / garantia</Label><Textarea rows={3} value={detail.entrega?.observacoes || ""} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), observacoes: e.target.value } })} placeholder="Orientações, itens cobertos pela garantia, condição final..."/></div>
+            <div className="mt-4 p-3 rounded-xl border border-[#2A2A34] bg-[#0F0F14]"><div className="text-xs text-[#8A8A96]">Acessórios recebidos</div><div className="text-sm text-white mt-1">{detail.acessoriosRecebidos || "Nenhum acessório registrado"}</div></div>
+          </Card>
+
+          <Card>
+            <Label>Assinatura de retirada</Label>
+            <div className="text-[11px] text-[#6E6E78] mb-2">Confirma a retirada do aparelho e ciência da garantia.</div>
+            <SignaturePad
+              assinatura={detail.entrega?.assinaturaEntrega || null}
+              onSalvar={(dataUrl) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: { dataUrl, timestamp: new Date().toISOString() } } })}
+              onLimpar={() => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: null } })}
+            />
+            {detail.status === "pronto" && <Button className="w-full mt-4" onClick={finalizarEntrega}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Finalizar entrega e encerrar OS</span></Button>}
+            {detail.entrega?.entregueEm && <div className="text-[11px] text-green-300 text-center mt-3">Entregue em {fmtDateTime(detail.entrega.entregueEm)}</div>}
+          </Card>
+        </div>
       )}
 
       {sub === "termo" && (
         <div className="space-y-4">
           <Card>
-            <Label>Termo de condições de serviço</Label>
-            <Textarea rows={8} value={detail.termos ?? TERMO_PADRAO} onChange={(e) => onSalvar({ ...detail, termos: e.target.value })} className="text-xs leading-relaxed" />
+            <Label>Termo de entrada / condições do serviço</Label>
+            <Textarea rows={7} value={detail.termos ?? TERMO_PADRAO} onChange={(e) => onSalvar({ ...detail, termos: e.target.value })} className="text-xs leading-relaxed"/>
           </Card>
           <Card>
-            <Label>Assinatura do cliente</Label>
-            <div className="text-[11px] text-[#6E6E78] mb-2">O cliente assina na tela confirmando ciência dos termos acima.</div>
-            <SignaturePad
-              assinatura={detail.assinaturaCliente}
-              onSalvar={(dataUrl) => onSalvar({ ...detail, assinaturaCliente: { dataUrl, timestamp: new Date().toISOString() } })}
-              onLimpar={() => onSalvar({ ...detail, assinaturaCliente: null })}
-            />
+            <Label>Assinatura de entrada</Label>
+            <div className="text-[11px] text-[#6E6E78] mb-2">Confirma ciência da condição do aparelho, acessórios e condições de serviço.</div>
+            <SignaturePad assinatura={detail.assinaturaCliente} onSalvar={(dataUrl) => onSalvar({ ...detail, assinaturaCliente: { dataUrl, timestamp: new Date().toISOString() } })} onLimpar={() => onSalvar({ ...detail, assinaturaCliente: null })}/>
+          </Card>
+          <Card>
+            <Label>Registro da autorização</Label>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div><div className="text-xs text-[#777782]">Situação</div><div className="text-sm text-white mt-1 capitalize">{aprovacao === "rascunho" ? "Ainda não enviada" : aprovacao}</div></div>
+              <div><div className="text-xs text-[#777782]">Horário</div><div className="text-sm text-white mt-1">{detail.orcamento?.atualizadoEm ? fmtDateTime(detail.orcamento.atualizadoEm) : "—"}</div></div>
+            </div>
           </Card>
         </div>
       )}
@@ -1877,166 +2100,54 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
       {sub === "linha" && (
         <div className="space-y-4">
           <Card>
-            <Label>Andamento</Label>
-            <div className="mt-2 space-y-0">
-              {[...detail.timeline].reverse().map((t, idx) => (
+            <Label>Histórico automático</Label>
+            <div className="mt-3">
+              {[...(detail.timeline || [])].reverse().map((t, idx) => (
                 <div key={t.id} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <span className="w-2.5 h-2.5 rounded-full mt-1.5" style={{ backgroundColor: statusInfo(t.status).color }} />
-                    {idx < detail.timeline.length - 1 && <span className="w-px flex-1 bg-[#2A2A34]" />}
-                  </div>
-                  <div className="pb-4">
-                    <div className="text-sm text-[#E5E5EA]">{statusInfo(t.status).label}</div>
-                    <div className="text-[11px] text-[#6E6E78] flex items-center gap-1 mt-0.5"><Clock size={10} /> {fmtDateTime(t.timestamp)}</div>
-                    {t.obs && <div className="text-xs text-[#8A8A96] mt-1">{t.obs}</div>}
-                  </div>
+                  <div className="flex flex-col items-center"><span className="w-2.5 h-2.5 rounded-full mt-1.5" style={{ backgroundColor: statusInfo(t.status).color }}/>{idx < (detail.timeline || []).length - 1 && <span className="w-px flex-1 bg-[#2A2A34]"/>}</div>
+                  <div className="pb-4"><div className="text-sm text-white">{statusInfo(t.status).label}</div><div className="text-[11px] text-[#666672] mt-0.5">{fmtDateTime(t.timestamp)}</div>{t.obs && <div className="text-xs text-[#9A9AA4] mt-1">{t.obs}</div>}</div>
                 </div>
               ))}
             </div>
           </Card>
           <Card>
             <Label>Notificações ao cliente</Label>
-            <div className="text-[11px] text-[#6E6E78] mb-3">Registre quando o cliente foi avisado que o aparelho está pronto — importante para a taxa de armazenamento após 7 dias.</div>
-            <div className="flex gap-2 mb-3">
-              {[{ id: "whatsapp", label: "WhatsApp" }, { id: "ligacao", label: "Ligação" }, { id: "presencial", label: "Presencial" }].map((m) => (
-                <button key={m.id} onClick={() => setNotifMeio(m.id)} className={"flex-1 py-1.5 rounded-lg text-xs border " + (notifMeio === m.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
-                  {m.label}
-                </button>
-              ))}
+            <div className="flex gap-2 mt-2">
+              {[{id:"whatsapp",label:"WhatsApp"},{id:"ligacao",label:"Ligação"},{id:"presencial",label:"Presencial"}].map((m)=><button key={m.id} onClick={()=>setNotifMeio(m.id)} className={"flex-1 py-2 rounded-lg text-xs border "+(notifMeio===m.id?"border-purple-500 text-purple-300 bg-purple-500/10":"border-[#2A2A34] text-[#8A8A96]")}>{m.label}</button>)}
             </div>
-            <Button variant="ghost" className="w-full mb-3" onClick={registrarNotificacao}>
-              <span className="flex items-center justify-center gap-2"><BellRing size={15} /> Registrar notificação enviada</span>
-            </Button>
-            {(detail.notificacoes || []).length === 0 ? (
-              <div className="text-sm text-[#5A5A64] text-center py-2">Nenhuma notificação registrada</div>
-            ) : (
-              <div className="divide-y divide-[#22222A]">
-                {[...detail.notificacoes].reverse().map((n) => (
-                  <div key={n.id} className="py-2 text-sm text-[#C9C9D2] flex items-center justify-between">
-                    <span className="capitalize">{n.meio}</span>
-                    <span className="text-xs text-[#6E6E78]">{fmtDateTime(n.timestamp)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <Button variant="ghost" className="w-full mt-2" onClick={registrarNotificacao}><BellRing size={14} className="inline mr-2"/>Registrar aviso</Button>
+            <div className="divide-y divide-[#22222A] mt-3">{[...(detail.notificacoes || [])].reverse().map((n)=><div key={n.id} className="flex justify-between py-2 text-sm"><span className="capitalize">{n.meio}</span><span className="text-xs text-[#666672]">{fmtDateTime(n.timestamp)}</span></div>)}</div>
           </Card>
         </div>
       )}
 
-      {sub === "orcamento" && (
-        <div className="space-y-4">
-          <Card className="!rounded-2xl">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div><div className="text-sm font-medium text-white">Orçamento da OS</div><div className="text-xs text-[#74747F] mt-1">Monte o valor e registre a decisão do cliente.</div></div>
-              <span className={"text-[10px] uppercase tracking-[.14em] px-2.5 py-1.5 rounded-full border " + (aprovacao === "aprovado" ? "text-green-300 border-green-500/30 bg-green-500/10" : aprovacao === "recusado" ? "text-red-300 border-red-500/30 bg-red-500/10" : "text-amber-300 border-amber-500/30 bg-amber-500/10")}>{aprovacao === "aprovado" ? "Aprovado" : aprovacao === "recusado" ? "Recusado" : "Pendente"}</span>
-            </div>
-            <div className="grid md:grid-cols-3 gap-3">
-              <div><Label>Mão de obra</Label><Input inputMode="decimal" placeholder="R$ 0,00" value={detail.valorMaoDeObra} onChange={(e) => onSalvar({ ...detail, valorMaoDeObra: e.target.value.replace(",", ".") })} /></div>
-              <div><Label>Peças</Label><div className="h-[42px] rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 flex items-center font-mono text-[#E5E5EA]">{fmt(totalPecas)}</div></div>
-              <div><Label>Desconto</Label><Input inputMode="decimal" placeholder="R$ 0,00" value={detail.orcamento?.desconto ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), desconto: e.target.value.replace(",", ".") } })} /></div>
-            </div>
-            <div className="mt-4 rounded-xl border border-purple-500/20 bg-purple-500/[.06] p-4 flex items-center justify-between"><div><div className="text-[10px] uppercase tracking-[.18em] text-purple-300">Total proposto</div><div className="text-xs text-[#777782] mt-1">Mão de obra + peças − desconto</div></div><div className="font-mono text-2xl text-white">{fmt(valorEstimado)}</div></div>
-            <div className="mt-4"><Label>Observação do orçamento</Label><Textarea rows={3} value={detail.orcamento?.observacao || ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), observacao: e.target.value } })} placeholder="Ex: peça sob encomenda, prazo estimado de 2 dias úteis..." /></div>
-          </Card>
-          <Card className="!rounded-2xl">
-            <Label>Aprovação do cliente</Label>
-            <div className="text-xs text-[#73737E] mb-3">Registre somente depois que o cliente autorizar ou recusar o orçamento.</div>
-            <div className="grid sm:grid-cols-2 gap-2">
-              <Button onClick={() => registrarAprovacao("aprovado")}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Aprovar orçamento</span></Button>
-              <Button variant="danger" onClick={() => registrarAprovacao("recusado")}><span className="flex items-center justify-center gap-2"><XCircle size={16}/> Registrar recusa</span></Button>
-            </div>
-            {detail.orcamento?.atualizadoEm && <div className="text-[11px] text-[#666672] mt-3">Última decisão registrada em {fmtDateTime(detail.orcamento.atualizadoEm)}.</div>}
-          </Card>
-        </div>
-      )}
-
-      {sub === "entrega" && (
-        <div className="space-y-4">
-          <Card className="!rounded-2xl">
-            <div className="flex items-center justify-between gap-3 mb-4"><div><div className="text-sm font-medium text-white">Entrega e garantia</div><div className="text-xs text-[#74747F] mt-1">Finalize a OS somente quando o aparelho sair da loja.</div></div><StatusBadge status={detail.status}/></div>
-            <div className="grid sm:grid-cols-2 gap-3 mb-3">
-              <div><Label>Garantia do serviço (dias)</Label><Input type="number" min="0" value={detail.entrega?.garantiaDias ?? 90} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), garantiaDias: Number(e.target.value) } })} /></div>
-              <div><Label>Valor final cobrado</Label><Input inputMode="decimal" placeholder={fmt(valorEstimado)} value={detail.valorFinal} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })} /></div>
-            </div>
-            <Label>Observações de saída</Label><Textarea rows={4} value={detail.entrega?.observacoes || ""} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), observacoes: e.target.value } })} placeholder="Testes realizados na entrega, orientações ao cliente, condição final..." />
-          </Card>
-          <Card className="!rounded-2xl">
-            <div className="grid sm:grid-cols-3 gap-3 text-sm mb-4"><div><Label>Orçamento</Label><div className="text-white capitalize">{aprovacao === "rascunho" ? "pendente" : aprovacao}</div></div><div><Label>Garantia</Label><div className="text-white">{detail.entrega?.garantiaDias ?? 90} dias</div></div><div><Label>Total</Label><div className="font-mono text-white">{fmt(detail.valorFinal || valorEstimado)}</div></div></div>
-            <Button className="w-full" disabled={detail.status === "entregue"} onClick={finalizarEntrega}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> {detail.status === "entregue" ? "Entrega já finalizada" : "Finalizar entrega e encerrar OS"}</span></Button>
-            {detail.entrega?.entregueEm && <div className="text-[11px] text-green-300 text-center mt-3">Entregue em {fmtDateTime(detail.entrega.entregueEm)}</div>}
-          </Card>
-        </div>
-      )}
-
-      {fotoAmpliada && (
-        <div className="fixed inset-0 bg-black/90 z-20 flex items-center justify-center p-4" onClick={() => setFotoAmpliada(null)}>
-          <img src={fotoAmpliada.dataUrl} className="max-w-full max-h-[80vh] rounded-lg" />
-        </div>
-      )}
+      {fotoAmpliada && <div className="fixed inset-0 bg-black/90 z-20 flex items-center justify-center p-4" onClick={() => setFotoAmpliada(null)}><img src={fotoAmpliada.dataUrl} className="max-w-full max-h-[85vh] rounded-lg"/></div>}
 
       <style>{`
         .print-area { display: none; }
         @media print {
           body * { visibility: hidden; }
           .print-area, .print-area * { visibility: visible; }
-          .print-area { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 24px; color: #000; background: #fff; font-size: 12px; }
-          .print-area h1 { font-size: 18px; margin-bottom: 2px; }
+          .print-area { display: block; position: absolute; inset: 0; width: 100%; padding: 24px; color: #000; background: #fff; font-size: 12px; }
+          .print-area h1 { font-size: 18px; margin-bottom: 4px; }
           .print-area h2 { font-size: 13px; margin: 14px 0 6px; border-bottom: 1px solid #999; padding-bottom: 3px; }
         }
       `}</style>
       <div className="print-area">
         <h1>ENIGMA — Ordem de Serviço #{detail.numero}</h1>
-        <div>Data de entrada: {fmtDateTime(detail.dataEntrada)} · Status atual: {statusInfo(detail.status).label}</div>
-
-        <h2>Proprietário</h2>
-        <div>Nome: {detail.cliente.nome}</div>
-        <div>Telefone: {detail.cliente.telefone || "—"} · CPF: {detail.cliente.cpf || "—"}</div>
-        <div>Endereço: {detail.cliente.endereco || "—"}</div>
-
-        <h2>Aparelho</h2>
-        <div>{detail.aparelho.marcaModelo} ({detail.aparelho.tipo}){detail.aparelho.serial ? ` · série/IMEI: ${detail.aparelho.serial}` : ""}</div>
-        <div>Problema relatado: {detail.problemaRelatado}</div>
-
-        <h2>Condição na entrada</h2>
-        {(detail.condicaoAparelho || []).map((c) => (
-          <div key={c.id}>{c.item}: {c.status === "ok" ? "sem avaria" : c.status === "defeito" ? "com avaria" : "não verificado"}</div>
-        ))}
-        {detail.observacoesCondicao && <div>Observações: {detail.observacoesCondicao}</div>}
-
-        <h2>Checklist técnico</h2>
-        {detail.checklist.map((c) => (
-          <div key={c.id}>{c.item}: {c.status === "ok" ? "OK" : c.status === "defeito" ? "defeito" : "não testado"}</div>
-        ))}
-
-        {detail.pecasUsadas.length > 0 && (
-          <>
-            <h2>Peças utilizadas</h2>
-            {detail.pecasUsadas.map((p) => (<div key={p.id}>{p.qtd}x {p.nome} — {fmt(p.preco * p.qtd)}</div>))}
-          </>
-        )}
-
-        <h2>Valores</h2>
-        <div>Mão de obra: {fmt(detail.valorMaoDeObra)} · Peças: {fmt(totalPecas)} · Total estimado: {fmt(valorEstimado)}</div>
-        {detail.valorFinal && <div>Valor final cobrado: {fmt(detail.valorFinal)}</div>}
-
-        <h2>Termo de condições</h2>
-        <div style={{ whiteSpace: "pre-line" }}>{detail.termos ?? TERMO_PADRAO}</div>
-
-        <h2>Assinatura do cliente</h2>
-        {detail.assinaturaCliente ? (
-          <>
-            <img src={detail.assinaturaCliente.dataUrl} style={{ maxWidth: "260px", borderBottom: "1px solid #000" }} />
-            <div>Assinado em {fmtDateTime(detail.assinaturaCliente.timestamp)}</div>
-          </>
-        ) : (
-          <div>Assinatura pendente ______________________________</div>
-        )}
+        <div>Entrada: {fmtDateTime(detail.dataEntrada)} · Status: {statusInfo(detail.status).label}</div>
+        <h2>Cliente</h2><div>{detail.cliente.nome} · {detail.cliente.telefone || "—"} · CPF {detail.cliente.cpf || "—"}</div>
+        <h2>Aparelho</h2><div>{detail.aparelho.marcaModelo} {detail.aparelho.serial ? `· ${detail.aparelho.serial}` : ""}</div><div>Relato: {detail.problemaRelatado}</div>
+        <h2>Diagnóstico</h2><div>{detail.diagnosticoTecnico || "—"}</div>
+        <h2>Orçamento</h2><div>Mão de obra: {fmt(detail.valorMaoDeObra)} · Peças: {fmt(totalPecas)} · Desconto: {fmt(desconto)} · Total: {fmt(detail.valorFinal || valorEstimado)}</div>
+        <h2>Peças</h2>{(detail.pecasUsadas || []).map((pc)=><div key={pc.id}>{pc.qtd}x {pc.nome} — {fmt(pc.preco * pc.qtd)}</div>)}
+        <h2>Garantia</h2><div>{detail.entrega?.garantiaDias ?? 90} dias</div><div>{detail.entrega?.observacoes || ""}</div>
+        <h2>Termos</h2><div style={{ whiteSpace: "pre-wrap" }}>{detail.termos || TERMO_PADRAO}</div>
       </div>
     </div>
   );
 }
 
-/* ---------------- SignaturePad ---------------- */
 function SignaturePad({ assinatura, onSalvar, onLimpar }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
