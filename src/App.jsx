@@ -794,7 +794,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1551,7 +1551,7 @@ function imprimirTermoAquisicao(draft, calc) {
   const aq = draft?.aquisicao || {};
   const ins = draft?.inspecao || {};
   const numero = draft?.id ? String(draft.id).slice(0,8).toUpperCase() : ("TEMP-"+Date.now().toString().slice(-8));
-  const valor = Number(aq.valorFechado || draft?.oferta?.valorOfertado || 0);
+  const valor = Number(aq.valorFechado || draft?.oferta?.valorFinal || draft?.oferta?.valorOfertado || 0);
   const moeda = (n) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(Number(n)||0);
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Termo de Aquisição ${numero}</title>
   <style>
@@ -1696,6 +1696,15 @@ function somaCustosFalhas(falhas, aparelho, estoque, precificacao) {
   },0);
 }
 
+
+function eventoNegociacao(tipo, valor, detalhe="") {
+  return { id: `${Date.now()}-${Math.random().toString(36).slice(2,7)}`, tipo, valor:Number(valor)||0, detalhe, em:new Date().toISOString() };
+}
+function labelEventoNegociacao(ev) {
+  const map={oferta_enigma:"ENIGMA",contraproposta:"VENDEDOR",aceite:"ACEITO",recusa:"RECUSADO",reabertura:"REABERTO"};
+  return map[ev?.tipo] || String(ev?.tipo||"EVENTO").toUpperCase();
+}
+
 function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
   const [view, setView] = useState("lista");
   const [draft, setDraft] = useState(null);
@@ -1772,7 +1781,7 @@ function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
       inspecao: { estetica: null, observacoes: "", avarias: "", scanner: {} },
       testes: Object.fromEntries(TESTES_USADO.map((x) => [x, "nao_testado"])),
       precificacao: { mercadoMin: "", mercadoMax: "", custoOperacional: "", margemDesejada: 25, risco: 5, pecasSelecionadas: {}, reparosManuais: {}, referenciaId: null, referenciaFonte: "" },
-      oferta: { valorOfertado: "", observacoes: "" },
+      oferta: { valorOfertado: "", observacoes: "", historico: [], statusNegociacao: "aberta", contraproposta: "", valorFinal: "", reaberturas: 0 },
       aquisicao: { valorFechado: "", formaPagamento: "pix", termoAceito: false, observacoes: "" },
     });
     setView("form");
@@ -1812,8 +1821,9 @@ function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
   const riscoLabel = falhaCount >= 3 || Number(p.risco) >= 15 ? "ALTO" : falhaCount || Number(p.risco) >= 8 ? "MÉDIO" : "BAIXO";
   const enigmaScore = calcEnigmaScore(draft);
   const impactoEstetico = impactoEsteticoBase;
-  const ofertaInfo = ofertaClassificacao(draft?.oferta?.valorOfertado, compraMax);
-  const margemProjetada = Math.max(0, mercadoMedio - (Number(draft?.oferta?.valorOfertado)||0) - reparos - operacional);
+  const valorNegociacaoAtual = Number(draft?.oferta?.valorFinal || draft?.oferta?.contraproposta || draft?.oferta?.valorOfertado)||0;
+  const ofertaInfo = ofertaClassificacao(valorNegociacaoAtual, compraMax);
+  const margemProjetada = Math.max(0, mercadoMedio - valorNegociacaoAtual - reparos - operacional);
 
 
   async function persist(nextDraft = draft) {
@@ -2037,10 +2047,57 @@ function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
         </div>
       </div>}
 
-      {draft.etapa==="oferta" && <Card className="!rounded-2xl"><SectionCyber code="05" title="Oferta" sub="Defina o valor proposto ao vendedor"/>
-        <div className="grid md:grid-cols-4 gap-4 mt-5"><MetricCyber label="MERCADO MÉDIO" value={fmt(mercadoMedio)} sub="referência"/><MetricCyber label="LIMITE SEGURO" value={fmt(compraMax)} sub="calculado"/><div className="rounded-xl border border-purple-500/25 bg-purple-500/[.05] p-4"><Label>Valor ofertado</Label><Input type="number" value={draft.oferta.valorOfertado||""} onChange={e=>upd("oferta","valorOfertado",e.target.value)}/></div><div className={"rounded-xl border p-4 "+ofertaInfo.bg}><div className="text-[9px] tracking-[.22em] text-[#747480]">DECISÃO ENIGMA</div><div className={"text-sm font-mono mt-2 "+ofertaInfo.cls}>{ofertaInfo.label}</div><div className="text-[10px] text-[#666672] mt-2">Margem projetada: {fmt(margemProjetada)}</div></div></div>
-        <Field label="Observações da negociação"><Textarea className="mt-4" rows={3} value={draft.oferta.observacoes||""} onChange={e=>upd("oferta","observacoes",e.target.value)}/></Field>
-        <FlowNext onClick={()=>goStep("aquisicao")} label="Oferta aceita · preparar aquisição"/>
+      {draft.etapa==="oferta" && <Card className="!rounded-2xl">
+        <SectionCyber code="05" title="Negociação" sub="Histórico interno • proposta • contraproposta • aceite"/>
+        {draft.oferta?.statusNegociacao==="fechada" && <div className="mt-5 rounded-xl border border-green-500/25 bg-green-500/[.045] p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div><div className="text-[9px] tracking-[.24em] text-green-400">NEGOCIAÇÃO ENCERRADA</div><div className="text-lg font-mono text-white mt-1">{fmt(draft.oferta.valorFinal)}</div><div className="text-[10px] text-[#70707B] mt-1">Valor final enviado para Aquisição. O histórico permanece somente interno.</div></div>
+          <button type="button" onClick={()=>{if(!confirm("Reabrir esta negociação? A ocorrência ficará registrada no histórico interno."))return; const ev=eventoNegociacao("reabertura",draft.oferta.valorFinal,"Negociação reaberta"); setDraft(d=>({...d,oferta:{...(d.oferta||{}),statusNegociacao:"aberta",valorFinal:"",contraproposta:"",reaberturas:(Number(d.oferta?.reaberturas)||0)+1,historico:[...(d.oferta?.historico||[]),ev]}}));}} className="text-[10px] px-3 py-2 rounded-lg border border-white/10 text-[#8A8A95] hover:text-white">Reabrir negociação</button>
+        </div>}
+
+        <div className="grid md:grid-cols-4 gap-4 mt-5">
+          <MetricCyber label="MERCADO MÉDIO" value={fmt(mercadoMedio)} sub="referência"/>
+          <MetricCyber label="OFERTA INICIAL" value={fmt(compraMax*.88)} sub="motor ENIGMA"/>
+          <MetricCyber label="COMPRA IDEAL" value={fmt(compraMax*.95)} sub="faixa saudável"/>
+          <MetricCyber label="TETO ABSOLUTO" value={fmt(compraMax)} sub="limite recomendado"/>
+        </div>
+
+        {draft.oferta?.statusNegociacao!=="fechada" && <div className="grid lg:grid-cols-[1fr_320px] gap-4 mt-5">
+          <div className="space-y-4">
+            <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4">
+              <div className="text-[9px] tracking-[.22em] text-purple-300 mb-3">NOVA OFERTA ENIGMA</div>
+              <div className="flex flex-col sm:flex-row gap-2"><Input type="number" placeholder="Valor da oferta" value={draft.oferta.valorOfertado||""} onChange={e=>upd("oferta","valorOfertado",e.target.value)}/><Button onClick={()=>{const v=Number(draft.oferta.valorOfertado)||0;if(!v)return alert("Informe o valor da oferta.");const ev=eventoNegociacao("oferta_enigma",v);setDraft(d=>({...d,oferta:{...(d.oferta||{}),contraproposta:"",historico:[...(d.oferta?.historico||[]),ev]}}));}}>Registrar oferta</Button></div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[.018] p-4">
+              <div className="text-[9px] tracking-[.22em] text-[#8A8A95] mb-3">RESPOSTA DO VENDEDOR</div>
+              <div className="grid sm:grid-cols-3 gap-2">
+                <button type="button" onClick={()=>{const ultimo=[...(draft.oferta?.historico||[])].reverse().find(x=>x.tipo==="oferta_enigma");const v=Number(ultimo?.valor||draft.oferta.valorOfertado)||0;if(!v)return alert("Registre uma oferta primeiro.");if(v>compraMax && compraMax>0 && !confirm(`ATENÇÃO: ${fmt(v)} está acima do teto ENIGMA de ${fmt(compraMax)}. Deseja registrar a exceção e continuar?`))return;const ev=eventoNegociacao("aceite",v,v>compraMax?"Aquisição aceita acima do teto recomendado":"");setDraft(d=>({...d,oferta:{...(d.oferta||{}),valorFinal:v,statusNegociacao:"fechada",acimaDoTeto:v>compraMax,historico:[...(d.oferta?.historico||[]),ev]},aquisicao:{...(d.aquisicao||{}),valorFechado:v}}));}} className="rounded-lg border border-green-500/25 bg-green-500/[.04] p-3 text-xs text-green-300 hover:bg-green-500/[.08]">ACEITOU</button>
+                <button type="button" onClick={()=>setDraft(d=>({...d,oferta:{...(d.oferta||{}),aguardandoContraproposta:true}}))} className="rounded-lg border border-amber-400/25 bg-amber-400/[.035] p-3 text-xs text-amber-300 hover:bg-amber-400/[.07]">CONTRAPROPOSTA</button>
+                <button type="button" onClick={()=>{const ev=eventoNegociacao("recusa",0);setDraft(d=>({...d,oferta:{...(d.oferta||{}),historico:[...(d.oferta?.historico||[]),ev]}}));}} className="rounded-lg border border-red-500/20 bg-red-500/[.03] p-3 text-xs text-red-300 hover:bg-red-500/[.07]">RECUSOU</button>
+              </div>
+              {draft.oferta?.aguardandoContraproposta && <div className="flex flex-col sm:flex-row gap-2 mt-3"><Input type="number" placeholder="Valor pedido pelo vendedor" value={draft.oferta.contraproposta||""} onChange={e=>upd("oferta","contraproposta",e.target.value)}/><Button variant="ghost" onClick={()=>{const v=Number(draft.oferta.contraproposta)||0;if(!v)return alert("Informe a contraproposta.");const ev=eventoNegociacao("contraproposta",v);setDraft(d=>({...d,oferta:{...(d.oferta||{}),aguardandoContraproposta:false,historico:[...(d.oferta?.historico||[]),ev]}}));}}>Registrar contraproposta</Button></div>}
+            </div>
+          </div>
+
+          <div className={"rounded-xl border p-4 "+ofertaInfo.bg}>
+            <div className="text-[9px] tracking-[.22em] text-[#747480]">DECISÃO ENIGMA</div>
+            <div className={"text-base font-mono mt-2 "+ofertaInfo.cls}>{ofertaInfo.label}</div>
+            <div className="text-[10px] text-[#666672] mt-2">Valor em análise: {fmt(valorNegociacaoAtual)}</div>
+            <div className="text-[10px] text-[#666672] mt-1">Margem projetada: {fmt(margemProjetada)}</div>
+            {valorNegociacaoAtual>compraMax && compraMax>0 && <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/[.04] p-3 text-[10px] text-red-300">⚠ Valor acima do teto recomendado. Se houver aceite, o sistema exigirá confirmação explícita.</div>}
+          </div>
+        </div>}
+
+        <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
+          <div className="flex items-center justify-between gap-3"><div><div className="text-[9px] tracking-[.24em] text-cyan-300">TIMELINE INTERNA</div><div className="text-[10px] text-[#60606B] mt-1">Não aparece no Termo de Aquisição.</div></div><div className="text-[9px] font-mono text-[#555560]">{(draft.oferta?.historico||[]).length} EVENTOS</div></div>
+          {!(draft.oferta?.historico||[]).length ? <div className="text-xs text-[#5F5F69] mt-4">Nenhuma movimentação registrada.</div> :
+          <div className="mt-4 flex flex-wrap items-center gap-2">{(draft.oferta.historico||[]).map((ev,i)=><React.Fragment key={ev.id||i}><div className={"rounded-lg border px-3 py-2 "+(ev.tipo==="aceite"?"border-green-500/25 bg-green-500/[.04]":ev.tipo==="contraproposta"?"border-amber-400/20 bg-amber-400/[.03]":ev.tipo==="recusa"?"border-red-500/20 bg-red-500/[.03]":"border-purple-500/20 bg-purple-500/[.03]")}><div className="text-[8px] tracking-[.18em] text-[#70707B]">{labelEventoNegociacao(ev)}</div><div className="text-xs font-mono text-white mt-1">{ev.valor ? fmt(ev.valor) : "—"}</div><div className="text-[8px] text-[#50505A] mt-1">{ev.em ? new Date(ev.em).toLocaleString("pt-BR") : ""}</div></div>{i<(draft.oferta.historico||[]).length-1 && <ArrowRight size={12} className="text-[#44444E]"/>}</React.Fragment>)}</div>}
+        </div>
+
+        {draft.oferta?.statusNegociacao==="fechada" && <div className="mt-5">
+          <Button onClick={()=>goStep("aquisicao")}>Fechar negociação e preparar aquisição <ArrowRight size={15} className="inline ml-2"/></Button>
+        </div>}
+        {draft.oferta?.statusNegociacao!=="fechada" && <div className="mt-5 text-[10px] text-[#666672]">A etapa de Aquisição será liberada quando o vendedor aceitar uma oferta.</div>}
       </Card>}
 
       {draft.etapa==="aquisicao" && <Card className="!rounded-2xl"><SectionCyber code="06" title="Aquisição" sub="Fechamento, termo e entrada futura no estoque de seminovos"/>
