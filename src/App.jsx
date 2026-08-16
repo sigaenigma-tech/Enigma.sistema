@@ -4,7 +4,8 @@ import {
   Search, ClipboardList, Smartphone, User, Phone, ChevronLeft, Trash2,
   Plus, Clock, AlertCircle, X, Wallet, Lock, Unlock, Check, ShoppingBag,
   TrendingUp, Package, ChevronRight, ChevronDown, Printer, PenTool,
-  BellRing, Eraser, Minus
+  BellRing, Eraser, Minus, LayoutDashboard, Users, Settings, Headset,
+  BarChart3, Wrench, Sparkles, ArrowUpRight
 } from "lucide-react";
 
 /* ---------------- Supabase ---------------- */
@@ -48,7 +49,7 @@ function rowToVenda(r) {
   return { id: r.id, timestamp: r.timestamp, itens: r.itens, formaPagamento: r.forma_pagamento, total: Number(r.total) };
 }
 function rowToOSIndex(r) {
-  return { id: r.id, numero: r.numero, clienteNome: r.cliente?.nome || "", aparelho: r.aparelho?.marcaModelo || "", status: r.status, dataEntrada: r.data_entrada };
+  return { id: r.id, numero: r.numero, clienteNome: r.cliente?.nome || "", clienteTelefone: r.cliente?.telefone || "", aparelho: r.aparelho?.marcaModelo || "", status: r.status, dataEntrada: r.data_entrada };
 }
 function rowToOSDetail(r) {
   return {
@@ -216,7 +217,7 @@ function EstoqueBadge({ item }) {
 /* ============================================================ */
 export default function EnigmaSistema() {
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("pdv");
+  const [tab, setTab] = useState("dashboard");
   const [saveError, setSaveError] = useState(false);
 
   const [estoque, setEstoque] = useState([]);
@@ -454,14 +455,27 @@ export default function EnigmaSistema() {
 
   const caixaAberto = !!caixaAtual;
 
+  const navigate = (t) => {
+    setTab(t);
+    if (t === "os") setOsView("lista");
+  };
+
   return (
-    <div className="min-h-screen bg-[#0A0A0F] text-[#F2F2F5] font-sans pb-20">
+    <div className="min-h-screen bg-[#09090D] text-[#F2F2F5] font-sans md:pl-64 pb-20 md:pb-0">
+      <SideNav tab={tab} setTab={navigate} />
       <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} />
-      <main className="max-w-2xl mx-auto px-4 pt-5">
-        {tab === "pdv" && (
-          <PDVTab caixaAtual={caixaAtual} estoque={estoque} onVenda={registrarVenda} onIrParaCaixa={() => setTab("caixa")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+      <MobileSectionNav tab={tab} setTab={navigate} />
+      <main className="max-w-6xl mx-auto px-4 md:px-8 pt-6 pb-10">
+        {tab === "dashboard" && (
+          <DashboardTab caixaAtual={caixaAtual} osIndex={osIndex} estoque={estoque} onNavigate={navigate} onNovaOS={() => { setTab("os"); setOsView("nova"); }} />
         )}
-        {tab === "caixa" && <CaixaTab caixaAtual={caixaAtual} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
+        {tab === "atendimento" && (
+          <AtendimentoTab osIndex={osIndex} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />
+        )}
+        {tab === "pdv" && (
+          <PDVTab caixaAtual={caixaAtual} estoque={estoque} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+        )}
+        {tab === "financeiro" && <CaixaTab caixaAtual={caixaAtual} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
           <ListaOS index={osIndex} onAbrir={abrirDetalheOS} onNova={() => setOsView("nova")} />
         )}
@@ -469,35 +483,77 @@ export default function EnigmaSistema() {
         {tab === "os" && osView === "detalhe" && (
           <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
+        {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
+        {tab === "config" && <ConfiguracoesTab />}
       </main>
-      <BottomNav tab={tab} setTab={(t) => { setTab(t); if (t === "os") setOsView("lista"); }} />
+      <BottomNav tab={tab} setTab={navigate} />
     </div>
   );
 }
 
-function Header({ caixaAberto, saveError, tab, osView, onVoltarOS }) {
+const NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "atendimento", label: "Atendimento", icon: Headset },
+  { id: "os", label: "Ordens de Serviço", short: "OS", icon: ClipboardList },
+  { id: "pdv", label: "PDV", icon: ShoppingBag },
+  { id: "clientes", label: "Clientes", icon: Users },
+  { id: "estoque", label: "Estoque", icon: Package },
+  { id: "financeiro", label: "Financeiro", icon: Wallet },
+  { id: "relatorio", label: "Relatórios", icon: BarChart3 },
+  { id: "config", label: "Configurações", icon: Settings },
+];
+
+function SideNav({ tab, setTab }) {
   return (
-    <header className="border-b border-[#2A2A34] bg-[#0A0A0F]/90 backdrop-blur sticky top-0 z-10">
-      <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+    <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 border-r border-white/10 bg-[#0C0C12] z-20 flex-col">
+      <div className="px-6 py-6 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600/30 to-blue-500/20 border border-purple-400/30 flex items-center justify-center shadow-[0_0_25px_rgba(139,92,246,.12)]">
+            <Sparkles size={18} className="text-purple-300" />
+          </div>
+          <div>
+            <div className="text-[10px] tracking-[.24em] uppercase text-[#72727D]">Sistema</div>
+            <div className="font-bold tracking-[.22em] text-white">ENIGMA</div>
+          </div>
+        </div>
+      </div>
+      <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
+        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setTab(id)} className={"w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition border " + (tab === id ? "bg-purple-500/10 border-purple-500/25 text-white shadow-[inset_3px_0_0_#8B5CF6]" : "border-transparent text-[#8A8A96] hover:text-white hover:bg-white/[.035]") }>
+            <Icon size={17} className={tab === id ? "text-purple-300" : ""} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2</div>
+    </aside>
+  );
+}
+
+function Header({ caixaAberto, saveError, tab, osView, onVoltarOS }) {
+  const current = NAV_ITEMS.find((item) => item.id === tab);
+  return (
+    <header className="border-b border-white/10 bg-[#09090D]/90 backdrop-blur-xl sticky top-0 z-10">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-3">
         {tab === "os" && osView === "detalhe" ? (
-          <button onClick={onVoltarOS} className="flex items-center gap-1 text-[#C9C9D2] text-sm">
+          <button onClick={onVoltarOS} className="flex items-center gap-1.5 text-[#C9C9D2] text-sm hover:text-white">
             <ChevronLeft size={18} /> Ordens de Serviço
           </button>
         ) : (
           <div>
-            <div className="text-[11px] tracking-[0.25em] text-[#8A8A96] uppercase">Assistência Técnica</div>
-            <div className="text-lg font-bold tracking-widest text-white">ENIGMA</div>
+            <div className="md:hidden text-[10px] tracking-[0.23em] text-purple-400 uppercase mb-0.5">ENIGMA OS</div>
+            <div className="text-lg md:text-xl font-semibold text-white">{current?.label || "ENIGMA"}</div>
           </div>
         )}
         <div className="flex items-center gap-2">
-          {saveError && <span className="flex items-center gap-1 text-[11px] text-red-400"><AlertCircle size={13} /> não salvo</span>}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#2A2A34] bg-[#131318]">
-            <span className={"w-2 h-2 rounded-full " + (caixaAberto ? "bg-purple-500 shadow-[0_0_8px_2px_rgba(168,85,247,0.7)] animate-pulse" : "bg-[#4A4A54]")} />
-            <span className="text-xs tracking-wide text-[#C9C9D2]">{caixaAberto ? "Caixa aberto" : "Caixa fechado"}</span>
+          {saveError && <span className="hidden sm:flex items-center gap-1 text-[11px] text-red-400"><AlertCircle size={13} /> conexão</span>}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/[.03]">
+            <span className={"w-2 h-2 rounded-full " + (caixaAberto ? "bg-emerald-400 shadow-[0_0_9px_rgba(52,211,153,.7)]" : "bg-[#4A4A54]")} />
+            <span className="text-[11px] tracking-wide text-[#B5B5BF] hidden sm:block">{caixaAberto ? "Caixa aberto" : "Caixa fechado"}</span>
           </div>
         </div>
       </div>
@@ -505,25 +561,163 @@ function Header({ caixaAberto, saveError, tab, osView, onVoltarOS }) {
   );
 }
 
-function BottomNav({ tab, setTab }) {
-  const items = [
-    { id: "pdv", label: "PDV", icon: ShoppingBag },
-    { id: "os", label: "OS", icon: ClipboardList },
-    { id: "estoque", label: "Estoque", icon: Package },
-    { id: "caixa", label: "Caixa", icon: Wallet },
-    { id: "relatorio", label: "Diário", icon: TrendingUp },
-  ];
+function MobileSectionNav({ tab, setTab }) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-[#0D0D12]/95 backdrop-blur border-t border-[#2A2A34] z-10">
-      <div className="max-w-2xl mx-auto grid grid-cols-5">
-        {items.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => setTab(id)} className={"flex flex-col items-center gap-1 py-3 text-[10px] tracking-wide transition-colors " + (tab === id ? "text-purple-400" : "text-[#6E6E78]")}>
+    <div className="md:hidden sticky top-[65px] z-[9] bg-[#09090D]/95 backdrop-blur-xl border-b border-white/[.06] overflow-x-auto no-scrollbar">
+      <div className="flex gap-1 px-3 py-2 min-w-max">
+        {NAV_ITEMS.map(({ id, short, label }) => (
+          <button key={id} onClick={() => setTab(id)} className={"px-3 py-1.5 rounded-lg text-[10px] border transition " + (tab === id ? "border-purple-500/30 bg-purple-500/10 text-purple-200" : "border-transparent text-[#666672]")}>{short || label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ tab, setTab }) {
+  const core = NAV_ITEMS.filter((item) => ["dashboard", "os", "pdv", "estoque", "financeiro"].includes(item.id));
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0C0C12]/95 backdrop-blur-xl border-t border-white/10 z-20">
+      <div className="grid grid-cols-5">
+        {core.map(({ id, short, label, icon: Icon }) => (
+          <button key={id} onClick={() => setTab(id)} className={"flex flex-col items-center gap-1 py-3 text-[9px] tracking-wide transition-colors " + (tab === id ? "text-purple-300" : "text-[#62626D]")}>
             <Icon size={17} />
-            {label}
+            {short || label}
           </button>
         ))}
       </div>
     </nav>
+  );
+}
+
+/* ================= DASHBOARD / CRM ================= */
+function MetricCard({ label, value, helper, icon: Icon, accent = "purple" }) {
+  const accents = {
+    purple: "from-purple-500/15 border-purple-500/20 text-purple-300",
+    blue: "from-blue-500/15 border-blue-500/20 text-blue-300",
+    green: "from-emerald-500/15 border-emerald-500/20 text-emerald-300",
+    amber: "from-amber-500/15 border-amber-500/20 text-amber-300",
+  };
+  return (
+    <div className={"rounded-2xl border bg-gradient-to-br to-transparent p-4 " + accents[accent]}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] tracking-[.13em] uppercase text-[#858590]">{label}</div>
+          <div className="text-2xl font-semibold text-white mt-1">{value}</div>
+          {helper && <div className="text-xs text-[#6F6F79] mt-1">{helper}</div>}
+        </div>
+        <div className="w-9 h-9 rounded-xl bg-white/[.045] border border-white/10 flex items-center justify-center"><Icon size={17} /></div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
+  const vendas = caixaAtual?.vendas || [];
+  const totalHoje = totalGeral(vendas);
+  const abertas = osIndex.filter((os) => !["entregue", "cancelado"].includes(os.status));
+  const aguardando = osIndex.filter((os) => os.status === "aguardando_aprovacao");
+  const prontas = osIndex.filter((os) => os.status === "pronto");
+  const estoqueBaixo = estoque.filter((p) => p.quantidade <= p.estoqueMinimo);
+  const recentes = osIndex.slice(0, 5);
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,.14),transparent_35%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
+        <div className="relative z-[1] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+          <div>
+            <div className="inline-flex items-center gap-2 text-[10px] tracking-[.18em] uppercase text-purple-300 border border-purple-400/20 bg-purple-500/10 rounded-full px-3 py-1 mb-3"><Sparkles size={12}/> Central operacional</div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-white">Tudo o que precisa da sua atenção, em um lugar.</h1>
+            <p className="text-sm text-[#8E8E99] mt-2 max-w-2xl">Acompanhe vendas, reparos, caixa e estoque sem navegar por várias telas.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={16}/> Nova OS</span></Button>
+            <Button variant="ghost" onClick={() => onNavigate("pdv")}><span className="flex items-center gap-2"><ShoppingBag size={16}/> Nova venda</span></Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <MetricCard label="Vendas do caixa" value={fmt(totalHoje)} helper={`${vendas.length} venda(s)`} icon={TrendingUp} accent="green" />
+        <MetricCard label="OS em andamento" value={abertas.length} helper="não finalizadas" icon={Wrench} accent="purple" />
+        <MetricCard label="Aguardando cliente" value={aguardando.length} helper="aprovação pendente" icon={Clock} accent="amber" />
+        <MetricCard label="Prontas" value={prontas.length} helper="para retirada" icon={CheckCircle2} accent="blue" />
+      </section>
+
+      <section className="grid lg:grid-cols-[1.6fr_.9fr] gap-4">
+        <Card className="!rounded-2xl !p-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+            <div><div className="font-medium text-white">Ordens recentes</div><div className="text-xs text-[#6F6F79]">Movimentação mais recente da assistência</div></div>
+            <button onClick={() => onNavigate("os")} className="text-xs text-purple-300 flex items-center gap-1">Ver todas <ArrowUpRight size={13}/></button>
+          </div>
+          <div className="divide-y divide-white/[.06]">
+            {recentes.length === 0 && <div className="px-5 py-8 text-sm text-[#666672] text-center">Nenhuma OS cadastrada.</div>}
+            {recentes.map((os) => (
+              <button key={os.id} onClick={() => { onNavigate("os"); }} className="w-full px-5 py-3.5 flex items-center justify-between gap-4 text-left hover:bg-white/[.025]">
+                <div className="min-w-0"><div className="text-sm text-white truncate">#{os.numero} · {os.clienteNome || "Cliente"}</div><div className="text-xs text-[#6F6F79] truncate">{os.aparelho || "Aparelho não informado"}</div></div>
+                <StatusBadge status={os.status}/>
+              </button>
+            ))}
+          </div>
+        </Card>
+        <div className="space-y-4">
+          <Card className="!rounded-2xl">
+            <div className="flex items-center justify-between mb-3"><div className="font-medium text-white">Estoque crítico</div><Package size={17} className="text-red-300"/></div>
+            {estoqueBaixo.length === 0 ? <div className="text-sm text-[#74747F]">Nenhum item em nível crítico.</div> : (
+              <div className="space-y-2">{estoqueBaixo.slice(0,5).map((p) => <div key={p.id} className="flex items-center justify-between text-sm"><span className="text-[#BDBDC6] truncate mr-3">{p.nome}</span><span className="font-mono text-red-300">{p.quantidade}</span></div>)}</div>
+            )}
+            <button onClick={() => onNavigate("estoque")} className="mt-4 text-xs text-purple-300">Abrir estoque →</button>
+          </Card>
+          <Card className="!rounded-2xl">
+            <div className="text-[11px] uppercase tracking-[.14em] text-[#74747F] mb-2">Caixa</div>
+            <div className="flex items-center gap-2"><span className={"w-2 h-2 rounded-full " + (caixaAtual ? "bg-emerald-400" : "bg-[#55555F]")}/><span className="text-sm text-white">{caixaAtual ? "Operação aberta" : "Caixa fechado"}</span></div>
+            <button onClick={() => onNavigate("financeiro")} className="mt-4 text-xs text-purple-300">Gerenciar caixa →</button>
+          </Card>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AtendimentoTab({ osIndex, onNovaOS, onAbrirOS }) {
+  const [busca, setBusca] = useState("");
+  const filtradas = osIndex.filter((os) => `${os.clienteNome} ${os.clienteTelefone} ${os.aparelho} ${os.numero}`.toLowerCase().includes(busca.toLowerCase()));
+  return (
+    <div className="space-y-4">
+      <Card className="!rounded-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between mb-4">
+          <div><div className="font-medium text-white">Atendimento rápido</div><div className="text-xs text-[#74747F]">Localize cliente, aparelho ou OS antes de abrir um novo atendimento.</div></div>
+          <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={15}/> Abrir nova OS</span></Button>
+        </div>
+        <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={(e)=>setBusca(e.target.value)} placeholder="Cliente, telefone, aparelho ou número da OS" className="pl-9"/></div>
+      </Card>
+      {busca && <Card className="!rounded-2xl !p-0 overflow-hidden"><div className="divide-y divide-white/[.06]">{filtradas.length === 0 ? <div className="p-6 text-sm text-[#696974] text-center">Nenhum atendimento encontrado.</div> : filtradas.slice(0,20).map((os)=><button key={os.id} onClick={()=>onAbrirOS(os.id)} className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-white/[.025]"><div><div className="text-sm text-white">{os.clienteNome || "Cliente"} · #{os.numero}</div><div className="text-xs text-[#6F6F79]">{os.clienteTelefone || "Sem telefone"} · {os.aparelho}</div></div><StatusBadge status={os.status}/></button>)}</div></Card>}
+    </div>
+  );
+}
+
+function ClientesTab({ osIndex, onAbrirOS }) {
+  const [busca, setBusca] = useState("");
+  const mapa = new Map();
+  osIndex.forEach((os) => {
+    const key = (os.clienteTelefone || os.clienteNome || `os-${os.id}`).trim().toLowerCase();
+    if (!mapa.has(key)) mapa.set(key, { nome: os.clienteNome || "Cliente", telefone: os.clienteTelefone || "", ordens: [] });
+    mapa.get(key).ordens.push(os);
+  });
+  const clientes = [...mapa.values()].filter((c)=>`${c.nome} ${c.telefone}`.toLowerCase().includes(busca.toLowerCase()));
+  return (
+    <div className="space-y-4">
+      <Card className="!rounded-2xl"><div className="flex items-center justify-between gap-4 mb-4"><div><div className="font-medium text-white">Base de clientes</div><div className="text-xs text-[#74747F]">Gerada a partir do histórico atual de ordens de serviço.</div></div><div className="text-2xl font-semibold">{clientes.length}</div></div><div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={(e)=>setBusca(e.target.value)} placeholder="Buscar cliente ou telefone" className="pl-9"/></div></Card>
+      <div className="grid md:grid-cols-2 gap-3">{clientes.map((c)=><Card key={`${c.telefone}-${c.nome}`} className="!rounded-2xl"><div className="flex items-start gap-3"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><User size={17}/></div><div className="min-w-0 flex-1"><div className="text-sm font-medium text-white truncate">{c.nome}</div><div className="text-xs text-[#777782]">{c.telefone || "Telefone não informado"}</div><div className="text-xs text-[#5F5F69] mt-2">{c.ordens.length} ordem(ns) de serviço</div></div><button onClick={()=>onAbrirOS(c.ordens[0].id)} className="text-purple-300"><ChevronRight size={18}/></button></div></Card>)}</div>
+    </div>
+  );
+}
+
+function ConfiguracoesTab() {
+  return (
+    <div className="space-y-4">
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
+    </div>
   );
 }
 

@@ -8,3 +8,10 @@ html, body, #root {
   min-height: 100vh;
   background-color: #0A0A0F;
 }
+
+
+* { box-sizing: border-box; }
+body { color-scheme: dark; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+button, input, textarea { font: inherit; }
