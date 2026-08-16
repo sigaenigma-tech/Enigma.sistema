@@ -1691,13 +1691,13 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
       const snapshot = {
         numero: detail.numero, cliente: detail.cliente?.nome || "", aparelho: `${detail.aparelho?.marca || ""} ${detail.aparelho?.modelo || ""}`.trim(),
         diagnostico: detail.diagnosticoTecnico || "", observacao: detail.orcamento?.observacao || "",
-        maoObra: Number(detail.valorServico) || 0, pecas: pecasTotal, desconto, total: valorEstimado,
+        maoObra: Number(detail.valorMaoDeObra) || 0, pecas: totalPecas, desconto, total: valorEstimado,
         prazo: detail.previsaoEntrega || null
       };
       const result = await rpc("enigma_criar_aprovacao_orcamento", { p_os_id: String(detail.id), p_snapshot: snapshot });
       const pedido = Array.isArray(result) ? result[0] : result;
       setOrcamentoPedido(pedido);
-    } catch (e) { alert("Não foi possível gerar o link. Confira se o SQL da V2.3 FINAL foi executado."); }
+    } catch (e) { console.error("Erro ao gerar link do orçamento:", e); alert(`Não foi possível gerar o link do orçamento. ${e?.message || "Erro desconhecido."}`); }
   }
   function linkOrcamento(pedido = orcamentoPedido) {
     if (!pedido?.token) return "";
