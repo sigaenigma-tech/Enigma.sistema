@@ -77,7 +77,23 @@ function rowToCaixa(r) {
   };
 }
 function rowToVenda(r) {
-  return { id: r.id, timestamp: r.timestamp || r.created_at, itens: r.itens || [], formaPagamento: r.forma_pagamento, total: Number(r.total), status: r.status || "concluida", canceladoEm: r.cancelado_em || r.estornado_em || null, motivoCancelamento: r.motivo_cancelamento || r.motivo_estorno || "" };
+  return {
+    id: r.id,
+    timestamp: r.timestamp || r.created_at,
+    itens: r.itens || [],
+    formaPagamento: r.forma_pagamento,
+    pagamentos: r.pagamentos || (r.forma_pagamento ? [{ forma:r.forma_pagamento, valor:Number(r.total)||0 }] : []),
+    subtotal: Number(r.subtotal ?? r.total ?? 0),
+    desconto: Number(r.desconto || 0),
+    descontoTipo: r.desconto_tipo || "valor",
+    total: Number(r.total),
+    clienteId: r.cliente_id || null,
+    clienteNome: r.cliente_nome || "",
+    clienteTelefone: r.cliente_telefone || "",
+    status: r.status || "concluida",
+    canceladoEm: r.cancelado_em || r.estornado_em || null,
+    motivoCancelamento: r.motivo_cancelamento || r.motivo_estorno || ""
+  };
 }
 function rowToOSIndex(r) {
   return { id: r.id, numero: r.numero, clienteNome: r.cliente?.nome || "", clienteTelefone: r.cliente?.telefone || "", aparelho: r.aparelho?.marcaModelo || "", status: r.status, dataEntrada: r.data_entrada };
@@ -275,18 +291,21 @@ function EnigmaSistema() {
   const [osDetail, setOsDetail] = useState(null);
   const [avaliacoes, setAvaliacoes] = useState([]);
   const [seminovos, setSeminovos] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const patchTimer = useRef(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [estoqueRows, caixaRows, osRows] = await Promise.all([
+        const [estoqueRows, caixaRows, osRows, clienteRows] = await Promise.all([
           sb("estoque?select=*&order=created_at.desc"),
           sb("caixa_sessoes?select=*&status=eq.aberto&order=data_abertura.desc&limit=1"),
           sb("ordens_servico?select=id,numero,cliente,aparelho,status,data_entrada&order=numero.desc"),
+          sb("clientes?select=*&order=nome.asc"),
         ]);
         setEstoque((estoqueRows || []).map(rowToEstoque));
         setOsIndex((osRows || []).map(rowToOSIndex));
+        setClientes(clienteRows || []);
         if (caixaRows && caixaRows[0]) {
           const c = rowToCaixa(caixaRows[0]);
           const vendaRows = await sb(`vendas?select=*&caixa_id=eq.${c.id}&order=timestamp.asc`);
@@ -312,6 +331,42 @@ function EnigmaSistema() {
       setLoading(false);
     })();
   }, []);
+
+  /* ---------- clientes ---------- */
+  async function adicionarCliente(payload) {
+    const nome=(payload?.nome||"").trim();
+    if(!nome) return null;
+    try{
+      const rows=await sb("clientes",{method:"POST",body:JSON.stringify({
+        nome,
+        telefone:(payload.telefone||"").trim()||null,
+        email:(payload.email||"").trim()||null,
+        documento:(payload.documento||"").trim()||null,
+        observacoes:(payload.observacoes||"").trim()||null,
+        updated_at:new Date().toISOString()
+      })});
+      const criado=rows?.[0];
+      if(criado) setClientes(prev=>[...prev,criado].sort((a,b)=>String(a.nome).localeCompare(String(b.nome),"pt-BR")));
+      setSaveError(false);
+      return criado||null;
+    }catch(e){
+      console.error("Falha ao cadastrar cliente:",e);
+      alert("Não foi possível cadastrar o cliente. Confira se o telefone já está cadastrado.");
+      setSaveError(true);
+      return null;
+    }
+  }
+
+  async function atualizarCliente(id,patch){
+    try{
+      const body={...patch,updated_at:new Date().toISOString()};
+      const rows=await sb(`clientes?id=eq.${id}`,{method:"PATCH",body:JSON.stringify(body)});
+      const atualizado=rows?.[0]||{...clientes.find(c=>c.id===id),...body};
+      setClientes(prev=>prev.map(c=>c.id===id?atualizado:c).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),"pt-BR")));
+      setSaveError(false);
+      return atualizado;
+    }catch(e){setSaveError(true);return null;}
+  }
 
   /* ---------- estoque ---------- */
   async function registrarMovimentoEstoque({ estoqueId, tipo, quantidade, anterior, posterior, custoUnitario=0, origem="manual", origemId=null, observacao="" }) {
@@ -469,7 +524,7 @@ function EnigmaSistema() {
     } catch (e) { setSaveError(true); }
     setTab("pdv");
   }
-  async function registrarVenda({ itens, formaPagamento }) {
+  async function registrarVenda({ itens, formaPagamento, clienteId = null }) {
     if (!caixaAtual) return null;
     const total = itens.reduce((s, it) => s + it.valor * it.qtd, 0);
     const seminovosVenda = itens.filter((i) => i.seminovoId);
@@ -483,9 +538,21 @@ function EnigmaSistema() {
 
       const rows = await sb("vendas", {
         method: "POST",
-        body: JSON.stringify({ caixa_id: caixaAtual.id, itens, forma_pagamento: formaPagamento, total }),
+        body: JSON.stringify({
+          caixa_id: caixaAtual.id,
+          cliente_id: clienteId || null,
+          itens,
+          forma_pagamento: formaPagamento,
+          pagamentos: [{ forma:formaPagamento, valor:total }],
+          subtotal: total,
+          desconto: 0,
+          desconto_tipo: "valor",
+          total
+        }),
       });
-      const venda = rowToVenda(rows[0]);
+      let venda = rowToVenda(rows[0]);
+      const clienteVenda=clienteId?clientes.find(c=>c.id===clienteId):null;
+      if(clienteVenda) venda={...venda,clienteNome:clienteVenda.nome,clienteTelefone:clienteVenda.telefone||""};
 
       await registrarFinanceiroAutomatico({
         tipo: "entrada",
@@ -495,7 +562,7 @@ function EnigmaSistema() {
         formaPagamento,
         origem: "pdv",
         origemId: venda.id,
-        dados: { itens }
+        dados: { itens, clienteId: clienteId || null }
       });
 
       // Baixa individual dos seminovos vendidos.
@@ -851,7 +918,7 @@ function EnigmaSistema() {
           <AtendimentoTab osIndex={osIndex} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />
         )}
         {tab === "pdv" && (
-          <PDVTab caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+          <PDVTab caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
         {tab === "financeiro" && <FinanceiroTab caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
@@ -861,7 +928,7 @@ function EnigmaSistema() {
         {tab === "os" && osView === "detalhe" && (
           <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
-        {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
+        {tab === "clientes" && <ClientesTab clientes={clientes} osIndex={osIndex} onAdd={adicionarCliente} onEdit={atualizarCliente} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
@@ -909,7 +976,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.7.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.8</div>
     </aside>
   );
 }
@@ -1075,34 +1142,91 @@ function AtendimentoTab({ osIndex, onNovaOS, onAbrirOS }) {
   );
 }
 
-function ClientesTab({ osIndex, onAbrirOS }) {
-  const [busca, setBusca] = useState("");
-  const mapa = new Map();
-  osIndex.forEach((os) => {
-    const key = (os.clienteTelefone || os.clienteNome || `os-${os.id}`).trim().toLowerCase();
-    if (!mapa.has(key)) mapa.set(key, { nome: os.clienteNome || "Cliente", telefone: os.clienteTelefone || "", ordens: [] });
-    mapa.get(key).ordens.push(os);
+function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) {
+  const [busca,setBusca]=useState("");
+  const [mostrarForm,setMostrarForm]=useState(false);
+  const [form,setForm]=useState({nome:"",telefone:"",email:"",documento:"",observacoes:""});
+  const [selecionado,setSelecionado]=useState(null);
+  const [compras,setCompras]=useState([]);
+  const [carregando,setCarregando]=useState(false);
+
+  const filtrados=clientes.filter(c=>`${c.nome||""} ${c.telefone||""} ${c.email||""} ${c.documento||""}`.toLowerCase().includes(busca.toLowerCase()));
+
+  async function salvar(){
+    const c=await onAdd(form);
+    if(c){setForm({nome:"",telefone:"",email:"",documento:"",observacoes:""});setMostrarForm(false);}
+  }
+
+  async function abrirCliente(c){
+    setSelecionado(c);setCarregando(true);
+    try{
+      const rows=await sb(`vendas?select=*&cliente_id=eq.${c.id}&order=timestamp.desc`);
+      setCompras((rows||[]).map(rowToVenda));
+    }catch(e){setCompras([]);}
+    setCarregando(false);
+  }
+
+  const ordensDo=(c)=>osIndex.filter(os=>{
+    const tel=String(c.telefone||"").replace(/\D/g,"");
+    const osTel=String(os.clienteTelefone||"").replace(/\D/g,"");
+    return (tel&&osTel&&tel===osTel) || (!tel && String(os.clienteNome||"").toLowerCase()===String(c.nome||"").toLowerCase());
   });
-  const clientes = [...mapa.values()].filter((c)=>`${c.nome} ${c.telefone}`.toLowerCase().includes(busca.toLowerCase()));
-  return (
-    <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center justify-between gap-4 mb-4"><div><div className="font-medium text-white">Base de clientes</div><div className="text-xs text-[#74747F]">Gerada a partir do histórico atual de ordens de serviço.</div></div><div className="text-2xl font-semibold">{clientes.length}</div></div><div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={(e)=>setBusca(e.target.value)} placeholder="Buscar cliente ou telefone" className="pl-9"/></div></Card>
-      <div className="grid md:grid-cols-2 gap-3">{clientes.map((c)=><Card key={`${c.telefone}-${c.nome}`} className="!rounded-2xl"><div className="flex items-start gap-3"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><User size={17}/></div><div className="min-w-0 flex-1"><div className="text-sm font-medium text-white truncate">{c.nome}</div><div className="text-xs text-[#777782]">{c.telefone || "Telefone não informado"}</div><div className="text-xs text-[#5F5F69] mt-2">{c.ordens.length} ordem(ns) de serviço</div></div><button onClick={()=>onAbrirOS(c.ordens[0].id)} className="text-purple-300"><ChevronRight size={18}/></button></div></Card>)}</div>
-    </div>
-  );
+
+  return <div className="space-y-4">
+    <Card className="!rounded-2xl">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div><div className="font-medium text-white">Base de clientes</div><div className="text-xs text-[#74747F]">Cadastro único para PDV e assistência técnica.</div></div>
+        <div className="flex items-center gap-3"><div className="text-2xl font-semibold">{clientes.length}</div><Button onClick={()=>setMostrarForm(!mostrarForm)}>+ Cliente</Button></div>
+      </div>
+      <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar nome, telefone, e-mail ou documento" className="pl-9"/></div>
+    </Card>
+
+    {mostrarForm&&<Card>
+      <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">NOVO CLIENTE</div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div><Label>Nome *</Label><Input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></div>
+        <div><Label>Telefone</Label><Input value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})}/></div>
+        <div><Label>E-mail</Label><Input value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></div>
+        <div><Label>CPF / Documento</Label><Input value={form.documento} onChange={e=>setForm({...form,documento:e.target.value})}/></div>
+        <div className="sm:col-span-2"><Label>Observações</Label><Input value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})}/></div>
+      </div>
+      <div className="flex gap-2 mt-4"><Button variant="ghost" onClick={()=>setMostrarForm(false)}>Cancelar</Button><Button onClick={salvar}>Cadastrar cliente</Button></div>
+    </Card>}
+
+    <div className="grid md:grid-cols-2 gap-3">{filtrados.map(c=>{const oss=ordensDo(c);return <Card key={c.id} className="!rounded-2xl">
+      <button onClick={()=>abrirCliente(c)} className="w-full flex items-start gap-3 text-left">
+        <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><User size={17}/></div>
+        <div className="min-w-0 flex-1"><div className="text-sm font-medium text-white truncate">{c.nome}</div><div className="text-xs text-[#777782]">{c.telefone||"Telefone não informado"}</div><div className="text-[10px] text-[#5F5F69] mt-2">{oss.length} OS vinculada(s)</div></div><ChevronRight size={18} className="text-purple-300"/>
+      </button>
+    </Card>})}</div>
+
+    {selecionado&&<div className="fixed inset-0 bg-black/80 z-30 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={()=>setSelecionado(null)}>
+      <div className="bg-[#131318] border border-[#2A2A34] rounded-t-2xl sm:rounded-2xl w-full max-w-xl max-h-[88vh] overflow-y-auto p-5" onClick={e=>e.stopPropagation()}>
+        <div className="flex justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.22em] text-purple-300">CLIENTE</div><div className="text-xl text-white mt-1">{selecionado.nome}</div><div className="text-xs text-[#777782]">{selecionado.telefone||"Sem telefone"}{selecionado.email?` · ${selecionado.email}`:""}</div></div><button onClick={()=>setSelecionado(null)}><X size={18}/></button></div>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <MetricCyber label="COMPRAS" value={String(compras.filter(v=>v.status!=="estornada").length)} sub="PDV"/>
+          <MetricCyber label="TOTAL COMPRADO" value={fmt(compras.filter(v=>v.status!=="estornada").reduce((a,v)=>a+v.total,0))} sub="vendas válidas"/>
+          <MetricCyber label="ORDENS" value={String(ordensDo(selecionado).length)} sub="assistência"/>
+        </div>
+        <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-2">HISTÓRICO DE COMPRAS</div>
+        {carregando?<div className="text-xs text-[#666672] py-5">Carregando...</div>:!compras.length?<div className="text-xs text-[#666672] py-5">Nenhuma compra vinculada ainda.</div>:<div className="space-y-2">{compras.map(v=><div key={v.id} className="rounded-lg border border-white/8 p-3 flex justify-between gap-3"><div><div className="text-xs">{fmtDateTime(v.timestamp)}</div><div className="text-[10px] text-[#656570]">{(v.itens||[]).map(i=>i.descricao).join(", ")}</div></div><div className="text-right"><div className="font-mono text-xs">{fmt(v.total)}</div><div className={v.status==="estornada"?"text-[9px] text-red-300":"text-[9px] text-green-300"}>{v.status==="estornada"?"ESTORNADA":"CONCLUÍDA"}</div></div></div>)}</div>}
+        {ordensDo(selecionado).length>0&&<Button className="w-full mt-4" variant="ghost" onClick={()=>onAbrirOS(ordensDo(selecionado)[0].id)}>Abrir última OS</Button>}
+      </div>
+    </div>}
+  </div>;
 }
 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.7.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.8</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
 }
 
 /* ================= PDV ================= */
-function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
+function PDVTab({ caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
   const [modo, setModo] = useState("estoque"); // estoque | seminovo | manual
   const [busca, setBusca] = useState("");
@@ -1116,12 +1240,19 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, o
   const [finalizando, setFinalizando] = useState(false);
   const [historicoVendas,setHistoricoVendas]=useState([]);
   const [carregandoHistorico,setCarregandoHistorico]=useState(false);
+  const [clienteSelecionado,setClienteSelecionado]=useState(null);
+  const [buscaCliente,setBuscaCliente]=useState("");
+  const [mostrarClientes,setMostrarClientes]=useState(false);
+  const [novoCliente,setNovoCliente]=useState({nome:"",telefone:""});
 
   async function carregarHistoricoVendas(){
     setCarregandoHistorico(true);
     try{
-      const rows=await sb("vendas_historico?select=*&order=created_at.desc&limit=100");
-      setHistoricoVendas((rows||[]).map(rowToVenda));
+      const rows=await sb("vendas?select=*&order=timestamp.desc&limit=100");
+      setHistoricoVendas((rows||[]).map(rowToVenda).map(v=>{
+        const c=v.clienteId?clientes.find(x=>x.id===v.clienteId):null;
+        return c?{...v,clienteNome:c.nome,clienteTelefone:c.telefone||""}:v;
+      }));
     }catch(e){console.warn("Falha ao carregar histórico de vendas:",e);}
     setCarregandoHistorico(false);
   }
@@ -1177,14 +1308,40 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, o
   async function finalizar() {
     if (itens.length === 0 || finalizando) return;
     setFinalizando(true);
-    const venda = await onVenda({ itens, formaPagamento: forma });
+    const venda = await onVenda({ itens, formaPagamento: forma, clienteId: clienteSelecionado?.id || null });
     setFinalizando(false);
-    setItens([]); setForma("dinheiro");
+    setItens([]); setForma("dinheiro"); setClienteSelecionado(null); setBuscaCliente("");
     if (venda) setCupomAberto(venda);
+  }
+
+  const clientesEncontrados=clientes.filter(c=>{
+    const q=buscaCliente.toLowerCase().trim();
+    return q && `${c.nome||""} ${c.telefone||""}`.toLowerCase().includes(q);
+  }).slice(0,8);
+
+  async function cadastrarClienteRapido(){
+    if(!novoCliente.nome.trim()) return;
+    const c=await onAddCliente(novoCliente);
+    if(c){setClienteSelecionado(c);setNovoCliente({nome:"",telefone:""});setMostrarClientes(false);setBuscaCliente("");}
   }
 
   return (
     <div className="space-y-4">
+      <Card className="!rounded-2xl">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div><div className="text-[9px] tracking-[.2em] text-purple-300">CLIENTE DA VENDA</div><div className="text-[10px] text-[#666672] mt-1">Opcional</div></div>
+          {clienteSelecionado&&<button onClick={()=>setClienteSelecionado(null)} className="text-[10px] text-red-300">Remover vínculo</button>}
+        </div>
+        {clienteSelecionado?<div className="rounded-xl border border-purple-500/20 bg-purple-500/[.04] p-3 flex items-center gap-3"><div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center"><User size={16} className="text-purple-300"/></div><div><div className="text-sm text-white">{clienteSelecionado.nome}</div><div className="text-xs text-[#777782]">{clienteSelecionado.telefone||"Sem telefone"}</div></div></div>:<>
+          <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={buscaCliente} onChange={e=>{setBuscaCliente(e.target.value);setMostrarClientes(true)}} placeholder="Consumidor não identificado — buscar nome ou telefone" className="pl-9"/></div>
+          {mostrarClientes&&buscaCliente&&<div className="mt-2 rounded-xl border border-white/10 overflow-hidden">
+            {clientesEncontrados.map(c=><button key={c.id} onClick={()=>{setClienteSelecionado(c);setMostrarClientes(false);setBuscaCliente("")}} className="w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/[.03]"><div className="text-xs text-white">{c.nome}</div><div className="text-[10px] text-[#666672]">{c.telefone||"Sem telefone"}</div></button>)}
+            {!clientesEncontrados.length&&<div className="p-3"><div className="text-xs text-[#666672] mb-2">Cliente não encontrado.</div><button onClick={()=>{setNovoCliente({nome:buscaCliente,telefone:""});setMostrarClientes(false)}} className="text-xs text-purple-300">+ Cadastrar agora</button></div>}
+          </div>}
+          {novoCliente.nome!==""&&<div className="mt-3 grid sm:grid-cols-[1fr_1fr_auto] gap-2"><Input value={novoCliente.nome} onChange={e=>setNovoCliente({...novoCliente,nome:e.target.value})} placeholder="Nome"/><Input value={novoCliente.telefone} onChange={e=>setNovoCliente({...novoCliente,telefone:e.target.value})} placeholder="Telefone"/><Button onClick={cadastrarClienteRapido}>Salvar</Button></div>}
+        </>}
+      </Card>
+
       <Card>
         <div className="flex gap-2 mb-3">
           {[{ id: "estoque", label: "Produtos" }, { id: "seminovo", label: "Seminovos" }, { id: "manual", label: "Serviço / avulso" }, { id:"historico", label:"Histórico" }].map((m) => (
@@ -1248,7 +1405,7 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, o
             !historicoVendas.length?<div className="py-6 text-center text-xs text-[#666672]">Nenhuma venda encontrada.</div>:
             historicoVendas.map(v=><button key={v.id} onClick={()=>setCupomAberto(v)} className={"w-full rounded-xl border p-3 text-left "+(v.status==="estornada"?"border-red-500/20 bg-red-500/[.025]":"border-white/10 bg-white/[.015]")}>
               <div className="flex items-start justify-between gap-3">
-                <div><div className="text-xs text-[#D9D9DF]">{fmtDateTime(v.timestamp)}</div><div className="text-[10px] text-[#676772] mt-1">{(v.itens||[]).map(i=>i.descricao).join(", ")||"Venda"}</div></div>
+                <div><div className="text-xs text-[#D9D9DF]">{fmtDateTime(v.timestamp)}</div><div className="text-[10px] text-purple-300/80 mt-1">{v.clienteNome||"Consumidor não identificado"}</div><div className="text-[10px] text-[#676772] mt-1">{(v.itens||[]).map(i=>i.descricao).join(", ")||"Venda"}</div></div>
                 <div className="text-right"><div className="font-mono text-sm">{fmt(v.total)}</div><div className={"text-[9px] mt-1 "+(v.status==="estornada"?"text-red-300":"text-green-300")}>{v.status==="estornada"?"ESTORNADA":"CONCLUÍDA"}</div></div>
               </div>
             </button>)}
@@ -1791,6 +1948,11 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
                 <span className={"rounded-full border px-2 py-1 text-[9px] "+(venda.status==="estornada"?"border-red-500/25 text-red-300":"border-green-500/25 text-green-300")}>{venda.status==="estornada"?"ESTORNADA":"CONCLUÍDA"}</span>
               </div>
               {venda.status==="estornada" && <div className="rounded-lg border border-red-500/15 bg-red-500/[.03] p-3 mb-3 text-xs text-red-200">Motivo: {venda.motivoCancelamento||"Estorno registrado"}{venda.canceladoEm?` · ${fmtDateTime(venda.canceladoEm)}`:""}</div>}
+              <div className="rounded-lg border border-white/8 bg-white/[.02] p-3 mb-3">
+                <div className="text-[8px] tracking-[.18em] text-[#666672]">CLIENTE</div>
+                <div className="text-xs text-[#D9D9DF] mt-1">{venda.clienteNome||"Consumidor não identificado"}</div>
+                {venda.clienteTelefone&&<div className="text-[10px] text-[#666672] mt-0.5">{venda.clienteTelefone}</div>}
+              </div>
               <div className="divide-y divide-[#22222A] border-y border-[#2A2A34]">
                 {venda.itens.map((i, idx) => (
                   <div key={idx} className="flex items-center justify-between py-2">
