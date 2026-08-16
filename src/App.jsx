@@ -561,7 +561,7 @@ function EnigmaSistema() {
           <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
         {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
-        {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} onSalvar={salvarAvaliacaoUsado} />}
+        {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} />}
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
@@ -794,7 +794,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1652,10 +1652,117 @@ function calcImpactoScanner(scanner, mercadoMedio) {
   },0);
 }
 
-function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
+
+const FALHA_PECAS = {
+  "Tela / Display": ["tela","display"],
+  "Touch": ["touch","tela"],
+  "Face ID / Touch ID": ["face id","touch id","biometria"],
+  "Câmera frontal": ["camera frontal","câmera frontal"],
+  "Câmeras traseiras": ["camera traseira","câmera traseira","camera principal","câmera principal"],
+  "Microfone": ["microfone"],
+  "Alto-falantes": ["alto falante","alto-falante","speaker"],
+  "Conector de carga": ["conector","dock","carga"],
+  "Wi-Fi": ["wifi","wi-fi","antena wifi","antena wi-fi"],
+  "Bluetooth": ["bluetooth","antena bluetooth"],
+  "Botões": ["botao","botão","flex botao","flex botão"],
+  "Bateria": ["bateria"],
+  "Sensores": ["sensor"],
+  "Chip / Rede": ["antena","rede","chip"],
+  "IMEI / Serial": ["placa","imei","serial"],
+};
+function normTxt(v) {
+  return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+}
+function pecasCompativeisParaFalha(falha, aparelho, estoque) {
+  const modelo = normTxt(aparelho?.modelo);
+  const termos = (FALHA_PECAS[falha] || [falha]).map(normTxt);
+  return (estoque || []).filter(p => {
+    if (p.categoria !== "peca") return false;
+    const nome = normTxt(p.nome);
+    const bateFalha = termos.some(t => nome.includes(t));
+    const bateModelo = !modelo || nome.includes(modelo);
+    return bateFalha && bateModelo;
+  }).sort((a,b)=>(Number(a.custo)||0)-(Number(b.custo)||0));
+}
+function somaCustosFalhas(falhas, aparelho, estoque, precificacao) {
+  const selecionadas = precificacao?.pecasSelecionadas || {};
+  const manuais = precificacao?.reparosManuais || {};
+  return falhas.reduce((acc,falha)=>{
+    const matches = pecasCompativeisParaFalha(falha, aparelho, estoque);
+    const sel = selecionadas[falha];
+    if (sel === "manual" || (!sel && !matches.length)) return acc + (Number(manuais[falha])||0);
+    const item = matches.find(x=>String(x.id)===String(sel)) || matches[0];
+    return acc + (Number(item?.custo)||0);
+  },0);
+}
+
+function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
   const [view, setView] = useState("lista");
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketRef, setMarketRef] = useState(null);
+  const [marketMsg, setMarketMsg] = useState("");
+
+
+  useEffect(() => {
+    if (!draft || view !== "form") return;
+    const marca = (draft.aparelho?.marca || "").trim();
+    const modelo = (draft.aparelho?.modelo || "").trim();
+    const armazenamento = (draft.aparelho?.armazenamento || "").trim();
+    if (!marca || !modelo) { setMarketRef(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setMarketLoading(true); setMarketMsg("");
+      try {
+        const qMarca = encodeURIComponent(marca);
+        const qModelo = encodeURIComponent(modelo);
+        let url = `referencias_mercado?select=*&marca=ilike.${qMarca}&modelo=ilike.${qModelo}&order=updated_at.desc&limit=5`;
+        const rows = await sb(url);
+        if (cancelled) return;
+        const match = (rows || []).find(r => !armazenamento || normTxt(r.armazenamento) === normTxt(armazenamento)) || (rows || [])[0];
+        setMarketRef(match || null);
+        if (match) {
+          setDraft(d => {
+            if (!d) return d;
+            const atual = d.precificacao || {};
+            if (atual.referenciaId === match.id && atual.mercadoMin && atual.mercadoMax) return d;
+            return {...d, precificacao:{...atual, mercadoMin:Number(match.mercado_min)||"", mercadoMax:Number(match.mercado_max)||"", referenciaId:match.id, referenciaFonte:match.fonte||"Base ENIGMA"}};
+          });
+          setMarketMsg("Referência encontrada automaticamente na base ENIGMA.");
+        } else {
+          setMarketMsg("Sem referência salva para este modelo. Informe a faixa uma vez e salve para as próximas avaliações.");
+        }
+      } catch (e) {
+        setMarketRef(null);
+        setMarketMsg("Base de mercado indisponível. Você ainda pode informar a faixa manualmente.");
+      } finally { if (!cancelled) setMarketLoading(false); }
+    }, 450);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [view, draft?.aparelho?.marca, draft?.aparelho?.modelo, draft?.aparelho?.armazenamento]);
+
+  async function salvarReferenciaMercado() {
+    const marca=(draft?.aparelho?.marca||"").trim(), modelo=(draft?.aparelho?.modelo||"").trim(), armazenamento=(draft?.aparelho?.armazenamento||"").trim();
+    const min=Number(draft?.precificacao?.mercadoMin)||0, max=Number(draft?.precificacao?.mercadoMax)||0;
+    if (!marca || !modelo || !min || !max) { alert("Informe marca, modelo e faixa de mercado."); return; }
+    setMarketLoading(true);
+    try {
+      const body={marca,modelo,armazenamento,mercado_min:min,mercado_max:max,fonte:"Base ENIGMA",updated_at:new Date().toISOString()};
+      let saved;
+      if (marketRef?.id) {
+        const rows=await sb(`referencias_mercado?id=eq.${marketRef.id}`,{method:"PATCH",body:JSON.stringify(body)});
+        saved=rows?.[0]||{...marketRef,...body};
+      } else {
+        const rows=await sb("referencias_mercado",{method:"POST",body:JSON.stringify(body)});
+        saved=rows?.[0];
+      }
+      setMarketRef(saved||body);
+      setDraft(d=>({...d,precificacao:{...(d.precificacao||{}),referenciaId:saved?.id||d.precificacao?.referenciaId,referenciaFonte:"Base ENIGMA"}}));
+      setMarketMsg("Referência salva. Na próxima avaliação deste modelo, a faixa será preenchida automaticamente.");
+    } catch(e) {
+      console.error(e); alert("Não foi possível salvar a referência de mercado.");
+    } finally { setMarketLoading(false); }
+  }
 
   function nova() {
     setDraft({
@@ -1664,7 +1771,7 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
       aparelho: { marca: "Apple", modelo: "", cor: "", armazenamento: "", imei: "", serial: "", bateria: "", contaRemovida: false, notaFiscal: false },
       inspecao: { estetica: null, observacoes: "", avarias: "", scanner: {} },
       testes: Object.fromEntries(TESTES_USADO.map((x) => [x, "nao_testado"])),
-      precificacao: { mercadoMin: "", mercadoMax: "", reparos: "", custoOperacional: "", margemDesejada: 25, risco: 5 },
+      precificacao: { mercadoMin: "", mercadoMax: "", custoOperacional: "", margemDesejada: 25, risco: 5, pecasSelecionadas: {}, reparosManuais: {}, referenciaId: null, referenciaFonte: "" },
       oferta: { valorOfertado: "", observacoes: "" },
       aquisicao: { valorFechado: "", formaPagamento: "pix", termoAceito: false, observacoes: "" },
     });
@@ -1680,7 +1787,16 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
   }
   const p = draft?.precificacao || {};
   const mercadoMedio = ((Number(p.mercadoMin)||0) + (Number(p.mercadoMax)||0)) / 2;
-  const reparos = Number(p.reparos)||0, operacional = Number(p.custoOperacional)||0;
+  const falhasLista = Object.entries(draft?.testes || {}).filter(([,v])=>v==="falha").map(([k])=>k);
+  const reparos = somaCustosFalhas(falhasLista, draft?.aparelho, estoque, p);
+  const custosPendentes = falhasLista.filter(f=>{
+    const matches=pecasCompativeisParaFalha(f,draft?.aparelho,estoque);
+    const sel=p?.pecasSelecionadas?.[f];
+    if (sel==="manual") return !(Number(p?.reparosManuais?.[f])>0);
+    if (matches.length) return false;
+    return !(Number(p?.reparosManuais?.[f])>0);
+  });
+  const operacional = Number(p.custoOperacional)||0;
   const margem = clamp(p.margemDesejada, 0, 90) / 100;
   const risco = clamp(p.risco, 0, 50) / 100;
   const impactoEsteticoBase = calcImpactoScanner(draft?.inspecao?.scanner || {}, mercadoMedio);
@@ -1835,23 +1951,89 @@ function AvaliacaoUsadosTab({ avaliacoes, onSalvar }) {
         <FlowNext onClick={()=>goStep("precificar")} label="Concluir testes e precificar"/>
       </Card>}
 
-      {draft.etapa==="precificar" && <div className="grid lg:grid-cols-5 gap-4">
-        <Card className="!rounded-2xl lg:col-span-3"><SectionCyber code="04" title="Motor de precificação" sub="Referência de mercado + custos + margem + risco"/>
-          <div className="grid grid-cols-2 gap-3 mt-5"><Field label="Mercado mínimo"><Input type="number" value={p.mercadoMin||""} onChange={e=>upd("precificacao","mercadoMin",e.target.value)}/></Field><Field label="Mercado máximo"><Input type="number" value={p.mercadoMax||""} onChange={e=>upd("precificacao","mercadoMax",e.target.value)}/></Field></div>
-          <div className="grid grid-cols-2 gap-3 mt-3"><Field label="Reparos previstos"><Input type="number" value={p.reparos||""} onChange={e=>upd("precificacao","reparos",e.target.value)}/></Field><Field label="Custo operacional"><Input type="number" value={p.custoOperacional||""} onChange={e=>upd("precificacao","custoOperacional",e.target.value)}/></Field></div>
-          <div className="grid grid-cols-2 gap-3 mt-3"><Field label="Margem desejada (%)"><Input type="number" value={p.margemDesejada??25} onChange={e=>upd("precificacao","margemDesejada",e.target.value)}/></Field><Field label="Reserva de risco (%)"><Input type="number" value={p.risco??5} onChange={e=>upd("precificacao","risco",e.target.value)}/></Field></div>
-          <div className="mt-4 text-[11px] text-[#696975]">Nesta V2.4 a referência de mercado é informada manualmente. A consulta automática será conectada depois, com fontes e regras de filtragem próprias.</div>
-        </Card>
-        <div className="lg:col-span-2 rounded-2xl border border-purple-500/25 bg-gradient-to-b from-purple-500/[.08] to-green-500/[.025] p-5 flex flex-col justify-between">
-          <div><div className="text-[9px] tracking-[.3em] text-purple-300">ENIGMA BUY ENGINE</div><div className="text-sm text-[#8B8B97] mt-5">Mercado médio</div><div className="text-2xl font-mono">{fmt(mercadoMedio)}</div></div>
-          <div className="my-5 space-y-2">
-            <div className="flex justify-between text-xs"><span className="text-[#747480]">Mercado médio</span><span className="font-mono">{fmt(mercadoMedio)}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-[#747480]">Reparos previstos</span><span className="font-mono text-amber-300">− {fmt(reparos)}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-[#747480]">Custo operacional</span><span className="font-mono text-amber-300">− {fmt(operacional)}</span></div><div className="flex justify-between text-xs"><span className="text-[#747480]">Impacto estético</span><span className="font-mono text-amber-300">− {fmt(impactoEstetico)}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-[#747480]">Margem + risco</span><span className="font-mono text-purple-300">− {Math.round((margem+risco)*100)}%</span></div>
-            <div className="pt-4 mt-3 border-t border-white/10"><div className="text-[10px] tracking-[.22em] text-green-400">COMPRA SEGURA ATÉ</div><div className="text-4xl font-mono text-white mt-2 drop-shadow-[0_0_14px_rgba(34,197,94,.25)]">{fmt(compraMax)}</div><div className="text-xs text-[#747480] mt-2">resultado do motor ENIGMA</div></div>
+      {draft.etapa==="precificar" && <div className="space-y-4">
+        <div className="grid lg:grid-cols-5 gap-4">
+          <Card className="!rounded-2xl lg:col-span-3">
+            <SectionCyber code="04" title="ENIGMA Price Engine" sub="Mercado + falhas + peças + custos + margem"/>
+
+            <div className="mt-5 rounded-xl border border-cyan-400/15 bg-cyan-400/[.025] p-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <div className="text-[9px] tracking-[.24em] text-cyan-300">REFERÊNCIA DE MERCADO</div>
+                  <div className="text-sm text-white mt-1">{draft.aparelho?.marca} {draft.aparelho?.modelo} {draft.aparelho?.armazenamento}</div>
+                  <div className="text-[10px] text-[#70707B] mt-1">{marketLoading ? "Consultando base ENIGMA..." : marketMsg || "Aguardando identificação do modelo."}</div>
+                </div>
+                {marketRef?.updated_at && <div className="text-[9px] text-[#5F5F69] font-mono">REF {new Date(marketRef.updated_at).toLocaleDateString("pt-BR")}</div>}
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <Field label="Mercado mínimo"><Input type="number" value={p.mercadoMin||""} onChange={e=>upd("precificacao","mercadoMin",e.target.value)}/></Field>
+                <Field label="Mercado máximo"><Input type="number" value={p.mercadoMax||""} onChange={e=>upd("precificacao","mercadoMax",e.target.value)}/></Field>
+              </div>
+              <div className="mt-3 flex justify-end"><button type="button" onClick={salvarReferenciaMercado} disabled={marketLoading || !Number(p.mercadoMin) || !Number(p.mercadoMax)} className="text-[10px] px-3 py-2 rounded-lg border border-cyan-400/20 text-cyan-300 hover:bg-cyan-400/[.05] disabled:opacity-40">{marketRef ? "Atualizar referência deste modelo" : "Salvar referência deste modelo"}</button></div>
+            </div>
+
+            <div className="mt-5">
+              <div className="flex items-end justify-between gap-3 mb-3">
+                <div><div className="text-[9px] tracking-[.24em] text-purple-300">RECONDICIONAMENTO</div><div className="text-xs text-[#73737F] mt-1">Toda função marcada como FALHA precisa ter custo antes da oferta.</div></div>
+                <div className="font-mono text-sm text-white">{fmt(reparos)}</div>
+              </div>
+              {!falhasLista.length ? <div className="rounded-xl border border-green-500/20 bg-green-500/[.035] p-4 text-sm text-green-300"><CheckCircle2 size={15} className="inline mr-2"/>Nenhuma falha funcional marcada.</div> :
+              <div className="space-y-2">{falhasLista.map(falha=>{
+                const matches=pecasCompativeisParaFalha(falha,draft.aparelho,estoque);
+                const currentSel=p?.pecasSelecionadas?.[falha];
+                const effectiveSel=currentSel || (matches[0]?.id ? String(matches[0].id) : "manual");
+                const selected=matches.find(x=>String(x.id)===String(effectiveSel));
+                const pendente=effectiveSel==="manual" && !(Number(p?.reparosManuais?.[falha])>0);
+                return <div key={falha} className={"rounded-xl border p-3 "+(pendente?"border-amber-400/25 bg-amber-400/[.035]":"border-white/10 bg-white/[.018]")}>
+                  <div className="flex flex-col md:flex-row md:items-center gap-3">
+                    <div className="md:w-44 shrink-0"><div className="text-sm text-white">{falha}</div><div className={"text-[9px] mt-1 "+(pendente?"text-amber-300":"text-green-400")}>{pendente?"CUSTO PENDENTE":"CUSTO MAPEADO"}</div></div>
+                    <div className="flex-1">
+                      {matches.length ? <select value={effectiveSel} onChange={e=>setDraft(d=>({...d,precificacao:{...(d.precificacao||{}),pecasSelecionadas:{...(d.precificacao?.pecasSelecionadas||{}),[falha]:e.target.value}}}))} className="w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2 text-xs">
+                        {matches.map(item=><option key={item.id} value={String(item.id)}>{item.nome} · custo {fmt(item.custo)} · estoque {item.quantidade}</option>)}
+                        <option value="manual">Informar custo manual</option>
+                      </select> : <div className="text-[10px] text-[#73737F]">Nenhuma peça compatível encontrada pelo nome no estoque.</div>}
+                    </div>
+                    {(effectiveSel==="manual" || !matches.length) ? <div className="md:w-40"><Input type="number" placeholder="Custo estimado" value={p?.reparosManuais?.[falha]||""} onChange={e=>setDraft(d=>({...d,precificacao:{...(d.precificacao||{}),pecasSelecionadas:{...(d.precificacao?.pecasSelecionadas||{}),[falha]:"manual"},reparosManuais:{...(d.precificacao?.reparosManuais||{}),[falha]:e.target.value}}}))}/></div> : <div className="md:w-28 text-right font-mono text-sm text-white">{fmt(selected?.custo || matches[0]?.custo)}</div>}
+                  </div>
+                </div>
+              })}</div>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-5">
+              <Field label="Custo operacional"><Input type="number" value={p.custoOperacional||""} onChange={e=>upd("precificacao","custoOperacional",e.target.value)}/></Field>
+              <Field label="Margem desejada (%)"><Input type="number" value={p.margemDesejada??25} onChange={e=>upd("precificacao","margemDesejada",e.target.value)}/></Field>
+              <Field label="Reserva de risco (%)"><Input type="number" value={p.risco??5} onChange={e=>upd("precificacao","risco",e.target.value)}/></Field>
+              <div className="rounded-xl border border-white/10 bg-white/[.018] p-3"><div className="text-[9px] tracking-[.2em] text-[#70707B]">CUSTOS PENDENTES</div><div className={"text-xl font-mono mt-2 "+(custosPendentes.length?"text-amber-300":"text-green-400")}>{custosPendentes.length}</div><div className="text-[9px] text-[#5F5F69] mt-1">{custosPendentes.length ? "complete antes da oferta" : "motor completo"}</div></div>
+            </div>
+          </Card>
+
+          <div className="lg:col-span-2 rounded-2xl border border-purple-500/25 bg-gradient-to-b from-purple-500/[.08] to-green-500/[.025] p-5 flex flex-col justify-between">
+            <div>
+              <div className="text-[9px] tracking-[.3em] text-purple-300">ENIGMA BUY ENGINE</div>
+              <div className="text-xs text-[#686874] mt-1">Análise financeira em tempo real</div>
+            </div>
+            <div className="my-5 space-y-2">
+              <div className="flex justify-between text-xs"><span className="text-[#747480]">Mercado médio</span><span className="font-mono">{fmt(mercadoMedio)}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-[#747480]">Peças / reparos</span><span className="font-mono text-amber-300">− {fmt(reparos)}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-[#747480]">Impacto estético</span><span className="font-mono text-amber-300">− {fmt(impactoEstetico)}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-[#747480]">Custo operacional</span><span className="font-mono text-amber-300">− {fmt(operacional)}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-[#747480]">Margem + risco</span><span className="font-mono text-purple-300">− {Math.round((margem+risco)*100)}%</span></div>
+              <div className="pt-4 mt-3 border-t border-white/10">
+                <div className="text-[10px] tracking-[.22em] text-green-400">{custosPendentes.length ? "PREÇO FINAL PENDENTE" : "COMPRA SEGURA ATÉ"}</div>
+                <div className={"text-4xl font-mono mt-2 "+(custosPendentes.length?"text-amber-300":"text-white drop-shadow-[0_0_14px_rgba(34,197,94,.25)]")}>{custosPendentes.length ? "—" : fmt(compraMax)}</div>
+                <div className="text-xs text-[#747480] mt-2">{custosPendentes.length ? `${custosPendentes.length} falha(s) sem custo definido` : "resultado do motor ENIGMA"}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="rounded-lg border border-white/8 p-2 text-center"><div className="text-[8px] text-[#666672]">OFERTA INICIAL</div><div className="text-xs font-mono mt-1">{custosPendentes.length?"—":fmt(compraMax*.88)}</div></div>
+              <div className="rounded-lg border border-cyan-400/15 p-2 text-center"><div className="text-[8px] text-cyan-300">COMPRA IDEAL</div><div className="text-xs font-mono mt-1">{custosPendentes.length?"—":fmt(compraMax*.95)}</div></div>
+              <div className="rounded-lg border border-purple-400/15 p-2 text-center"><div className="text-[8px] text-purple-300">TETO</div><div className="text-xs font-mono mt-1">{custosPendentes.length?"—":fmt(compraMax)}</div></div>
+            </div>
+            <Button onClick={()=>goStep("oferta")} disabled={!mercadoMedio || custosPendentes.length>0}>Gerar oferta <ArrowRight size={15} className="inline ml-2"/></Button>
           </div>
-          <Button onClick={()=>goStep("oferta")} disabled={!mercadoMedio}>Gerar oferta <ArrowRight size={15} className="inline ml-2"/></Button>
+        </div>
+        <div className="rounded-xl border border-white/8 bg-white/[.015] p-3 text-[10px] text-[#686874]">
+          <span className="text-cyan-300">Mercado automático:</span> esta versão preenche automaticamente a partir da base de referências da ENIGMA. Se um modelo ainda não existir, informe a faixa uma vez e salve; avaliações futuras do mesmo modelo serão preenchidas sozinhas. A consulta direta a marketplaces em tempo real exige uma fonte/API estável e será conectada separadamente.
         </div>
       </div>}
 
