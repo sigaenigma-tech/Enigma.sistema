@@ -296,7 +296,7 @@ export default function EnigmaSistema() {
     setTab("pdv");
   }
   async function registrarVenda({ itens, formaPagamento }) {
-    if (!caixaAtual) return;
+    if (!caixaAtual) return null;
     const total = itens.reduce((s, it) => s + it.valor * it.qtd, 0);
     try {
       const rows = await sb("vendas", {
@@ -308,7 +308,8 @@ export default function EnigmaSistema() {
       setSaveError(false);
       const usados = itens.filter((i) => i.estoqueId);
       usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, -u.qtd));
-    } catch (e) { setSaveError(true); }
+      return venda;
+    } catch (e) { setSaveError(true); return null; }
   }
   async function fecharCaixa({ valorContado, observacao }) {
     if (!caixaAtual) return;
@@ -335,6 +336,12 @@ export default function EnigmaSistema() {
   async function buscarVendasPorData(dataISO) {
     const inicio = `${dataISO}T00:00:00`;
     const fim = `${dataISO}T23:59:59.999`;
+    const rows = await sb(`vendas?select=*&timestamp=gte.${inicio}&timestamp=lte.${fim}&order=timestamp.desc`);
+    return (rows || []).map(rowToVenda);
+  }
+  async function buscarVendasPorPeriodo(inicioISO, fimISO) {
+    const inicio = `${inicioISO}T00:00:00`;
+    const fim = `${fimISO}T23:59:59.999`;
     const rows = await sb(`vendas?select=*&timestamp=gte.${inicio}&timestamp=lte.${fim}&order=timestamp.desc`);
     return (rows || []).map(rowToVenda);
   }
@@ -424,7 +431,7 @@ export default function EnigmaSistema() {
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
-        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} />}
+        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} />}
       </main>
       <BottomNav tab={tab} setTab={(t) => { setTab(t); if (t === "os") setOsView("lista"); }} />
     </div>
@@ -490,6 +497,8 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa }) {
   const [valorManual, setValorManual] = useState("");
   const [qtdManual, setQtdManual] = useState(1);
   const [forma, setForma] = useState("dinheiro");
+  const [cupomAberto, setCupomAberto] = useState(null);
+  const [finalizando, setFinalizando] = useState(false);
 
   if (!caixaAtual) {
     return (
@@ -515,10 +524,13 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa }) {
   }
   function removeItem(id) { setItens(itens.filter((i) => i.id !== id)); }
   const total = itens.reduce((s, i) => s + i.valor * i.qtd, 0);
-  function finalizar() {
-    if (itens.length === 0) return;
-    onVenda({ itens, formaPagamento: forma });
+  async function finalizar() {
+    if (itens.length === 0 || finalizando) return;
+    setFinalizando(true);
+    const venda = await onVenda({ itens, formaPagamento: forma });
+    setFinalizando(false);
     setItens([]); setForma("dinheiro");
+    if (venda) setCupomAberto(venda);
   }
 
   return (
@@ -609,10 +621,11 @@ function PDVTab({ caixaAtual, estoque, onVenda, onIrParaCaixa }) {
                 </button>
               ))}
             </div>
-            <Button onClick={finalizar} className="w-full">Finalizar venda</Button>
+            <Button onClick={finalizar} disabled={finalizando} className="w-full">{finalizando ? "Salvando..." : "Finalizar venda"}</Button>
           </>
         )}
       </Card>
+      {cupomAberto && <CupomVenda venda={cupomAberto} onFechar={() => setCupomAberto(null)} />}
     </div>
   );
 }
@@ -698,12 +711,21 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
 }
 
 /* ================= RELATÓRIO ================= */
-function RelatorioTab({ caixaAtual, onBuscarVendas }) {
+function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo }) {
+  const [modo, setModo] = useState("dia"); // dia | periodo
   const [data, setData] = useState(todayISO());
   const [vendasDoDia, setVendasDoDia] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [cupomAberto, setCupomAberto] = useState(null);
+
+  const [dataInicio, setDataInicio] = useState(todayISO().slice(0, 8) + "01");
+  const [dataFim, setDataFim] = useState(todayISO());
+  const [vendasPeriodo, setVendasPeriodo] = useState([]);
+  const [carregandoPeriodo, setCarregandoPeriodo] = useState(true);
+  const [diaExpandido, setDiaExpandido] = useState(null);
 
   useEffect(() => {
+    if (modo !== "dia") return;
     let ativo = true;
     setCarregando(true);
     onBuscarVendas(data)
@@ -711,41 +733,201 @@ function RelatorioTab({ caixaAtual, onBuscarVendas }) {
       .catch(() => { if (ativo) setVendasDoDia([]); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [data]);
+  }, [data, modo]);
+
+  useEffect(() => {
+    if (modo !== "periodo") return;
+    let ativo = true;
+    setCarregandoPeriodo(true);
+    onBuscarVendasPeriodo(dataInicio, dataFim)
+      .then((vendas) => { if (ativo) setVendasPeriodo(vendas); })
+      .catch(() => { if (ativo) setVendasPeriodo([]); })
+      .finally(() => { if (ativo) setCarregandoPeriodo(false); });
+    return () => { ativo = false; };
+  }, [dataInicio, dataFim, modo]);
 
   const totais = totaisPorForma(vendasDoDia);
   const total = totalGeral(vendasDoDia);
+
+  const porDia = {};
+  vendasPeriodo.forEach((v) => {
+    const d = v.timestamp.slice(0, 10);
+    (porDia[d] = porDia[d] || []).push(v);
+  });
+  const diasOrdenados = Object.keys(porDia).sort().reverse();
+  const totalPeriodo = totalGeral(vendasPeriodo);
+  const totaisPeriodo = totaisPorForma(vendasPeriodo);
+
   return (
     <div className="space-y-4">
-      <Card><Label>Data</Label><Input type="date" value={data} onChange={(e) => setData(e.target.value)} /></Card>
-      <Card>
-        <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do dia</span><span className="font-mono text-2xl text-white">{fmt(total)}</span></div>
-        <div className="text-xs text-[#6E6E78]">{carregando ? "Carregando..." : `${vendasDoDia.length} venda(s)`}</div>
-        <div className="grid grid-cols-2 gap-2 mt-4">
-          {FORMAS.map((f) => (
-            <div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2">
-              <div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div>
-              <div className="font-mono text-sm text-[#E5E5EA]">{fmt(totais[f.id])}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <Label>Vendas</Label>
-        {vendasDoDia.length === 0 ? <div className="text-sm text-[#5A5A64] py-6 text-center">{carregando ? "Carregando..." : "Nenhuma venda nesta data"}</div> : (
-          <div className="divide-y divide-[#22222A]">
-            {vendasDoDia.map((v) => (
-              <div key={v.id} className="py-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-[#6E6E78]">{new Date(v.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {FORMAS.find((f) => f.id === v.formaPagamento)?.label}</span>
-                  <span className="font-mono text-sm text-[#E5E5EA]">{fmt(v.total)}</span>
+      <div className="flex gap-2">
+        {[{ id: "dia", label: "Dia" }, { id: "periodo", label: "Período" }].map((m) => (
+          <button key={m.id} onClick={() => setModo(m.id)} className={"flex-1 py-1.5 rounded-lg text-xs tracking-wide border " + (modo === m.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {modo === "dia" && (
+        <>
+          <Card><Label>Data</Label><Input type="date" value={data} onChange={(e) => setData(e.target.value)} /></Card>
+          <Card>
+            <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do dia</span><span className="font-mono text-2xl text-white">{fmt(total)}</span></div>
+            <div className="text-xs text-[#6E6E78]">{carregando ? "Carregando..." : `${vendasDoDia.length} venda(s)`}</div>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              {FORMAS.map((f) => (
+                <div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2">
+                  <div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div>
+                  <div className="font-mono text-sm text-[#E5E5EA]">{fmt(totais[f.id])}</div>
                 </div>
-                <div className="text-xs text-[#8A8A96] mt-0.5">{v.itens.map((i) => i.descricao).join(", ")}</div>
+              ))}
+            </div>
+          </Card>
+          <Card>
+            <Label>Vendas <span className="normal-case text-[#5A5A64]">(toque pra ver o cupom)</span></Label>
+            {vendasDoDia.length === 0 ? <div className="text-sm text-[#5A5A64] py-6 text-center">{carregando ? "Carregando..." : "Nenhuma venda nesta data"}</div> : (
+              <div className="divide-y divide-[#22222A]">
+                {vendasDoDia.map((v) => (
+                  <button key={v.id} onClick={() => setCupomAberto(v)} className="w-full text-left py-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-[#6E6E78]">{new Date(v.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {FORMAS.find((f) => f.id === v.formaPagamento)?.label}</span>
+                      <span className="font-mono text-sm text-[#E5E5EA]">{fmt(v.total)}</span>
+                    </div>
+                    <div className="text-xs text-[#8A8A96] mt-0.5">{v.itens.map((i) => i.descricao).join(", ")}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+
+      {modo === "periodo" && (
+        <>
+          <Card>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label>De</Label><Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} /></div>
+              <div><Label>Até</Label><Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} /></div>
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do período</span><span className="font-mono text-2xl text-white">{fmt(totalPeriodo)}</span></div>
+            <div className="text-xs text-[#6E6E78]">{carregandoPeriodo ? "Carregando..." : `${vendasPeriodo.length} venda(s) em ${diasOrdenados.length} dia(s)`}</div>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              {FORMAS.map((f) => (
+                <div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2">
+                  <div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div>
+                  <div className="font-mono text-sm text-[#E5E5EA]">{fmt(totaisPeriodo[f.id])}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card>
+            <Label>Por dia</Label>
+            {diasOrdenados.length === 0 ? (
+              <div className="text-sm text-[#5A5A64] py-6 text-center">{carregandoPeriodo ? "Carregando..." : "Nenhuma venda no período"}</div>
+            ) : (
+              <div className="divide-y divide-[#22222A]">
+                {diasOrdenados.map((d) => {
+                  const vendasDia = porDia[d];
+                  const totalDia = totalGeral(vendasDia);
+                  const aberto = diaExpandido === d;
+                  return (
+                    <div key={d}>
+                      <button onClick={() => setDiaExpandido(aberto ? null : d)} className="w-full flex items-center justify-between py-2.5">
+                        <div className="text-left">
+                          <div className="text-sm text-[#E5E5EA]">{fmtDate(d)}</div>
+                          <div className="text-xs text-[#6E6E78]">{vendasDia.length} venda(s)</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm text-[#E5E5EA]">{fmt(totalDia)}</span>
+                          {aberto ? <ChevronDown size={15} className="text-[#6E6E78]" /> : <ChevronRight size={15} className="text-[#6E6E78]" />}
+                        </div>
+                      </button>
+                      {aberto && (
+                        <div className="pb-2 pl-2 space-y-1">
+                          {vendasDia.map((v) => (
+                            <button key={v.id} onClick={() => setCupomAberto(v)} className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-[#0F0F14]">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-[#8A8A96]">{new Date(v.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {FORMAS.find((f) => f.id === v.formaPagamento)?.label}</span>
+                                <span className="font-mono text-xs text-[#C9C9D2]">{fmt(v.total)}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+
+      {cupomAberto && <CupomVenda venda={cupomAberto} onFechar={() => setCupomAberto(null)} />}
+    </div>
+  );
+}
+
+function CupomVenda({ venda, onFechar }) {
+  return (
+    <div className="fixed inset-0 bg-black/80 z-20 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onFechar}>
+      <div className="bg-[#131318] border border-[#2A2A34] rounded-t-2xl sm:rounded-2xl w-full max-w-sm max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-[11px] tracking-[0.25em] text-[#8A8A96] uppercase">ENIGMA</div>
+              <div className="text-sm text-[#E5E5EA]">Cupom de venda</div>
+            </div>
+            <button onClick={onFechar} className="text-[#8A8A96]"><X size={18} /></button>
+          </div>
+          <div className="text-xs text-[#6E6E78] mb-3">{fmtDateTime(venda.timestamp)}</div>
+          <div className="divide-y divide-[#22222A] border-y border-[#2A2A34]">
+            {venda.itens.map((i, idx) => (
+              <div key={idx} className="flex items-center justify-between py-2">
+                <div>
+                  <div className="text-sm text-[#E5E5EA]">{i.descricao}</div>
+                  <div className="text-xs text-[#6E6E78]">{i.qtd}x {fmt(i.valor)}</div>
+                </div>
+                <span className="font-mono text-sm text-[#E5E5EA]">{fmt(i.valor * i.qtd)}</span>
               </div>
             ))}
           </div>
-        )}
-      </Card>
+          <div className="flex justify-between items-center mt-3">
+            <span className="text-sm text-[#8A8A96]">Forma de pagamento</span>
+            <span className="text-sm text-[#E5E5EA]">{FORMAS.find((f) => f.id === venda.formaPagamento)?.label}</span>
+          </div>
+          <div className="flex justify-between items-center mt-1 pt-2 border-t border-[#2A2A34]">
+            <span className="text-sm text-[#C9C9D2]">Total</span>
+            <span className="font-mono text-xl text-white">{fmt(venda.total)}</span>
+          </div>
+          <Button className="w-full mt-4" onClick={() => window.print()}>
+            <span className="flex items-center justify-center gap-2"><Printer size={15} /> Imprimir cupom</span>
+          </Button>
+        </div>
+      </div>
+
+      <style>{`
+        .print-area { display: none; }
+        @media print {
+          body * { visibility: hidden; }
+          .print-area, .print-area * { visibility: visible; }
+          .print-area { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 16px; color: #000; background: #fff; font-size: 12px; }
+        }
+      `}</style>
+      <div className="print-area">
+        <div style={{ textAlign: "center", fontWeight: "bold" }}>ENIGMA</div>
+        <div style={{ textAlign: "center" }}>Cupom de venda</div>
+        <div>{fmtDateTime(venda.timestamp)}</div>
+        <hr />
+        {venda.itens.map((i, idx) => (
+          <div key={idx}>{i.qtd}x {i.descricao} — {fmt(i.valor * i.qtd)}</div>
+        ))}
+        <hr />
+        <div>Forma de pagamento: {FORMAS.find((f) => f.id === venda.formaPagamento)?.label}</div>
+        <div style={{ fontWeight: "bold" }}>Total: {fmt(venda.total)}</div>
+      </div>
     </div>
   );
 }
