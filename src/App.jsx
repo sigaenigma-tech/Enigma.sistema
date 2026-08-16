@@ -263,6 +263,7 @@ function EnigmaSistema() {
   const [osDetailId, setOsDetailId] = useState(null);
   const [osDetail, setOsDetail] = useState(null);
   const [avaliacoes, setAvaliacoes] = useState([]);
+  const [seminovos, setSeminovos] = useState([]);
   const patchTimer = useRef(null);
 
   useEffect(() => {
@@ -287,6 +288,12 @@ function EnigmaSistema() {
           setAvaliacoes(avRows || []);
         } catch (avErr) {
           console.warn("Módulo de avaliações ainda não disponível:", avErr);
+        }
+        try {
+          const semiRows = await sb("seminovos?select=*&order=created_at.desc");
+          setSeminovos(semiRows || []);
+        } catch (semiErr) {
+          console.warn("Módulo de seminovos ainda não disponível:", semiErr);
         }
       } catch (err) {
         setSaveError(true);
@@ -522,6 +529,76 @@ function EnigmaSistema() {
     }
   }
 
+
+  async function registrarAquisicaoComEstoque(payload) {
+    try {
+      let avaliacao = payload;
+      if (!avaliacao?.id) {
+        avaliacao = await salvarAvaliacaoUsado(payload);
+      }
+      if (!avaliacao?.id) throw new Error("A avaliação precisa estar salva antes da aquisição.");
+
+      const valorPago = Number(avaliacao?.aquisicao?.valorFechado || avaliacao?.oferta?.valorFinal || 0);
+      const testes = avaliacao?.testes || {};
+      const falhas = Object.entries(testes).filter(([,v]) => v === "falha").map(([k]) => k);
+      const custoReparos = somaCustosFalhas(falhas, avaliacao?.aparelho, estoque, avaliacao?.precificacao || {});
+      const statusSeminovo = falhas.length ? "em_preparacao" : "disponivel";
+      const aparelho = avaliacao?.aparelho || {};
+      const inspecao = avaliacao?.inspecao || {};
+
+      // Impede duplicidade pela avaliação antes do insert.
+      const existentes = await sb(`seminovos?select=id&avaliacao_id=eq.${avaliacao.id}&limit=1`);
+      let seminovo = existentes?.[0];
+
+      if (!seminovo) {
+        const bodySeminovo = {
+          avaliacao_id: avaliacao.id,
+          marca: aparelho.marca || "",
+          modelo: aparelho.modelo || "",
+          armazenamento: aparelho.armazenamento || "",
+          cor: aparelho.cor || "",
+          imei: aparelho.imei || "",
+          serial: aparelho.serial || "",
+          bateria: aparelho.bateria === "" ? null : Number(aparelho.bateria) || null,
+          custo_aquisicao: valorPago,
+          custo_reparos_previsto: custoReparos,
+          status: statusSeminovo,
+          dados: {
+            inspecao,
+            testes,
+            falhas,
+            precificacao: avaliacao.precificacao || {},
+            aquisicao: avaliacao.aquisicao || {},
+            origem: "avaliacao_usados",
+          },
+          updated_at: new Date().toISOString(),
+        };
+        const rows = await sb("seminovos", { method: "POST", body: JSON.stringify(bodySeminovo) });
+        seminovo = rows?.[0];
+        if (seminovo) setSeminovos(prev => [seminovo, ...prev.filter(x => x.id !== seminovo.id)]);
+      }
+
+      const next = {
+        ...avaliacao,
+        status: "comprado",
+        aquisicao: {
+          ...(avaliacao.aquisicao || {}),
+          valorFechado: valorPago,
+          compradoEm: avaliacao?.aquisicao?.compradoEm || new Date().toISOString(),
+          registroAquisicao: avaliacao?.aquisicao?.registroAquisicao || ("AQ-" + Date.now()),
+          seminovoId: seminovo?.id || null,
+          estoqueCriado: true,
+        }
+      };
+      const salvo = await salvarAvaliacaoUsado(next);
+      return { avaliacao: salvo || next, seminovo };
+    } catch (e) {
+      console.error("Falha ao registrar aquisição e estoque:", e);
+      setSaveError(true);
+      throw e;
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center">
@@ -561,9 +638,9 @@ function EnigmaSistema() {
           <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
         {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
-        {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} />}
+        {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
         {tab === "estoque" && (
-          <EstoqueTab estoque={estoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
+          <EstoqueTab estoque={estoque} seminovos={seminovos} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab />}
@@ -608,7 +685,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.3</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.4.7</div>
     </aside>
   );
 }
@@ -794,7 +871,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.6</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.4.7</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1393,7 +1470,8 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
 }
 
 /* ================= ESTOQUE ================= */
-function EstoqueTab({ estoque, onAdd, onEdit, onRemove }) {
+function EstoqueTab({ estoque, seminovos = [], onAdd, onEdit, onRemove }) {
+  const [secao, setSecao] = useState("produtos");
   const [mostrarForm, setMostrarForm] = useState(false);
   const [nome, setNome] = useState("");
   const [categoria, setCategoria] = useState("acessorio");
@@ -1411,58 +1489,98 @@ function EstoqueTab({ estoque, onAdd, onEdit, onRemove }) {
 
   const lista = estoque.filter((p) => p.nome.toLowerCase().includes(busca.toLowerCase()));
   const baixos = estoque.filter((p) => p.quantidade <= p.estoqueMinimo);
+  const semiLista = seminovos.filter(x => {
+    const q = busca.toLowerCase();
+    return !q || [x.marca,x.modelo,x.armazenamento,x.cor,x.imei,x.serial].some(v => String(v||"").toLowerCase().includes(q));
+  });
 
   return (
     <div className="space-y-4">
-      {baixos.length > 0 && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <div className="flex items-center gap-2 text-amber-400 text-sm"><AlertCircle size={15} /> {baixos.length} produto(s) com estoque baixo</div>
-        </Card>
-      )}
-
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]" />
-          <Input placeholder="Buscar produto ou peça" value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9" />
-        </div>
-        <Button onClick={() => setMostrarForm(!mostrarForm)} className="px-3"><Plus size={18} /></Button>
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
+        <button onClick={()=>setSecao("produtos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Peças <span className="ml-1 text-[9px] font-mono">{estoque.length}</span></button>
+        <button onClick={()=>setSecao("seminovos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="seminovos"?"border-cyan-400/30 bg-cyan-400/[.06] text-white":"border-transparent text-[#777783]")}>Seminovos <span className="ml-1 text-[9px] font-mono">{seminovos.length}</span></button>
       </div>
 
-      {mostrarForm && (
-        <Card>
-          <Label>Nome</Label>
-          <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Capinha iPhone 12, Tela iPhone 12" className="mb-2" />
-          <div className="flex gap-2 mb-2">
-            {[{ id: "acessorio", label: "Acessório (balcão)" }, { id: "peca", label: "Peça técnica" }].map((c) => (
-              <button key={c.id} onClick={() => setCategoria(c.id)} className={"flex-1 py-1.5 rounded-lg text-xs border " + (categoria === c.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
-                {c.label}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <div><Label>Preço venda</Label><Input inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value.replace(",", "."))} /></div>
-            <div><Label>Custo</Label><Input inputMode="decimal" value={custo} onChange={(e) => setCusto(e.target.value.replace(",", "."))} /></div>
-            <div><Label>Quantidade</Label><Input inputMode="numeric" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} /></div>
-            <div><Label>Estoque mínimo</Label><Input inputMode="numeric" value={estoqueMinimo} onChange={(e) => setEstoqueMinimo(e.target.value)} /></div>
-          </div>
-          <Button className="w-full" onClick={salvar}>Salvar produto</Button>
-        </Card>
-      )}
+      <div className="relative">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]" />
+        <Input placeholder={secao==="seminovos"?"Buscar modelo, IMEI ou serial":"Buscar produto ou peça"} value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9" />
+      </div>
 
-      {lista.length === 0 ? (
-        <Card className="text-center py-10">
-          <Package className="mx-auto mb-3 text-[#5A5A64]" size={26} />
-          <div className="text-sm text-[#8A8A96]">Nenhum produto cadastrado</div>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {lista.map((p) => (
-            <ProdutoCard key={p.id} p={p} onEdit={onEdit} onRemove={onRemove} />
-          ))}
-        </div>
-      )}
+      {secao==="produtos" && <>
+        {baixos.length > 0 && (
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <div className="flex items-center gap-2 text-amber-400 text-sm"><AlertCircle size={15} /> {baixos.length} produto(s) com estoque baixo</div>
+          </Card>
+        )}
+        <div className="flex justify-end"><Button onClick={() => setMostrarForm(!mostrarForm)} className="px-3"><Plus size={18} /></Button></div>
+
+        {mostrarForm && (
+          <Card>
+            <Label>Nome</Label>
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Capinha iPhone 12, Tela iPhone 12" className="mb-2" />
+            <div className="flex gap-2 mb-2">
+              {[{ id: "acessorio", label: "Acessório (balcão)" }, { id: "peca", label: "Peça técnica" }].map((c) => (
+                <button key={c.id} onClick={() => setCategoria(c.id)} className={"flex-1 py-1.5 rounded-lg text-xs border " + (categoria === c.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div><Label>Preço venda</Label><Input inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value.replace(",", "."))} /></div>
+              <div><Label>Custo</Label><Input inputMode="decimal" value={custo} onChange={(e) => setCusto(e.target.value.replace(",", "."))} /></div>
+              <div><Label>Quantidade</Label><Input inputMode="numeric" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} /></div>
+              <div><Label>Estoque mínimo</Label><Input inputMode="numeric" value={estoqueMinimo} onChange={(e) => setEstoqueMinimo(e.target.value)} /></div>
+            </div>
+            <Button className="w-full" onClick={salvar}>Salvar produto</Button>
+          </Card>
+        )}
+
+        {lista.length === 0 ? (
+          <Card className="text-center py-10">
+            <Package className="mx-auto mb-3 text-[#5A5A64]" size={26} />
+            <div className="text-sm text-[#8A8A96]">Nenhum produto cadastrado</div>
+          </Card>
+        ) : <div className="space-y-2">{lista.map((p) => <ProdutoCard key={p.id} p={p} onEdit={onEdit} onRemove={onRemove} />)}</div>}
+      </>}
+
+      {secao==="seminovos" && <>
+        {!semiLista.length ? <Card className="text-center py-12">
+          <Smartphone className="mx-auto mb-3 text-[#5A5A64]" size={28}/>
+          <div className="text-sm text-[#8A8A96]">Nenhum seminovo adquirido</div>
+          <div className="text-[10px] text-[#5F5F69] mt-2">Aparelhos comprados em Avaliação de Usados aparecerão aqui automaticamente.</div>
+        </Card> :
+        <div className="grid md:grid-cols-2 gap-3">{semiLista.map(item=><SeminovoCard key={item.id} item={item}/>)}</div>}
+      </>}
     </div>
   );
+}
+
+function SeminovoCard({ item }) {
+  const [aberto,setAberto]=useState(false);
+  const dados=item.dados||{};
+  const falhas=dados.falhas||[];
+  const statusLabel=item.status==="disponivel"?"Disponível":item.status==="vendido"?"Vendido":"Em preparação";
+  const statusCls=item.status==="disponivel"?"text-green-400 border-green-500/25 bg-green-500/[.04]":item.status==="vendido"?"text-[#777783] border-white/10 bg-white/[.02]":"text-amber-300 border-amber-400/25 bg-amber-400/[.035]";
+  return <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-b from-cyan-400/[.035] to-transparent p-4">
+    <button className="w-full text-left" onClick={()=>setAberto(!aberto)}>
+      <div className="flex items-start justify-between gap-3">
+        <div><div className="text-[9px] tracking-[.22em] text-cyan-300">SEMINOVO // {String(item.id||"").slice(0,8).toUpperCase()}</div><div className="text-base text-white mt-1">{item.marca} {item.modelo}</div><div className="text-xs text-[#6F6F7A] mt-1">{item.armazenamento || "—"} · {item.cor || "—"}</div></div>
+        <span className={"rounded-full border px-2.5 py-1 text-[9px] "+statusCls}>{statusLabel}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#656570]">CUSTO AQUISIÇÃO</div><div className="font-mono text-sm mt-1">{fmt(item.custo_aquisicao)}</div></div>
+        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#656570]">REPAROS PREVISTOS</div><div className="font-mono text-sm mt-1">{fmt(item.custo_reparos_previsto)}</div></div>
+      </div>
+    </button>
+    {aberto && <div className="mt-4 pt-4 border-t border-white/8 space-y-2 text-xs">
+      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">IMEI</span><span className="font-mono text-right">{item.imei||"—"}</span></div>
+      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Serial</span><span className="font-mono text-right">{item.serial||"—"}</span></div>
+      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Bateria</span><span>{item.bateria ? `${item.bateria}%` : "—"}</span></div>
+      <div className="flex justify-between gap-4"><span className="text-[#6F6F7A]">Custo total projetado</span><span className="font-mono">{fmt((Number(item.custo_aquisicao)||0)+(Number(item.custo_reparos_previsto)||0))}</span></div>
+      <div className="pt-2"><div className="text-[9px] tracking-[.18em] text-[#666672]">FALHAS / PREPARAÇÃO</div><div className="text-[#A0A0AA] mt-1">{falhas.length?falhas.join(" • "):"Nenhuma falha funcional registrada."}</div></div>
+      <div className="text-[9px] text-[#50505A] pt-1">Origem: Avaliação de Usados · vínculo {String(item.avaliacao_id||"").slice(0,8)}</div>
+    </div>}
+  </div>;
 }
 
 function ProdutoCard({ p, onEdit, onRemove }) {
@@ -1705,7 +1823,7 @@ function labelEventoNegociacao(ev) {
   return map[ev?.tipo] || String(ev?.tipo||"EVENTO").toUpperCase();
 }
 
-function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
+function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar, onRegistrarCompra }) {
   const [view, setView] = useState("lista");
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -2106,7 +2224,7 @@ function AvaliacaoUsadosTab({ avaliacoes, estoque, onSalvar }) {
           <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><div className="text-xs tracking-widest text-purple-300 mb-3">TERMO DE AQUISIÇÃO</div><p className="text-xs leading-5 text-[#858590]">O vendedor declara ser legítimo proprietário do aparelho identificado nesta avaliação e declara, sob sua responsabilidade, a procedência lícita do bem e a veracidade das informações fornecidas.</p><button onClick={()=>upd("aquisicao","termoAceito",!draft.aquisicao.termoAceito)} className={"mt-4 w-full rounded-lg border p-3 text-left text-sm "+(draft.aquisicao.termoAceito?"border-green-500/30 bg-green-500/[.06] text-green-300":"border-white/10 text-[#8A8A96]")}><CheckCircle2 size={16} className="inline mr-2"/>Declaração conferida para assinatura</button><div className="text-[10px] text-amber-300/70 mt-3">Antes do uso comercial, valide o texto jurídico definitivo com profissional habilitado.</div></div>
         </div>
         <div className="mt-5 rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-4 flex flex-col md:flex-row md:items-center justify-between gap-3"><div><div className="text-[9px] tracking-[.25em] text-purple-300">DOCUMENTAÇÃO DE AQUISIÇÃO</div><div className="text-xs text-[#777783] mt-1">Gere o termo preenchido para assinatura física do vendedor e da ENIGMA.</div></div><Button variant="ghost" onClick={()=>imprimirTermoAquisicao(draft,{score:enigmaScore,mercadoMedioFmt:fmt(mercadoMedio),compraMaxFmt:fmt(compraMax)})}><Printer size={15} className="inline mr-2"/>Gerar / Imprimir termo</Button></div>
-        <div className="mt-5 flex flex-col sm:flex-row gap-3"><Button variant="ghost" onClick={()=>persist()}>Salvar como avaliação</Button><Button disabled={!draft.aquisicao.termoAceito || !Number(draft.aquisicao.valorFechado||draft.oferta.valorOfertado)} onClick={async()=>{const next={...draft,status:"comprado",aquisicao:{...draft.aquisicao,valorFechado:draft.aquisicao.valorFechado||draft.oferta.valorOfertado,compradoEm:new Date().toISOString(),registroAquisicao:draft.aquisicao.registroAquisicao||("AQ-"+Date.now())}};setDraft(next);await persist(next);alert("Aquisição registrada. Guarde o termo assinado junto ao registro desta compra.");}}>Registrar compra</Button></div>
+        <div className="mt-5 flex flex-col sm:flex-row gap-3"><Button variant="ghost" onClick={()=>persist()}>Salvar como avaliação</Button><Button disabled={!draft.aquisicao.termoAceito || !Number(draft.aquisicao.valorFechado||draft.oferta.valorFinal||draft.oferta.valorOfertado)} onClick={async()=>{try{setSaving(true);const next={...draft,status:"comprado",aquisicao:{...draft.aquisicao,valorFechado:draft.aquisicao.valorFechado||draft.oferta.valorFinal||draft.oferta.valorOfertado,compradoEm:new Date().toISOString(),registroAquisicao:draft.aquisicao.registroAquisicao||("AQ-"+Date.now())}};const res=await onRegistrarCompra(next);setDraft(res?.avaliacao||next);alert(`Aquisição registrada e aparelho adicionado aos Seminovos como "${res?.seminovo?.status==="disponivel"?"Disponível":"Em preparação"}".`);}catch(e){alert("Não foi possível concluir a aquisição/estoque. Confira o Supabase e tente novamente.");}finally{setSaving(false);}}}>{saving?"Registrando...":"Registrar compra"}</Button></div>
       </Card>}
     </div>
   );
