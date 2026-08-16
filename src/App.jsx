@@ -353,6 +353,38 @@ function EnigmaSistema() {
     }
   }
 
+
+  async function registrarFinanceiroAutomatico({ tipo, categoriaNome, descricao, valor, formaPagamento, origem, origemId, dados = {} }) {
+    try {
+      let categoriaId = null;
+      if (categoriaNome) {
+        const cats = await sb(`financeiro_categorias?select=id&nome=eq.${encodeURIComponent(categoriaNome)}&tipo=eq.${tipo}&limit=1`);
+        categoriaId = cats?.[0]?.id || null;
+      }
+      const body = {
+        tipo,
+        categoria_id: categoriaId,
+        descricao,
+        valor: Number(valor) || 0,
+        forma_pagamento: formaPagamento || null,
+        data_competencia: new Date().toISOString().slice(0,10),
+        data_pagamento: new Date().toISOString(),
+        status: "pago",
+        origem,
+        origem_id: String(origemId || ""),
+        dados,
+        updated_at: new Date().toISOString(),
+      };
+      const existentes = origemId ? await sb(`financeiro_lancamentos?select=id&origem=eq.${origem}&origem_id=eq.${encodeURIComponent(String(origemId))}&limit=1`) : [];
+      if (existentes?.length) return existentes[0];
+      const rows = await sb("financeiro_lancamentos", { method:"POST", body:JSON.stringify(body) });
+      return rows?.[0] || null;
+    } catch (e) {
+      console.warn("Lançamento financeiro automático não registrado:", e);
+      return null;
+    }
+  }
+
   /* ---------- PDV / caixa ---------- */
   async function abrirCaixa({ valorInicial, operador, observacao }) {
     try {
@@ -384,6 +416,17 @@ function EnigmaSistema() {
         body: JSON.stringify({ caixa_id: caixaAtual.id, itens, forma_pagamento: formaPagamento, total }),
       });
       const venda = rowToVenda(rows[0]);
+
+      await registrarFinanceiroAutomatico({
+        tipo: "entrada",
+        categoriaNome: seminovosVenda.length && seminovosVenda.length === itens.length ? "Venda de Seminovos" : "Venda PDV",
+        descricao: seminovosVenda.length && seminovosVenda.length === itens.length ? "Venda de seminovo" : "Venda PDV",
+        valor: total,
+        formaPagamento,
+        origem: "pdv",
+        origemId: venda.id,
+        dados: { itens }
+      });
 
       // Baixa individual dos seminovos vendidos.
       for (const item of seminovosVenda) {
@@ -440,6 +483,7 @@ function EnigmaSistema() {
   async function excluirVenda(venda) {
     try {
       await sb(`vendas?id=eq.${venda.id}`, { method: "DELETE", prefer: "return=minimal" });
+      try { await sb(`financeiro_lancamentos?origem=eq.pdv&origem_id=eq.${encodeURIComponent(String(venda.id))}`, { method:"DELETE", prefer:"return=minimal" }); } catch {}
       const usados = (venda.itens || []).filter((i) => i.estoqueId);
       usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, u.qtd));
       const semiItens = (venda.itens || []).filter((i) => i.seminovoId);
@@ -648,6 +692,16 @@ function EnigmaSistema() {
         }
       };
       const salvo = await salvarAvaliacaoUsado(next);
+      await registrarFinanceiroAutomatico({
+        tipo: "saida",
+        categoriaNome: "Compra de Seminovos",
+        descricao: `Aquisição seminovo — ${aparelho.marca || ""} ${aparelho.modelo || ""}`.trim(),
+        valor: valorPago,
+        formaPagamento: avaliacao?.aquisicao?.formaPagamento || avaliacao?.aquisicao?.forma || null,
+        origem: "seminovo_compra",
+        origemId: seminovo?.id || avaliacao.id,
+        dados: { avaliacaoId: avaliacao.id, seminovoId: seminovo?.id || null }
+      });
       return { avaliacao: salvo || next, seminovo };
     } catch (e) {
       console.error("Falha ao registrar aquisição e estoque:", e);
@@ -742,7 +796,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.5.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.6</div>
     </aside>
   );
 }
@@ -928,7 +982,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.5.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.6</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1133,22 +1187,102 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, o
 
 /* ================= FINANCEIRO ================= */
 function FinanceiroTab({ caixaAtual, seminovos = [], onAbrir, onFechar }) {
-  const [secao,setSecao]=useState("caixa");
+  const [secao,setSecao]=useState("visao");
+  const [movs,setMovs]=useState([]);
+  const [cats,setCats]=useState([]);
+  const [loadingFin,setLoadingFin]=useState(true);
+  const [form,setForm]=useState({tipo:"saida",categoria_id:"",descricao:"",valor:"",forma_pagamento:"pix",status:"pago",data_competencia:new Date().toISOString().slice(0,10),observacao:""});
+  const [mostrarForm,setMostrarForm]=useState(false);
+  const [filtro,setFiltro]=useState("todos");
+
+  const carregar=async()=>{
+    setLoadingFin(true);
+    try{
+      const [m,c]=await Promise.all([
+        sb("financeiro_movimentacoes?select=*&order=data_competencia.desc,created_at.desc"),
+        sb("financeiro_categorias?select=*&ativa=eq.true&order=tipo.asc,nome.asc")
+      ]);
+      setMovs(m||[]);setCats(c||[]);
+    }catch(e){console.warn("Financeiro ainda não disponível:",e);}
+    setLoadingFin(false);
+  };
+  useEffect(()=>{carregar();},[]);
+
+  const pagos=movs.filter(x=>x.status==="pago");
+  const entradas=pagos.filter(x=>x.tipo==="entrada").reduce((a,x)=>a+Number(x.valor||0),0);
+  const saidas=pagos.filter(x=>x.tipo==="saida").reduce((a,x)=>a+Number(x.valor||0),0);
+  const resultado=entradas-saidas;
+  const receber=movs.filter(x=>x.tipo==="entrada"&&x.status==="pendente").reduce((a,x)=>a+Number(x.valor||0),0);
+  const pagar=movs.filter(x=>x.tipo==="saida"&&x.status==="pendente").reduce((a,x)=>a+Number(x.valor||0),0);
 
   const vendidos=seminovos.filter(x=>x.status==="vendido");
   const emEstoque=seminovos.filter(x=>x.status!=="vendido");
   const custoTotal=(x)=>(Number(x.custo_aquisicao)||0)+(Number(x.custo_reparos_previsto)||0);
-  const capitalEstoque=emEstoque.reduce((s,x)=>s+custoTotal(x),0);
-  const totalVendido=vendidos.reduce((s,x)=>s+(Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0),0);
-  const custoVendidos=vendidos.reduce((s,x)=>s+custoTotal(x),0);
-  const lucro=vendidos.reduce((s,x)=>s+(Number(x.lucro_bruto)||Number(x?.dados?.venda?.lucroBruto)||((Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0)-custoTotal(x))),0);
-  const margem=totalVendido>0 ? (lucro/totalVendido)*100 : 0;
+  const capitalEstoque=emEstoque.reduce((a,x)=>a+custoTotal(x),0);
+  const totalVendido=vendidos.reduce((a,x)=>a+(Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0),0);
+  const custoVendidos=vendidos.reduce((a,x)=>a+custoTotal(x),0);
+  const lucroSeminovos=vendidos.reduce((a,x)=>a+(Number(x.lucro_bruto)||Number(x?.dados?.venda?.lucroBruto)||((Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0)-custoTotal(x))),0);
+  const margemSeminovos=totalVendido>0?(lucroSeminovos/totalVendido)*100:0;
+
+  const salvarLancamento=async()=>{
+    if(!form.descricao.trim()||!(Number(form.valor)>0)) return;
+    try{
+      const body={
+        tipo:form.tipo,categoria_id:form.categoria_id||null,descricao:form.descricao.trim(),
+        valor:Number(form.valor),forma_pagamento:form.forma_pagamento||null,
+        data_competencia:form.data_competencia,status:form.status,
+        data_pagamento:form.status==="pago"?new Date().toISOString():null,
+        origem:"manual",observacao:form.observacao||null,dados:{},updated_at:new Date().toISOString()
+      };
+      await sb("financeiro_lancamentos",{method:"POST",body:JSON.stringify(body)});
+      setForm({tipo:"saida",categoria_id:"",descricao:"",valor:"",forma_pagamento:"pix",status:"pago",data_competencia:new Date().toISOString().slice(0,10),observacao:""});
+      setMostrarForm(false);await carregar();
+    }catch(e){alert("Não foi possível salvar o lançamento.");}
+  };
+
+  const excluirLancamento=async(id)=>{
+    if(!confirm("Excluir este lançamento financeiro?")) return;
+    try{await sb(`financeiro_lancamentos?id=eq.${id}`,{method:"DELETE",prefer:"return=minimal"});await carregar();}catch(e){alert("Não foi possível excluir.");}
+  };
+
+  const lista=filtro==="todos"?movs:movs.filter(x=>x.tipo===filtro);
 
   return <div className="space-y-4">
-    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
-      <button onClick={()=>setSecao("caixa")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="caixa"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Caixa</button>
-      <button onClick={()=>setSecao("seminovos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="seminovos"?"border-cyan-400/30 bg-cyan-400/[.06] text-white":"border-transparent text-[#777783]")}>Seminovos</button>
+    <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/10 bg-white/[.015] p-1">
+      {[["visao","Visão geral"],["caixa","Caixa"],["seminovos","Seminovos"],["lancamentos","Lançamentos"]].map(([id,label])=>
+        <button key={id} onClick={()=>setSecao(id)} className={"rounded-lg py-2.5 text-[10px] md:text-xs border transition "+(secao===id?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>{label}</button>
+      )}
     </div>
+
+    {secao==="visao" && <div className="space-y-4">
+      <div className="rounded-2xl border border-purple-500/15 bg-gradient-to-br from-purple-500/[.06] via-transparent to-cyan-400/[.035] p-5">
+        <div className="text-[9px] tracking-[.28em] text-purple-300">ENIGMA // FINANCIAL CORE</div>
+        <div className="text-xl text-white mt-2">Visão Geral Financeira</div>
+        <div className="text-xs text-[#74747F] mt-1">Movimentações pagas, pendências e resultado operacional registrado.</div>
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <MetricCyber label="ENTRADAS" value={fmt(entradas)} sub="recebido"/>
+        <MetricCyber label="SAÍDAS" value={fmt(saidas)} sub="pago"/>
+        <MetricCyber label="RESULTADO" value={fmt(resultado)} sub={resultado>=0?"positivo":"negativo"}/>
+        <MetricCyber label="CAPITAL SEMINOVOS" value={fmt(capitalEstoque)} sub={`${emEstoque.length} em estoque`}/>
+      </div>
+      <div className="grid md:grid-cols-2 gap-3">
+        <div className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4">
+          <div className="text-[9px] tracking-[.2em] text-green-300">A RECEBER</div><div className="text-2xl font-mono mt-2">{fmt(receber)}</div>
+        </div>
+        <div className="rounded-xl border border-amber-500/15 bg-amber-500/[.025] p-4">
+          <div className="text-[9px] tracking-[.2em] text-amber-300">A PAGAR</div><div className="text-2xl font-mono mt-2">{fmt(pagar)}</div>
+        </div>
+      </div>
+      <div className="rounded-xl border border-white/10 p-4">
+        <div className="flex justify-between items-center mb-3"><div><div className="text-[9px] tracking-[.2em] text-[#8A8A96]">ÚLTIMAS MOVIMENTAÇÕES</div><div className="text-xs text-[#5F5F69] mt-1">Financeiro consolidado</div></div><button onClick={carregar} className="text-[10px] text-cyan-300">Atualizar</button></div>
+        {!movs.length?<div className="text-xs text-[#666672] py-6 text-center">Nenhum lançamento financeiro ainda.</div>:
+        <div className="space-y-2">{movs.slice(0,6).map(x=><div key={x.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2">
+          <div><div className="text-xs">{x.descricao}</div><div className="text-[9px] text-[#60606B]">{x.categoria||"Sem categoria"} · {x.data_competencia}</div></div>
+          <div className={"font-mono text-xs "+(x.tipo==="entrada"?"text-green-300":"text-red-300")}>{x.tipo==="entrada"?"+ ":"- "}{fmt(x.valor)}</div>
+        </div>)}</div>}
+      </div>
+    </div>}
 
     {secao==="caixa" && <CaixaTab caixaAtual={caixaAtual} onAbrir={onAbrir} onFechar={onFechar} />}
 
@@ -1156,45 +1290,39 @@ function FinanceiroTab({ caixaAtual, seminovos = [], onAbrir, onFechar }) {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCyber label="CAPITAL EM ESTOQUE" value={fmt(capitalEstoque)} sub={`${emEstoque.length} aparelho(s)`}/>
         <MetricCyber label="TOTAL VENDIDO" value={fmt(totalVendido)} sub={`${vendidos.length} venda(s)`}/>
-        <MetricCyber label="LUCRO REALIZADO" value={fmt(lucro)} sub="após aquisição + reparos"/>
-        <MetricCyber label="MARGEM MÉDIA" value={`${margem.toFixed(2)}%`} sub="sobre vendas"/>
+        <MetricCyber label="LUCRO REALIZADO" value={fmt(lucroSeminovos)} sub="aquisição + reparos"/>
+        <MetricCyber label="MARGEM MÉDIA" value={`${margemSeminovos.toFixed(2)}%`} sub="sobre vendas"/>
       </div>
-
       <div className="rounded-2xl border border-white/10 bg-white/[.015] overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-          <div>
-            <div className="text-[9px] tracking-[.22em] text-cyan-300">FINANCEIRO // SEMINOVOS</div>
-            <div className="text-xs text-[#6F6F7A] mt-1">Resultado por unidade vendida</div>
-          </div>
-          <div className="text-[10px] text-[#5F5F69]">{vendidos.length} vendido(s)</div>
-        </div>
+        <div className="px-4 py-3 border-b border-white/10"><div className="text-[9px] tracking-[.22em] text-cyan-300">FINANCEIRO // SEMINOVOS</div><div className="text-xs text-[#6F6F7A] mt-1">Resultado por unidade vendida</div></div>
+        {!vendidos.length?<div className="py-12 text-center text-sm text-[#666672]">Nenhum seminovo vendido ainda.</div>:
+        <div className="divide-y divide-white/8">{vendidos.map(x=>{const venda=Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0;const custo=custoTotal(x);const l=Number(x.lucro_bruto)||Number(x?.dados?.venda?.lucroBruto)||(venda-custo);const m=venda>0?(l/venda)*100:0;return <div key={x.id} className="p-4 grid md:grid-cols-[1.4fr_repeat(4,.7fr)] gap-3 items-center"><div><div className="text-sm">{x.marca} {x.modelo} {x.armazenamento||""}</div><div className="text-[10px] text-[#676772] mt-1">IMEI {x.imei||"—"}</div></div><div><div className="text-[8px] text-[#60606B]">CUSTO</div><div className="font-mono text-xs">{fmt(custo)}</div></div><div><div className="text-[8px] text-[#60606B]">VENDA</div><div className="font-mono text-xs">{fmt(venda)}</div></div><div><div className="text-[8px] text-[#60606B]">LUCRO</div><div className="font-mono text-xs text-green-300">{fmt(l)}</div></div><div><div className="text-[8px] text-[#60606B]">MARGEM</div><div className="font-mono text-xs">{m.toFixed(2)}%</div></div></div>})}</div>}
+      </div>
+    </div>}
 
-        {!vendidos.length ? <div className="py-12 text-center text-sm text-[#666672]">Nenhum seminovo vendido ainda.</div> :
-        <div className="divide-y divide-white/8">
-          {vendidos.map(x=>{
-            const venda=Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0;
-            const custo=custoTotal(x);
-            const l=Number(x.lucro_bruto)||Number(x?.dados?.venda?.lucroBruto)||(venda-custo);
-            const m=venda>0?(l/venda)*100:0;
-            const vendidoEm=x.vendido_em||x?.dados?.venda?.vendidoEm;
-            return <div key={x.id} className="p-4 grid md:grid-cols-[1.4fr_repeat(4,.7fr)] gap-3 items-center">
-              <div>
-                <div className="text-sm text-white">{x.marca} {x.modelo} {x.armazenamento||""}</div>
-                <div className="text-[10px] text-[#676772] mt-1">IMEI {x.imei||"—"}{vendidoEm?` · ${new Date(vendidoEm).toLocaleDateString("pt-BR")}`:""}</div>
-              </div>
-              <div><div className="text-[8px] text-[#60606B]">CUSTO TOTAL</div><div className="font-mono text-xs mt-1">{fmt(custo)}</div></div>
-              <div><div className="text-[8px] text-[#60606B]">VENDA</div><div className="font-mono text-xs mt-1">{fmt(venda)}</div></div>
-              <div><div className="text-[8px] text-[#60606B]">LUCRO</div><div className={"font-mono text-xs mt-1 "+(l>=0?"text-green-300":"text-red-300")}>{fmt(l)}</div></div>
-              <div><div className="text-[8px] text-[#60606B]">MARGEM</div><div className="font-mono text-xs mt-1">{m.toFixed(2)}%</div></div>
-            </div>
-          })}
-        </div>}
+    {secao==="lancamentos" && <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 justify-between">
+        <div className="flex gap-2">{[["todos","Todos"],["entrada","Entradas"],["saida","Saídas"]].map(([id,l])=><button key={id} onClick={()=>setFiltro(id)} className={"rounded-lg px-3 py-2 text-[10px] border "+(filtro===id?"border-purple-500/30 bg-purple-500/10 text-white":"border-white/10 text-[#777783]")}>{l}</button>)}</div>
+        <Button onClick={()=>setMostrarForm(!mostrarForm)}>+ Novo lançamento</Button>
       </div>
 
-      <div className="rounded-xl border border-white/10 p-4 grid md:grid-cols-3 gap-3 text-xs">
-        <div><div className="text-[8px] text-[#60606B]">CUSTO DOS VENDIDOS</div><div className="font-mono text-sm mt-1">{fmt(custoVendidos)}</div></div>
-        <div><div className="text-[8px] text-[#60606B]">APARELHOS EM ESTOQUE</div><div className="font-mono text-sm mt-1">{emEstoque.length}</div></div>
-        <div><div className="text-[8px] text-[#60606B]">APARELHOS VENDIDOS</div><div className="font-mono text-sm mt-1">{vendidos.length}</div></div>
+      {mostrarForm&&<Card>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div><Label>Tipo</Label><div className="grid grid-cols-2 gap-2">{["entrada","saida"].map(t=><button key={t} onClick={()=>setForm({...form,tipo:t,categoria_id:""})} className={"rounded-lg border py-2 text-xs "+(form.tipo===t?"border-purple-500 text-purple-300":"border-white/10 text-[#777783]")}>{t==="entrada"?"Entrada":"Saída"}</button>)}</div></div>
+          <div><Label>Categoria</Label><select value={form.categoria_id} onChange={e=>setForm({...form,categoria_id:e.target.value})} className="w-full rounded-lg bg-[#111118] border border-[#2A2A34] px-3 py-2 text-sm"><option value="">Sem categoria</option>{cats.filter(c=>c.tipo===form.tipo).map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</select></div>
+          <div className="md:col-span-2"><Label>Descrição</Label><Input value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} placeholder="Ex: Conta de energia, compra de mercadoria..." /></div>
+          <div><Label>Valor</Label><Input inputMode="decimal" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value.replace(",",".")})}/></div>
+          <div><Label>Data</Label><Input type="date" value={form.data_competencia} onChange={e=>setForm({...form,data_competencia:e.target.value})}/></div>
+          <div><Label>Status</Label><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className="w-full rounded-lg bg-[#111118] border border-[#2A2A34] px-3 py-2 text-sm"><option value="pago">Pago</option><option value="pendente">Pendente</option></select></div>
+          <div><Label>Forma</Label><select value={form.forma_pagamento} onChange={e=>setForm({...form,forma_pagamento:e.target.value})} className="w-full rounded-lg bg-[#111118] border border-[#2A2A34] px-3 py-2 text-sm">{FORMAS.map(f=><option key={f.id} value={f.id}>{f.label}</option>)}</select></div>
+          <div className="md:col-span-2"><Label>Observação</Label><Input value={form.observacao} onChange={e=>setForm({...form,observacao:e.target.value})}/></div>
+        </div>
+        <div className="flex gap-2 mt-4"><Button variant="secondary" onClick={()=>setMostrarForm(false)}>Cancelar</Button><Button onClick={salvarLancamento}>Salvar lançamento</Button></div>
+      </Card>}
+
+      <div className="rounded-2xl border border-white/10 overflow-hidden">
+        {loadingFin?<div className="p-8 text-center text-xs text-[#666672]">Carregando financeiro...</div>:!lista.length?<div className="p-8 text-center text-xs text-[#666672]">Nenhum lançamento.</div>:
+        <div className="divide-y divide-white/8">{lista.map(x=><div key={x.id} className="p-4 flex items-center justify-between gap-4"><div><div className="text-sm">{x.descricao}</div><div className="text-[9px] text-[#62626D] mt-1">{x.categoria||"Sem categoria"} · {x.data_competencia} · {x.status} · {x.origem}</div></div><div className="flex items-center gap-3"><div className={"font-mono text-sm "+(x.tipo==="entrada"?"text-green-300":"text-red-300")}>{x.tipo==="entrada"?"+ ":"- "}{fmt(x.valor)}</div>{x.origem==="manual"&&<button onClick={()=>excluirLancamento(x.id)} className="text-red-400/70 text-xs">Excluir</button>}</div></div>)}</div>}
       </div>
     </div>}
   </div>;

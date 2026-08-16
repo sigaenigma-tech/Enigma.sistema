@@ -1,0 +1,2 @@
+-- ENIGMA OS V2.6
+-- Estrutura financeira geral. SQL já executado conforme etapa de implantação.
