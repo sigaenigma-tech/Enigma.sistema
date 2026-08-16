@@ -686,7 +686,7 @@ function EnigmaSistema() {
         {tab === "pdv" && (
           <PDVTab caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
-        {tab === "financeiro" && <CaixaTab caixaAtual={caixaAtual} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
+        {tab === "financeiro" && <FinanceiroTab caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
           <ListaOS index={osIndex} onAbrir={abrirDetalheOS} onNova={() => setOsView("nova")} />
         )}
@@ -742,7 +742,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.5</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.5.1</div>
     </aside>
   );
 }
@@ -928,7 +928,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.5</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.5.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1128,6 +1128,76 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], onVenda, onIrParaCaixa, o
       )}
     </div>
   );
+}
+
+
+/* ================= FINANCEIRO ================= */
+function FinanceiroTab({ caixaAtual, seminovos = [], onAbrir, onFechar }) {
+  const [secao,setSecao]=useState("caixa");
+
+  const vendidos=seminovos.filter(x=>x.status==="vendido");
+  const emEstoque=seminovos.filter(x=>x.status!=="vendido");
+  const custoTotal=(x)=>(Number(x.custo_aquisicao)||0)+(Number(x.custo_reparos_previsto)||0);
+  const capitalEstoque=emEstoque.reduce((s,x)=>s+custoTotal(x),0);
+  const totalVendido=vendidos.reduce((s,x)=>s+(Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0),0);
+  const custoVendidos=vendidos.reduce((s,x)=>s+custoTotal(x),0);
+  const lucro=vendidos.reduce((s,x)=>s+(Number(x.lucro_bruto)||Number(x?.dados?.venda?.lucroBruto)||((Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0)-custoTotal(x))),0);
+  const margem=totalVendido>0 ? (lucro/totalVendido)*100 : 0;
+
+  return <div className="space-y-4">
+    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
+      <button onClick={()=>setSecao("caixa")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="caixa"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Caixa</button>
+      <button onClick={()=>setSecao("seminovos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="seminovos"?"border-cyan-400/30 bg-cyan-400/[.06] text-white":"border-transparent text-[#777783]")}>Seminovos</button>
+    </div>
+
+    {secao==="caixa" && <CaixaTab caixaAtual={caixaAtual} onAbrir={onAbrir} onFechar={onFechar} />}
+
+    {secao==="seminovos" && <div className="space-y-4">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <MetricCyber label="CAPITAL EM ESTOQUE" value={fmt(capitalEstoque)} sub={`${emEstoque.length} aparelho(s)`}/>
+        <MetricCyber label="TOTAL VENDIDO" value={fmt(totalVendido)} sub={`${vendidos.length} venda(s)`}/>
+        <MetricCyber label="LUCRO REALIZADO" value={fmt(lucro)} sub="após aquisição + reparos"/>
+        <MetricCyber label="MARGEM MÉDIA" value={`${margem.toFixed(2)}%`} sub="sobre vendas"/>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[.015] overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <div className="text-[9px] tracking-[.22em] text-cyan-300">FINANCEIRO // SEMINOVOS</div>
+            <div className="text-xs text-[#6F6F7A] mt-1">Resultado por unidade vendida</div>
+          </div>
+          <div className="text-[10px] text-[#5F5F69]">{vendidos.length} vendido(s)</div>
+        </div>
+
+        {!vendidos.length ? <div className="py-12 text-center text-sm text-[#666672]">Nenhum seminovo vendido ainda.</div> :
+        <div className="divide-y divide-white/8">
+          {vendidos.map(x=>{
+            const venda=Number(x.preco_venda)||Number(x?.dados?.venda?.valorVenda)||0;
+            const custo=custoTotal(x);
+            const l=Number(x.lucro_bruto)||Number(x?.dados?.venda?.lucroBruto)||(venda-custo);
+            const m=venda>0?(l/venda)*100:0;
+            const vendidoEm=x.vendido_em||x?.dados?.venda?.vendidoEm;
+            return <div key={x.id} className="p-4 grid md:grid-cols-[1.4fr_repeat(4,.7fr)] gap-3 items-center">
+              <div>
+                <div className="text-sm text-white">{x.marca} {x.modelo} {x.armazenamento||""}</div>
+                <div className="text-[10px] text-[#676772] mt-1">IMEI {x.imei||"—"}{vendidoEm?` · ${new Date(vendidoEm).toLocaleDateString("pt-BR")}`:""}</div>
+              </div>
+              <div><div className="text-[8px] text-[#60606B]">CUSTO TOTAL</div><div className="font-mono text-xs mt-1">{fmt(custo)}</div></div>
+              <div><div className="text-[8px] text-[#60606B]">VENDA</div><div className="font-mono text-xs mt-1">{fmt(venda)}</div></div>
+              <div><div className="text-[8px] text-[#60606B]">LUCRO</div><div className={"font-mono text-xs mt-1 "+(l>=0?"text-green-300":"text-red-300")}>{fmt(l)}</div></div>
+              <div><div className="text-[8px] text-[#60606B]">MARGEM</div><div className="font-mono text-xs mt-1">{m.toFixed(2)}%</div></div>
+            </div>
+          })}
+        </div>}
+      </div>
+
+      <div className="rounded-xl border border-white/10 p-4 grid md:grid-cols-3 gap-3 text-xs">
+        <div><div className="text-[8px] text-[#60606B]">CUSTO DOS VENDIDOS</div><div className="font-mono text-sm mt-1">{fmt(custoVendidos)}</div></div>
+        <div><div className="text-[8px] text-[#60606B]">APARELHOS EM ESTOQUE</div><div className="font-mono text-sm mt-1">{emEstoque.length}</div></div>
+        <div><div className="text-[8px] text-[#60606B]">APARELHOS VENDIDOS</div><div className="font-mono text-sm mt-1">{vendidos.length}</div></div>
+      </div>
+    </div>}
+  </div>;
 }
 
 /* ================= CAIXA ================= */
