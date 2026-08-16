@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   Camera, Image as ImageIcon, CheckCircle2, Circle, XCircle, ArrowRight,
   Search, ClipboardList, Smartphone, User, Phone, ChevronLeft, Trash2,
   Plus, Clock, AlertCircle, X, Wallet, Lock, Unlock, Check, ShoppingBag,
   TrendingUp, Package, ChevronRight, ChevronDown, Printer, PenTool,
   BellRing, Eraser, Minus, LayoutDashboard, Users, Settings, Headset,
-  BarChart3, Wrench, Sparkles, ArrowUpRight
+  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Link as LinkIcon
 } from "lucide-react";
 
 /* ---------------- Supabase ---------------- */
@@ -31,6 +32,25 @@ async function sb(path, options = {}) {
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
+
+async function rpc(name, body = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Supabase RPC ${res.status}: ${text}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
 
 /* ---- mapeadores linha do banco <-> objeto usado nos componentes ---- */
 function rowToEstoque(r) {
@@ -218,8 +238,19 @@ function EstoqueBadge({ item }) {
   );
 }
 
+
+/* ---------------- rota pública para assinatura ---------------- */
+export default function AppRouter() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("assinar");
+  const orcamentoToken = params.get("orcamento");
+  if (orcamentoToken) return <OrcamentoPublico token={orcamentoToken} />;
+  if (token) return <AssinaturaPublica token={token} />;
+  return <EnigmaSistema />;
+}
+
 /* ============================================================ */
-export default function EnigmaSistema() {
+function EnigmaSistema() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [saveError, setSaveError] = useState(false);
@@ -535,7 +566,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.2</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.3</div>
     </aside>
   );
 }
@@ -721,7 +752,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1556,6 +1587,9 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
   const [mostrarAvulsa, setMostrarAvulsa] = useState(false);
   const [pecaAvulsa, setPecaAvulsa] = useState({ nome: "", qtd: 1, custo: "", preco: "" });
   const [notifMeio, setNotifMeio] = useState("whatsapp");
+  const [assinaturaPedido, setAssinaturaPedido] = useState(null);
+  const [assinaturaPedidoTipo, setAssinaturaPedidoTipo] = useState(null);
+  const [orcamentoPedido, setOrcamentoPedido] = useState(null);
 
   useEffect(() => {
     if (!detail) return;
@@ -1650,6 +1684,48 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
       status: "aguardando_aprovacao",
       timeline: [...(detail.timeline || []), { id: genId(), status: "aguardando_aprovacao", timestamp: agora, obs: `Orçamento de ${fmt(valorEstimado)} enviado ao cliente.` }]
     });
+  }
+
+  async function criarLinkOrcamento() {
+    try {
+      const snapshot = {
+        numero: detail.numero, cliente: detail.cliente?.nome || "", aparelho: `${detail.aparelho?.marca || ""} ${detail.aparelho?.modelo || ""}`.trim(),
+        diagnostico: detail.diagnosticoTecnico || "", observacao: detail.orcamento?.observacao || "",
+        maoObra: Number(detail.valorServico) || 0, pecas: pecasTotal, desconto, total: valorEstimado,
+        prazo: detail.previsaoEntrega || null
+      };
+      const result = await rpc("enigma_criar_aprovacao_orcamento", { p_os_id: String(detail.id), p_snapshot: snapshot });
+      const pedido = Array.isArray(result) ? result[0] : result;
+      setOrcamentoPedido(pedido);
+    } catch (e) { alert("Não foi possível gerar o link. Confira se o SQL da V2.3 FINAL foi executado."); }
+  }
+  function linkOrcamento(pedido = orcamentoPedido) {
+    if (!pedido?.token) return "";
+    return `${window.location.origin}${window.location.pathname}?orcamento=${encodeURIComponent(pedido.token)}`;
+  }
+  async function copiarLinkOrcamento() {
+    const link = linkOrcamento(); if (!link) return;
+    await navigator.clipboard.writeText(link); alert("Link do orçamento copiado.");
+  }
+  function enviarOrcamentoWhatsApp() {
+    const link = linkOrcamento(); if (!link) return;
+    const tel = String(detail.cliente?.telefone || "").replace(/\D/g, "");
+    const msg = `Olá, ${detail.cliente?.nome || ""}! Aqui é da ENIGMA. O orçamento da OS #${detail.numero}, no valor de ${fmt(valorEstimado)}, está disponível para sua aprovação: ${link}`;
+    window.open(`https://wa.me/${tel ? (tel.startsWith("55") ? tel : "55" + tel) : ""}?text=${encodeURIComponent(msg)}`, "_blank");
+  }
+  async function verificarOrcamento() {
+    if (!orcamentoPedido?.token) return;
+    try {
+      const result = await rpc("enigma_status_aprovacao_orcamento", { p_token: orcamentoPedido.token });
+      const p = Array.isArray(result) ? result[0] : result; setOrcamentoPedido(p);
+      if (p?.status === "aprovado" || p?.status === "recusado") {
+        const agora = p.decidido_em || new Date().toISOString();
+        const novoStatus = p.status === "aprovado" ? "em_reparo" : "cancelado";
+        const orcamento = { ...(detail.orcamento || {}), status: p.status, atualizadoEm: agora, metodo: "link_cliente", nomeAceite: p.nome_aceite };
+        await onSalvar({ ...detail, orcamento, status: novoStatus, timeline: [...(detail.timeline || []), { id: genId(), status: novoStatus, timestamp: agora, obs: `Orçamento ${p.status} digitalmente por ${p.nome_aceite || "cliente"}.` }] });
+        if (p.status === "aprovado") setSub("pecas");
+      }
+    } catch(e) { alert("Não foi possível verificar a decisão agora."); }
   }
 
   function registrarAprovacao(status) {
@@ -1751,8 +1827,8 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
       alert("Registre o pagamento antes de finalizar a entrega.");
       return;
     }
-    if (!detail.entrega?.assinaturaEntrega?.dataUrl) {
-      alert("Colete a assinatura de retirada antes de finalizar a entrega.");
+    if (!detail.entrega?.assinaturaEntrega) {
+      alert("Colete a assinatura ou registre o aceite de retirada antes de finalizar a entrega.");
       return;
     }
     const agora = new Date().toISOString();
@@ -1775,6 +1851,87 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
     const br = numero.startsWith("55") ? numero : `55${numero}`;
     const msg = `Olá, ${detail.cliente.nome}! Aqui é da ENIGMA. Sobre a OS #${detail.numero} do seu ${detail.aparelho.marcaModelo}: `;
     window.open(`https://wa.me/${br}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+  }
+
+  async function criarPedidoAssinatura(tipo) {
+    try {
+      setAssinaturaPedidoTipo(tipo);
+      const snapshot = {
+        tipo,
+        numero: detail.numero,
+        cliente: detail.cliente?.nome || "Cliente",
+        aparelho: detail.aparelho?.marcaModelo || "Aparelho",
+        termo: tipo === "entrada" ? (detail.termos || TERMO_PADRAO) : `Confirmo a retirada do aparelho referente à OS #${detail.numero}, ciência dos serviços realizados e da garantia informada pela ENIGMA.`,
+        garantiaDias: detail.entrega?.garantiaDias ?? 90,
+        total: Number(detail.valorFinal || valorEstimado) || 0,
+      };
+      const result = await rpc("enigma_criar_assinatura", { p_os_id: String(detail.id), p_tipo: tipo, p_snapshot: snapshot });
+      const pedido = Array.isArray(result) ? result[0] : result;
+      setAssinaturaPedido(pedido);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível gerar o link de assinatura. Confira se o SQL da V2.3 foi executado.");
+    }
+  }
+
+  async function verificarPedidoAssinatura() {
+    if (!assinaturaPedido?.token) return;
+    try {
+      const result = await rpc("enigma_status_assinatura", { p_token: assinaturaPedido.token });
+      const pedido = Array.isArray(result) ? result[0] : result;
+      setAssinaturaPedido(pedido);
+      if (pedido?.status === "concluido" && pedido?.assinatura_data_url) {
+        const assinatura = {
+          dataUrl: pedido.assinatura_data_url,
+          timestamp: pedido.concluido_em || new Date().toISOString(),
+          nome: pedido.nome_aceite || detail.cliente?.nome || "Cliente",
+          metodo: "link",
+        };
+        if (assinaturaPedidoTipo === "entrada") {
+          await onSalvar({ ...detail, assinaturaCliente: assinatura });
+        } else {
+          await onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: assinatura } });
+        }
+        setAssinaturaPedido(null);
+        setAssinaturaPedidoTipo(null);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível verificar a assinatura agora.");
+    }
+  }
+
+  function linkAssinatura(pedido = assinaturaPedido) {
+    if (!pedido?.token) return "";
+    return `${window.location.origin}${window.location.pathname}?assinar=${encodeURIComponent(pedido.token)}`;
+  }
+
+  async function copiarLinkAssinatura() {
+    const link = linkAssinatura();
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); alert("Link copiado."); }
+    catch { window.prompt("Copie o link:", link); }
+  }
+
+  function enviarAssinaturaWhatsApp() {
+    const link = linkAssinatura();
+    const numero = String(detail.cliente?.telefone || "").replace(/\D/g, "");
+    const br = numero ? (numero.startsWith("55") ? numero : `55${numero}`) : "";
+    const etapa = assinaturaPedidoTipo === "entrada" ? "termo de entrada" : "termo de retirada";
+    const msg = `Olá, ${detail.cliente?.nome || ""}! Aqui é da ENIGMA. Para assinar o ${etapa} da OS #${detail.numero}, acesse: ${link}`;
+    window.open(`https://wa.me/${br}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+  }
+
+  function registrarAceitePresencial(tipo) {
+    const nome = window.prompt("Nome de quem está dando o aceite:", detail.cliente?.nome || "");
+    if (!nome?.trim()) return;
+    const agora = new Date().toISOString();
+    const aceite = { tipo: "aceite_presencial", nome: nome.trim(), timestamp: agora, metodo: "presencial" };
+    if (tipo === "entrada") {
+      onSalvar({ ...detail, assinaturaCliente: aceite, timeline: [...(detail.timeline || []), { id: genId(), status: detail.status, timestamp: agora, obs: `Aceite presencial do termo de entrada registrado por ${nome.trim()}.` }] });
+    } else {
+      onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: aceite }, timeline: [...(detail.timeline || []), { id: genId(), status: detail.status, timestamp: agora, obs: `Aceite presencial de retirada registrado por ${nome.trim()}.` }] });
+    }
   }
 
   const tabs = [
@@ -1951,6 +2108,18 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
               <Button variant="danger" disabled={detail.status !== "aguardando_aprovacao"} onClick={() => registrarAprovacao("recusado")}><span className="flex items-center justify-center gap-2"><XCircle size={16}/> Registrar recusa</span></Button>
             </div>
             {detail.orcamento?.atualizadoEm && <div className="text-[11px] text-[#666672] mt-3">Última decisão: {fmtDateTime(detail.orcamento.atualizadoEm)}.</div>}
+            {detail.status === "aguardando_aprovacao" && <div className="mt-4 pt-4 border-t border-[#25252E]">
+              <div className="text-xs uppercase tracking-[.14em] text-purple-300 mb-2">Aceite digital do cliente</div>
+              <div className="text-xs text-[#777782] mb-3">Gere um link seguro para o cliente conferir o orçamento e aprovar ou recusar pelo celular.</div>
+              {!orcamentoPedido?.token ? <Button className="w-full" onClick={criarLinkOrcamento}><LinkIcon size={15} className="inline mr-2"/>Gerar link de aprovação</Button> : <div className="rounded-xl border border-purple-500/25 bg-[#0C0C12] p-3">
+                <div className="grid sm:grid-cols-[130px_1fr] gap-3 items-center"><div className="bg-white rounded-lg p-2 w-fit mx-auto"><QRCodeSVG value={linkOrcamento()} size={112}/></div><div>
+                  <div className="text-[11px] text-[#888894] break-all">{linkOrcamento()}</div>
+                  <div className="grid sm:grid-cols-2 gap-2 mt-2"><Button variant="ghost" onClick={copiarLinkOrcamento}><Copy size={14} className="inline mr-1"/>Copiar</Button><Button variant="ghost" onClick={enviarOrcamentoWhatsApp}><Send size={14} className="inline mr-1"/>WhatsApp</Button></div>
+                  <Button className="w-full mt-2" onClick={verificarOrcamento}><RefreshCw size={14} className="inline mr-1"/>Verificar decisão</Button>
+                </div></div>
+              </div>}
+            </div>}
+
           </Card>
         </div>
       )}
@@ -2065,10 +2234,18 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
           <Card>
             <Label>Assinatura de retirada</Label>
             <div className="text-[11px] text-[#6E6E78] mb-2">Confirma a retirada do aparelho e ciência da garantia.</div>
-            <SignaturePad
+            <SignatureOptions
+              tipo="retirada"
               assinatura={detail.entrega?.assinaturaEntrega || null}
-              onSalvar={(dataUrl) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: { dataUrl, timestamp: new Date().toISOString() } } })}
+              onSalvarDireto={(dataUrl) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: { dataUrl, timestamp: new Date().toISOString(), metodo: "dispositivo" } } })}
               onLimpar={() => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), assinaturaEntrega: null } })}
+              onGerarLink={() => criarPedidoAssinatura("retirada")}
+              onAceite={() => registrarAceitePresencial("retirada")}
+              pedido={assinaturaPedidoTipo === "retirada" ? assinaturaPedido : null}
+              link={assinaturaPedidoTipo === "retirada" ? linkAssinatura() : ""}
+              onCopiar={copiarLinkAssinatura}
+              onWhatsApp={enviarAssinaturaWhatsApp}
+              onVerificar={verificarPedidoAssinatura}
             />
             {detail.status === "pronto" && <Button className="w-full mt-4" onClick={finalizarEntrega}><span className="flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Finalizar entrega e encerrar OS</span></Button>}
             {detail.entrega?.entregueEm && <div className="text-[11px] text-green-300 text-center mt-3">Entregue em {fmtDateTime(detail.entrega.entregueEm)}</div>}
@@ -2085,7 +2262,19 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
           <Card>
             <Label>Assinatura de entrada</Label>
             <div className="text-[11px] text-[#6E6E78] mb-2">Confirma ciência da condição do aparelho, acessórios e condições de serviço.</div>
-            <SignaturePad assinatura={detail.assinaturaCliente} onSalvar={(dataUrl) => onSalvar({ ...detail, assinaturaCliente: { dataUrl, timestamp: new Date().toISOString() } })} onLimpar={() => onSalvar({ ...detail, assinaturaCliente: null })}/>
+            <SignatureOptions
+              tipo="entrada"
+              assinatura={detail.assinaturaCliente}
+              onSalvarDireto={(dataUrl) => onSalvar({ ...detail, assinaturaCliente: { dataUrl, timestamp: new Date().toISOString(), metodo: "dispositivo" } })}
+              onLimpar={() => onSalvar({ ...detail, assinaturaCliente: null })}
+              onGerarLink={() => criarPedidoAssinatura("entrada")}
+              onAceite={() => registrarAceitePresencial("entrada")}
+              pedido={assinaturaPedidoTipo === "entrada" ? assinaturaPedido : null}
+              link={assinaturaPedidoTipo === "entrada" ? linkAssinatura() : ""}
+              onCopiar={copiarLinkAssinatura}
+              onWhatsApp={enviarAssinaturaWhatsApp}
+              onVerificar={verificarPedidoAssinatura}
+            />
           </Card>
           <Card>
             <Label>Registro da autorização</Label>
@@ -2148,6 +2337,149 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
   );
 }
 
+function SignatureOptions({ tipo, assinatura, onSalvarDireto, onLimpar, onGerarLink, onAceite, pedido, link, onCopiar, onWhatsApp, onVerificar }) {
+  const [modoDireto, setModoDireto] = useState(false);
+  const titulo = tipo === "entrada" ? "Assinatura do termo de entrada" : "Assinatura de retirada";
+
+  if (assinatura) {
+    return (
+      <div>
+        <SignaturePad assinatura={assinatura} onSalvar={onSalvarDireto} onLimpar={onLimpar} />
+        {assinatura.metodo && <div className="text-[10px] tracking-wide uppercase text-[#62626D] mt-2">Método: {assinatura.metodo === "link" ? "celular / link" : assinatura.metodo === "presencial" ? "aceite presencial" : assinatura.metodo}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid md:grid-cols-3 gap-2">
+        <button type="button" onClick={onGerarLink} className="text-left rounded-xl border border-purple-500/30 bg-purple-500/[.07] p-3 hover:bg-purple-500/[.12] transition">
+          <div className="flex items-center gap-2 text-purple-300 text-sm font-medium"><QrCode size={16}/> Celular / QR Code</div>
+          <div className="text-[11px] text-[#777782] mt-1">Melhor opção no computador. O cliente assina com o dedo.</div>
+        </button>
+        <button type="button" onClick={() => setModoDireto(!modoDireto)} className="text-left rounded-xl border border-[#2A2A34] bg-[#0F0F14] p-3 hover:border-[#3A3A46] transition">
+          <div className="flex items-center gap-2 text-[#D2D2DA] text-sm font-medium"><PenTool size={16}/> Neste dispositivo</div>
+          <div className="text-[11px] text-[#777782] mt-1">Mouse, touch ou futuro tablet no balcão.</div>
+        </button>
+        <button type="button" onClick={onAceite} className="text-left rounded-xl border border-[#2A2A34] bg-[#0F0F14] p-3 hover:border-[#3A3A46] transition">
+          <div className="flex items-center gap-2 text-[#D2D2DA] text-sm font-medium"><UserCheck size={16}/> Aceite presencial</div>
+          <div className="text-[11px] text-[#777782] mt-1">Registra nome, data e hora sem desenho da assinatura.</div>
+        </button>
+      </div>
+
+      {pedido?.token && (
+        <div className="rounded-2xl border border-purple-500/25 bg-[#0C0C12] p-4">
+          <div className="grid sm:grid-cols-[170px_1fr] gap-4 items-center">
+            <div className="bg-white rounded-xl p-3 w-fit mx-auto">
+              <QRCodeSVG value={link} size={146} level="M" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">{titulo} pelo celular</div>
+              <div className="text-xs text-[#777782] mt-1">O link é temporário. Após o cliente concluir, clique em “Verificar assinatura”.</div>
+              <div className="mt-3 p-2.5 rounded-lg bg-[#131318] border border-[#2A2A34] text-[11px] text-[#9A9AA4] break-all">{link}</div>
+              <div className="grid sm:grid-cols-2 gap-2 mt-3">
+                <Button variant="ghost" onClick={onCopiar}><Copy size={14} className="inline mr-2"/>Copiar link</Button>
+                <Button variant="ghost" onClick={onWhatsApp}><Send size={14} className="inline mr-2"/>Enviar no WhatsApp</Button>
+              </div>
+              <Button className="w-full mt-2" onClick={onVerificar}><RefreshCw size={14} className="inline mr-2"/>Verificar assinatura</Button>
+              {pedido.expira_em && <div className="text-[10px] text-[#60606B] mt-2">Expira em {fmtDateTime(pedido.expira_em)}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modoDireto && (
+        <div className="rounded-xl border border-[#2A2A34] p-3">
+          <div className="text-xs text-[#777782] mb-2">Assine diretamente abaixo.</div>
+          <SignaturePad assinatura={null} onSalvar={onSalvarDireto} onLimpar={() => {}} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrcamentoPublico({ token }) {
+  const [pedido,setPedido]=useState(null), [loading,setLoading]=useState(true), [erro,setErro]=useState("");
+  const [nome,setNome]=useState(""), [ciente,setCiente]=useState(false), [enviando,setEnviando]=useState(false);
+  useEffect(()=>{(async()=>{try{const r=await rpc("enigma_obter_aprovacao_orcamento",{p_token:token}); const p=Array.isArray(r)?r[0]:r; if(!p) throw 0; setPedido(p); setNome(p.snapshot?.cliente||"");}catch(e){setErro("Este link é inválido, expirou ou não está mais disponível.");} setLoading(false);})()},[token]);
+  async function decidir(decisao){ if(!nome.trim()||!ciente)return; setEnviando(true); try{await rpc("enigma_decidir_aprovacao_orcamento",{p_token:token,p_nome:nome.trim(),p_decisao:decisao}); setPedido({...pedido,status:decisao});}catch(e){alert("Não foi possível registrar sua decisão.");} setEnviando(false); }
+  if(loading)return <div className="min-h-screen bg-[#09090D] flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin"/></div>;
+  if(erro)return <div className="min-h-screen bg-[#09090D] text-white p-5 flex items-center justify-center"><Card className="max-w-md">{erro}</Card></div>;
+  if(pedido?.status==="aprovado"||pedido?.status==="recusado")return <div className="min-h-screen bg-[#09090D] text-white p-5 flex items-center justify-center"><div className="max-w-md text-center"><CheckCircle2 size={42} className="mx-auto text-green-400"/><div className="text-xl font-semibold mt-3">Decisão registrada</div><div className="text-sm text-[#888894] mt-2">Orçamento {pedido.status}. Você já pode fechar esta página.</div></div></div>;
+  const s=pedido.snapshot||{};
+  return <div className="min-h-screen bg-[#09090D] text-[#F2F2F5] p-4"><div className="max-w-xl mx-auto space-y-4"><div className="text-center py-4"><div className="text-2xl font-black tracking-[.18em]">ENIGMA</div><div className="text-[10px] uppercase tracking-[.22em] text-purple-300">Aprovação de orçamento</div></div>
+    <Card><div className="text-xs text-purple-300">OS #{s.numero}</div><div className="text-lg font-semibold mt-1">{s.aparelho}</div><div className="text-xs text-[#888894]">Cliente: {s.cliente}</div></Card>
+    <Card><Label>Diagnóstico</Label><div className="text-sm text-[#C9C9D2] whitespace-pre-wrap">{s.diagnostico||"Diagnóstico informado pela assistência."}</div>{s.observacao&&<><Label className="mt-4">Observações</Label><div className="text-sm text-[#C9C9D2]">{s.observacao}</div></>}</Card>
+    <Card><div className="space-y-2 text-sm"><div className="flex justify-between"><span>Mão de obra</span><span>{fmt(s.maoObra||0)}</span></div><div className="flex justify-between"><span>Peças</span><span>{fmt(s.pecas||0)}</span></div>{Number(s.desconto)>0&&<div className="flex justify-between"><span>Desconto</span><span>- {fmt(s.desconto)}</span></div>}<div className="flex justify-between pt-3 border-t border-[#292932] text-lg font-semibold"><span>Total</span><span>{fmt(s.total||0)}</span></div></div></Card>
+    <Card><Label>Nome completo</Label><Input value={nome} onChange={e=>setNome(e.target.value)} /><label className="flex gap-3 mt-4 text-sm text-[#C9C9D2]"><input type="checkbox" checked={ciente} onChange={e=>setCiente(e.target.checked)} className="mt-1"/><span>Li e estou de acordo com o orçamento apresentado e estou ciente de que minha decisão será registrada com data e hora.</span></label><div className="grid grid-cols-2 gap-2 mt-4"><Button disabled={!ciente||!nome.trim()||enviando} onClick={()=>decidir("aprovado")}><CheckCircle2 size={15} className="inline mr-1"/>Aprovar</Button><Button variant="danger" disabled={!ciente||!nome.trim()||enviando} onClick={()=>decidir("recusado")}><XCircle size={15} className="inline mr-1"/>Recusar</Button></div></Card>
+  </div></div>;
+}
+
+function AssinaturaPublica({ token }) {
+  const [pedido, setPedido] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
+  const [nome, setNome] = useState("");
+  const [assinatura, setAssinatura] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await rpc("enigma_obter_assinatura", { p_token: token });
+        const p = Array.isArray(result) ? result[0] : result;
+        if (!p) throw new Error("Link inválido ou expirado.");
+        setPedido(p);
+        setNome(p.snapshot?.cliente || "");
+      } catch (e) { setErro("Este link de assinatura é inválido, expirou ou já não está disponível."); }
+      setLoading(false);
+    })();
+  }, [token]);
+
+  async function concluir() {
+    if (!nome.trim()) return alert("Informe seu nome.");
+    if (!assinatura?.dataUrl) return alert("Faça sua assinatura antes de confirmar.");
+    setEnviando(true);
+    try {
+      await rpc("enigma_concluir_assinatura", { p_token: token, p_nome: nome.trim(), p_assinatura: assinatura.dataUrl });
+      setPedido({ ...pedido, status: "concluido" });
+    } catch (e) { alert("Não foi possível concluir a assinatura. Tente novamente."); }
+    setEnviando(false);
+  }
+
+  if (loading) return <div className="min-h-screen bg-[#09090D] text-white flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin"/></div>;
+  if (erro) return <div className="min-h-screen bg-[#09090D] text-white p-5 flex items-center justify-center"><div className="max-w-md w-full rounded-2xl border border-red-500/20 bg-[#131318] p-5"><div className="text-lg font-semibold">ENIGMA</div><div className="text-sm text-red-300 mt-4">{erro}</div></div></div>;
+  if (pedido?.status === "concluido") return <div className="min-h-screen bg-[#09090D] text-white p-5 flex items-center justify-center"><div className="max-w-md w-full rounded-2xl border border-green-500/20 bg-[#131318] p-6 text-center"><CheckCircle2 size={40} className="text-green-400 mx-auto"/><div className="text-xl font-semibold mt-3">Assinatura concluída</div><div className="text-sm text-[#8A8A96] mt-2">Obrigado. Você já pode fechar esta página.</div></div></div>;
+
+  const snap = pedido?.snapshot || {};
+  return (
+    <div className="min-h-screen bg-[#09090D] text-[#F2F2F5] p-4 sm:p-6">
+      <div className="max-w-xl mx-auto space-y-4">
+        <div className="text-center py-3"><div className="text-2xl font-black tracking-[0.18em]">ENIGMA</div><div className="text-[10px] tracking-[0.24em] text-purple-300 uppercase mt-1">Assinatura digital</div></div>
+        <Card className="!rounded-2xl">
+          <div className="text-xs text-purple-300 uppercase tracking-[0.16em]">OS #{snap.numero}</div>
+          <div className="text-lg font-semibold mt-1">{snap.aparelho}</div>
+          <div className="text-xs text-[#777782] mt-1">Cliente: {snap.cliente}</div>
+          {snap.total > 0 && <div className="mt-3 text-sm">Total registrado: <span className="font-semibold text-white">{fmt(snap.total)}</span></div>}
+        </Card>
+        <Card className="!rounded-2xl">
+          <Label>Termo</Label>
+          <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-[#C9C9D2] pr-1">{snap.termo}</div>
+        </Card>
+        <Card className="!rounded-2xl">
+          <Label>Nome completo</Label>
+          <Input value={nome} onChange={(e)=>setNome(e.target.value)} placeholder="Seu nome" className="mb-3" />
+          <Label>Assinatura</Label>
+          <SignaturePad assinatura={assinatura} onSalvar={(dataUrl)=>setAssinatura({ dataUrl, timestamp: new Date().toISOString() })} onLimpar={()=>setAssinatura(null)} />
+          <div className="text-[11px] text-[#6E6E78] mt-3">Ao confirmar, você declara ter lido e aceito o termo exibido acima.</div>
+          <Button className="w-full mt-3" disabled={enviando || !assinatura?.dataUrl || !nome.trim()} onClick={concluir}>{enviando ? "Enviando..." : "Confirmar e assinar"}</Button>
+        </Card>
+        <div className="text-center text-[10px] text-[#4F4F59] pb-6">ENIGMA · Link temporário de assinatura</div>
+      </div>
+    </div>
+  );
+}
+
 function SignaturePad({ assinatura, onSalvar, onLimpar }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
@@ -2192,6 +2524,15 @@ function SignaturePad({ assinatura, onSalvar, onLimpar }) {
   }
 
   if (assinatura) {
+    if (!assinatura.dataUrl) {
+      return (
+        <div className="rounded-xl border border-green-500/20 bg-green-500/[.06] p-4">
+          <div className="flex items-center gap-2 text-green-300 text-sm"><UserCheck size={16}/> Aceite registrado</div>
+          <div className="text-xs text-[#A0A0AA] mt-2">{assinatura.nome || "Cliente"} · {assinatura.timestamp ? fmtDateTime(assinatura.timestamp) : ""}</div>
+          <Button variant="ghost" className="w-full mt-3" onClick={onLimpar}>Remover aceite</Button>
+        </div>
+      );
+    }
     return (
       <div>
         <img src={assinatura.dataUrl} className="w-full bg-white rounded-lg border border-[#2A2A34]" style={{ maxHeight: "160px", objectFit: "contain" }} />
