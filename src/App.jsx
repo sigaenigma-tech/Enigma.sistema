@@ -54,10 +54,21 @@ async function rpc(name, body = {}) {
 
 /* ---- mapeadores linha do banco <-> objeto usado nos componentes ---- */
 function rowToEstoque(r) {
-  return { id: r.id, nome: r.nome, categoria: r.categoria, preco: Number(r.preco), custo: Number(r.custo), quantidade: r.quantidade, estoqueMinimo: r.estoque_minimo };
+  return {
+    id: r.id, nome: r.nome, categoria: r.categoria, preco: Number(r.preco), custo: Number(r.custo),
+    quantidade: Number(r.quantidade) || 0, estoqueMinimo: Number(r.estoque_minimo) || 0,
+    sku: r.sku || "", codigoBarras: r.codigo_barras || "", marca: r.marca || "",
+    compatibilidade: r.compatibilidade || "", fornecedor: r.fornecedor || "", ativo: r.ativo !== false
+  };
 }
 function estoqueToRow(p) {
-  return { nome: p.nome, categoria: p.categoria, preco: Number(p.preco) || 0, custo: Number(p.custo) || 0, quantidade: Number(p.quantidade) || 0, estoque_minimo: Number(p.estoqueMinimo) || 0 };
+  return {
+    nome: p.nome, categoria: p.categoria, preco: Number(p.preco) || 0, custo: Number(p.custo) || 0,
+    quantidade: Number(p.quantidade) || 0, estoque_minimo: Number(p.estoqueMinimo) || 0,
+    sku: p.sku || null, codigo_barras: p.codigoBarras || null, marca: p.marca || null,
+    compatibilidade: p.compatibilidade || null, fornecedor: p.fornecedor || null,
+    ativo: p.ativo !== false, updated_at: new Date().toISOString()
+  };
 }
 function rowToCaixa(r) {
   return {
@@ -303,36 +314,95 @@ function EnigmaSistema() {
   }, []);
 
   /* ---------- estoque ---------- */
+  async function registrarMovimentoEstoque({ estoqueId, tipo, quantidade, anterior, posterior, custoUnitario=0, origem="manual", origemId=null, observacao="" }) {
+    try {
+      await sb("estoque_movimentacoes", {
+        method:"POST",
+        body:JSON.stringify({
+          estoque_id:estoqueId, tipo, quantidade:Number(quantidade)||0,
+          quantidade_anterior:Number(anterior)||0, quantidade_posterior:Number(posterior)||0,
+          custo_unitario:Number(custoUnitario)||0, origem, origem_id:origemId?String(origemId):null,
+          observacao:observacao||null, dados:{}
+        })
+      });
+      return true;
+    } catch(e) {
+      console.warn("Movimentação de estoque não registrada:",e);
+      return false;
+    }
+  }
+
   async function addProduto(p) {
     try {
       const rows = await sb("estoque", { method: "POST", body: JSON.stringify(estoqueToRow(p)) });
-      setEstoque([rowToEstoque(rows[0]), ...estoque]);
+      const criado=rowToEstoque(rows[0]);
+      setEstoque(prev=>[criado,...prev]);
+      if(criado.quantidade>0) await registrarMovimentoEstoque({
+        estoqueId:criado.id,tipo:"entrada",quantidade:criado.quantidade,anterior:0,posterior:criado.quantidade,
+        custoUnitario:criado.custo,origem:"cadastro_inicial",origemId:criado.id,observacao:"Saldo inicial do cadastro"
+      });
       setSaveError(false);
-    } catch (e) { setSaveError(true); }
+      return criado;
+    } catch (e) { setSaveError(true); return null; }
   }
+
   async function editarProduto(id, patch) {
-    setEstoque(estoque.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    const atual=estoque.find(p=>p.id===id);
+    if(!atual) return null;
+    const local={...atual,...patch};
+    setEstoque(prev=>prev.map(p=>p.id===id?local:p));
     try {
       const body = {};
-      if ("quantidade" in patch) body.quantidade = patch.quantidade;
-      if ("preco" in patch) body.preco = patch.preco;
-      if ("custo" in patch) body.custo = patch.custo;
-      if ("estoqueMinimo" in patch) body.estoque_minimo = patch.estoqueMinimo;
+      if ("quantidade" in patch) body.quantidade = Number(patch.quantidade)||0;
+      if ("preco" in patch) body.preco = Number(patch.preco)||0;
+      if ("custo" in patch) body.custo = Number(patch.custo)||0;
+      if ("estoqueMinimo" in patch) body.estoque_minimo = Number(patch.estoqueMinimo)||0;
+      if ("nome" in patch) body.nome = patch.nome;
+      if ("categoria" in patch) body.categoria = patch.categoria;
+      if ("sku" in patch) body.sku = patch.sku || null;
+      if ("codigoBarras" in patch) body.codigo_barras = patch.codigoBarras || null;
+      if ("marca" in patch) body.marca = patch.marca || null;
+      if ("compatibilidade" in patch) body.compatibilidade = patch.compatibilidade || null;
+      if ("fornecedor" in patch) body.fornecedor = patch.fornecedor || null;
+      if ("ativo" in patch) body.ativo = patch.ativo;
+      body.updated_at=new Date().toISOString();
       await sb(`estoque?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(body), prefer: "return=minimal" });
       setSaveError(false);
-    } catch (e) { setSaveError(true); }
+      return local;
+    } catch (e) { setSaveError(true); return null; }
   }
+
+  async function movimentarEstoque(id,{tipo,quantidade,origem="manual",origemId=null,observacao=""}) {
+    const atual=estoque.find(p=>p.id===id);
+    if(!atual) return false;
+    const q=Math.abs(Number(quantidade)||0);
+    if(!q) return false;
+    const entrada=["entrada","ajuste_positivo","devolucao"].includes(tipo);
+    const posterior=Math.max(0,Number(atual.quantidade)+(entrada?q:-q));
+    if(!entrada && q>Number(atual.quantidade)) {
+      alert(`Estoque insuficiente para ${atual.nome}. Disponível: ${atual.quantidade}`);
+      return false;
+    }
+    const ok=await editarProduto(id,{quantidade:posterior});
+    if(!ok) return false;
+    await registrarMovimentoEstoque({
+      estoqueId:id,tipo,quantidade:q,anterior:atual.quantidade,posterior,
+      custoUnitario:atual.custo,origem,origemId,observacao
+    });
+    return true;
+  }
+
   async function removerProduto(id) {
-    setEstoque(estoque.filter((p) => p.id !== id));
+    setEstoque(prev=>prev.filter((p) => p.id !== id));
     try {
       await sb(`estoque?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
       setSaveError(false);
     } catch (e) { setSaveError(true); }
   }
+
   function ajustarQuantidadeLocal(id, delta) {
-    const atual = estoque.find((p) => p.id === id);
-    if (!atual) return;
-    editarProduto(id, { quantidade: Math.max(0, atual.quantidade + delta) });
+    const tipo=delta>=0?"ajuste_positivo":"ajuste_negativo";
+    return movimentarEstoque(id,{tipo,quantidade:Math.abs(delta),origem:"ajuste_sistema",observacao:"Ajuste automático"});
   }
 
 
@@ -449,7 +519,9 @@ function EnigmaSistema() {
       setCaixaAtual({ ...caixaAtual, vendas: [...caixaAtual.vendas, venda] });
       setSaveError(false);
       const usados = itens.filter((i) => i.estoqueId);
-      usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, -u.qtd));
+      for (const u of usados) {
+        await movimentarEstoque(u.estoqueId,{tipo:"venda",quantidade:u.qtd,origem:"pdv",origemId:venda.id,observacao:`Venda PDV ${venda.id}`});
+      }
       return venda;
     } catch (e) {
       console.error("Falha ao registrar venda:", e);
@@ -485,7 +557,9 @@ function EnigmaSistema() {
       await sb(`vendas?id=eq.${venda.id}`, { method: "DELETE", prefer: "return=minimal" });
       try { await sb(`financeiro_lancamentos?origem=eq.pdv&origem_id=eq.${encodeURIComponent(String(venda.id))}`, { method:"DELETE", prefer:"return=minimal" }); } catch {}
       const usados = (venda.itens || []).filter((i) => i.estoqueId);
-      usados.forEach((u) => ajustarQuantidadeLocal(u.estoqueId, u.qtd));
+      for (const u of usados) {
+        await movimentarEstoque(u.estoqueId,{tipo:"devolucao",quantidade:u.qtd,origem:"estorno_pdv",origemId:venda.id,observacao:"Estorno de venda"});
+      }
       const semiItens = (venda.itens || []).filter((i) => i.seminovoId);
       for (const i of semiItens) {
         const atual = seminovos.find((x) => x.id === i.seminovoId);
@@ -589,12 +663,12 @@ function EnigmaSistema() {
     if (!osDetail) return;
     const peca = { id: genId(), estoqueId: produtoEstoque.id, nome: produtoEstoque.nome, custo: produtoEstoque.custo, preco: produtoEstoque.preco, qtd };
     salvarDetalheOS({ ...osDetail, pecasUsadas: [...osDetail.pecasUsadas, peca] });
-    ajustarQuantidadeLocal(produtoEstoque.id, -qtd);
+    movimentarEstoque(produtoEstoque.id,{tipo:"os",quantidade:qtd,origem:"os",origemId:osDetail.id,observacao:`Uso na OS ${osDetail.numero||osDetail.id}`});
   }
   function removerPecaDaOS(peca) {
     if (!osDetail) return;
     salvarDetalheOS({ ...osDetail, pecasUsadas: osDetail.pecasUsadas.filter((p) => p.id !== peca.id) });
-    if (peca.estoqueId) ajustarQuantidadeLocal(peca.estoqueId, peca.qtd);
+    if (peca.estoqueId) movimentarEstoque(peca.estoqueId,{tipo:"devolucao",quantidade:peca.qtd,origem:"os_estorno",origemId:osDetail.id,observacao:`Remoção de peça da OS ${osDetail.numero||osDetail.id}`});
   }
 
 
@@ -751,7 +825,7 @@ function EnigmaSistema() {
         {tab === "clientes" && <ClientesTab osIndex={osIndex} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
         {tab === "estoque" && (
-          <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
+          <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab />}
@@ -796,7 +870,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.6</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.7</div>
     </aside>
   );
 }
@@ -982,7 +1056,7 @@ function ClientesTab({ osIndex, onAbrirOS }) {
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.6</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.7</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1769,89 +1843,66 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
 }
 
 /* ================= ESTOQUE ================= */
-function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onAdd, onEdit, onRemove }) {
-  const [secao, setSecao] = useState("produtos");
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [nome, setNome] = useState("");
-  const [categoria, setCategoria] = useState("acessorio");
-  const [preco, setPreco] = useState("");
-  const [custo, setCusto] = useState("");
-  const [quantidade, setQuantidade] = useState("");
-  const [estoqueMinimo, setEstoqueMinimo] = useState("2");
-  const [busca, setBusca] = useState("");
+function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onMovimentar, onAdd, onEdit, onRemove }) {
+  const [secao,setSecao]=useState("produtos");
+  const [mostrarForm,setMostrarForm]=useState(false);
+  const vazio={nome:"",categoria:"acessorio",preco:"",custo:"",quantidade:"",estoqueMinimo:"2",sku:"",codigoBarras:"",marca:"",compatibilidade:"",fornecedor:""};
+  const [form,setForm]=useState(vazio);
+  const [busca,setBusca]=useState("");
 
-  function salvar() {
-    if (!nome.trim() || preco === "") return;
-    onAdd({ nome: nome.trim(), categoria, preco, custo, quantidade, estoqueMinimo });
-    setNome(""); setPreco(""); setCusto(""); setQuantidade(""); setEstoqueMinimo("2"); setMostrarForm(false);
+  async function salvar(){
+    if(!form.nome.trim()||form.preco==="")return;
+    await onAdd({...form,nome:form.nome.trim()});
+    setForm(vazio);setMostrarForm(false);
   }
 
-  const lista = estoque.filter((p) => p.nome.toLowerCase().includes(busca.toLowerCase()));
-  const baixos = estoque.filter((p) => p.quantidade <= p.estoqueMinimo);
-  const semiLista = seminovos.filter(x => {
-    const q = busca.toLowerCase();
-    return !q || [x.marca,x.modelo,x.armazenamento,x.cor,x.imei,x.serial].some(v => String(v||"").toLowerCase().includes(q));
-  });
+  const q=busca.toLowerCase();
+  const lista=estoque.filter(p=>!q||[p.nome,p.sku,p.codigoBarras,p.marca,p.compatibilidade,p.fornecedor].some(v=>String(v||"").toLowerCase().includes(q)));
+  const baixos=estoque.filter(p=>p.quantidade<=p.estoqueMinimo);
+  const valorEstoque=estoque.reduce((a,p)=>a+(Number(p.custo)||0)*(Number(p.quantidade)||0),0);
+  const semiLista=seminovos.filter(x=>!q||[x.marca,x.modelo,x.armazenamento,x.cor,x.imei,x.serial].some(v=>String(v||"").toLowerCase().includes(q)));
 
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
-        <button onClick={()=>setSecao("produtos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Peças <span className="ml-1 text-[9px] font-mono">{estoque.length}</span></button>
-        <button onClick={()=>setSecao("seminovos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="seminovos"?"border-cyan-400/30 bg-cyan-400/[.06] text-white":"border-transparent text-[#777783]")}>Seminovos <span className="ml-1 text-[9px] font-mono">{seminovos.length}</span></button>
-      </div>
-
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]" />
-        <Input placeholder={secao==="seminovos"?"Buscar modelo, IMEI ou serial":"Buscar produto ou peça"} value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9" />
-      </div>
-
-      {secao==="produtos" && <>
-        {baixos.length > 0 && (
-          <Card className="border-amber-500/30 bg-amber-500/5">
-            <div className="flex items-center gap-2 text-amber-400 text-sm"><AlertCircle size={15} /> {baixos.length} produto(s) com estoque baixo</div>
-          </Card>
-        )}
-        <div className="flex justify-end"><Button onClick={() => setMostrarForm(!mostrarForm)} className="px-3"><Plus size={18} /></Button></div>
-
-        {mostrarForm && (
-          <Card>
-            <Label>Nome</Label>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Capinha iPhone 12, Tela iPhone 12" className="mb-2" />
-            <div className="flex gap-2 mb-2">
-              {[{ id: "acessorio", label: "Acessório (balcão)" }, { id: "peca", label: "Peça técnica" }].map((c) => (
-                <button key={c.id} onClick={() => setCategoria(c.id)} className={"flex-1 py-1.5 rounded-lg text-xs border " + (categoria === c.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
-                  {c.label}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <div><Label>Preço venda</Label><Input inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value.replace(",", "."))} /></div>
-              <div><Label>Custo</Label><Input inputMode="decimal" value={custo} onChange={(e) => setCusto(e.target.value.replace(",", "."))} /></div>
-              <div><Label>Quantidade</Label><Input inputMode="numeric" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} /></div>
-              <div><Label>Estoque mínimo</Label><Input inputMode="numeric" value={estoqueMinimo} onChange={(e) => setEstoqueMinimo(e.target.value)} /></div>
-            </div>
-            <Button className="w-full" onClick={salvar}>Salvar produto</Button>
-          </Card>
-        )}
-
-        {lista.length === 0 ? (
-          <Card className="text-center py-10">
-            <Package className="mx-auto mb-3 text-[#5A5A64]" size={26} />
-            <div className="text-sm text-[#8A8A96]">Nenhum produto cadastrado</div>
-          </Card>
-        ) : <div className="space-y-2">{lista.map((p) => <ProdutoCard key={p.id} p={p} onEdit={onEdit} onRemove={onRemove} />)}</div>}
-      </>}
-
-      {secao==="seminovos" && <>
-        {!semiLista.length ? <Card className="text-center py-12">
-          <Smartphone className="mx-auto mb-3 text-[#5A5A64]" size={28}/>
-          <div className="text-sm text-[#8A8A96]">Nenhum seminovo adquirido</div>
-          <div className="text-[10px] text-[#5F5F69] mt-2">Aparelhos comprados em Avaliação de Usados aparecerão aqui automaticamente.</div>
-        </Card> :
-        <div className="grid md:grid-cols-2 gap-3">{semiLista.map(item=><SeminovoCard key={item.id} item={item} onAtualizar={onAtualizarSeminovo}/>)}</div>}
-      </>}
+  return <div className="space-y-4">
+    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
+      <button onClick={()=>setSecao("produtos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Peças <span className="ml-1 text-[9px] font-mono">{estoque.length}</span></button>
+      <button onClick={()=>setSecao("seminovos")} className={"rounded-lg py-2.5 text-xs border transition "+(secao==="seminovos"?"border-cyan-400/30 bg-cyan-400/[.06] text-white":"border-transparent text-[#777783]")}>Seminovos <span className="ml-1 text-[9px] font-mono">{seminovos.length}</span></button>
     </div>
-  );
+
+    <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input placeholder={secao==="seminovos"?"Buscar modelo, IMEI ou serial":"Buscar nome, SKU, código de barras ou compatibilidade"} value={busca} onChange={e=>setBusca(e.target.value)} className="pl-9"/></div>
+
+    {secao==="produtos"&&<>
+      <div className="grid grid-cols-3 gap-2">
+        <MetricCyber label="ITENS CADASTRADOS" value={String(estoque.length)} sub="produtos + peças"/>
+        <MetricCyber label="ESTOQUE BAIXO" value={String(baixos.length)} sub="abaixo do mínimo"/>
+        <MetricCyber label="CAPITAL EM ESTOQUE" value={fmt(valorEstoque)} sub="custo atual"/>
+      </div>
+
+      <div className="flex justify-end"><Button onClick={()=>setMostrarForm(!mostrarForm)} className="px-3"><Plus size={18}/></Button></div>
+
+      {mostrarForm&&<Card>
+        <div className="flex items-center justify-between mb-4"><div><div className="text-[9px] tracking-[.22em] text-purple-300">CADASTRO PROFISSIONAL</div><div className="text-xs text-[#696974] mt-1">Produto ou peça técnica</div></div><button onClick={()=>setMostrarForm(false)} className="text-[#666672]">×</button></div>
+        <Label>Nome</Label><Input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Capa Transparente iPhone 12" className="mb-3"/>
+        <div className="grid grid-cols-2 gap-2 mb-3">{[{id:"acessorio",label:"Produto / Acessório"},{id:"peca",label:"Peça técnica"}].map(c=><button key={c.id} onClick={()=>setForm({...form,categoria:c.id})} className={"rounded-lg py-2 text-xs border "+(form.categoria===c.id?"border-purple-500 text-purple-300 bg-purple-500/10":"border-[#2A2A34] text-[#8A8A96]")}>{c.label}</button>)}</div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div><Label>SKU / Código interno</Label><Input value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} placeholder="Ex: CAP-IP12-TR"/></div>
+          <div><Label>Código de barras</Label><Input value={form.codigoBarras} onChange={e=>setForm({...form,codigoBarras:e.target.value})} placeholder="Leitor ou digitação"/></div>
+          <div><Label>Marca</Label><Input value={form.marca} onChange={e=>setForm({...form,marca:e.target.value})} placeholder="Ex: H'maston"/></div>
+          <div><Label>Compatibilidade / Modelo</Label><Input value={form.compatibilidade} onChange={e=>setForm({...form,compatibilidade:e.target.value})} placeholder="Ex: iPhone 12 / 12 Pro"/></div>
+          <div><Label>Fornecedor</Label><Input value={form.fornecedor} onChange={e=>setForm({...form,fornecedor:e.target.value})} placeholder="Opcional"/></div>
+          <div><Label>Estoque mínimo</Label><Input inputMode="numeric" value={form.estoqueMinimo} onChange={e=>setForm({...form,estoqueMinimo:e.target.value})}/></div>
+          <div><Label>Preço de custo</Label><Input inputMode="decimal" value={form.custo} onChange={e=>setForm({...form,custo:e.target.value.replace(",",".")})}/></div>
+          <div><Label>Preço de venda</Label><Input inputMode="decimal" value={form.preco} onChange={e=>setForm({...form,preco:e.target.value.replace(",",".")})}/></div>
+          <div className="md:col-span-2"><Label>Quantidade inicial</Label><Input inputMode="numeric" value={form.quantidade} onChange={e=>setForm({...form,quantidade:e.target.value})}/><div className="text-[9px] text-[#5F5F69] mt-1">Após o cadastro, novas entradas serão registradas como movimentações, não como simples edição de saldo.</div></div>
+        </div>
+        <Button className="w-full mt-4" onClick={salvar}>Cadastrar produto</Button>
+      </Card>}
+
+      {lista.length===0?<Card className="text-center py-10"><Package className="mx-auto mb-3 text-[#5A5A64]" size={26}/><div className="text-sm text-[#8A8A96]">Nenhum produto cadastrado</div></Card>:
+      <div className="space-y-2">{lista.map(p=><ProdutoCard key={p.id} p={p} onEdit={onEdit} onRemove={onRemove} onMovimentar={onMovimentar}/>)}</div>}
+    </>}
+
+    {secao==="seminovos"&&<>{semiLista.length===0?<Card className="text-center py-12"><Smartphone className="mx-auto mb-3 text-[#5A5A64]" size={28}/><div className="text-sm text-[#8A8A96]">Nenhum seminovo adquirido</div></Card>:<div className="grid md:grid-cols-2 gap-3">{semiLista.map(item=><SeminovoCard key={item.id} item={item} onAtualizar={onAtualizarSeminovo}/>)}</div>}</>}
+  </div>;
 }
 
 function SeminovoCard({ item, onAtualizar }) {
@@ -1973,38 +2024,87 @@ function SeminovoCard({ item, onAtualizar }) {
   </div>;
 }
 
-function ProdutoCard({ p, onEdit, onRemove }) {
-  const [aberto, setAberto] = useState(false);
-  return (
-    <Card>
-      <button className="w-full flex items-center justify-between" onClick={() => setAberto(!aberto)}>
-        <div className="text-left">
-          <div className="text-sm text-[#E5E5EA]">{p.nome}</div>
-          <div className="text-xs text-[#6E6E78]">{p.categoria === "acessorio" ? "Acessório" : "Peça técnica"} · {fmt(p.preco)}</div>
+function ProdutoCard({ p, onEdit, onRemove, onMovimentar }) {
+  const [aberto,setAberto]=useState(false);
+  const [movTipo,setMovTipo]=useState("entrada");
+  const [movQtd,setMovQtd]=useState("1");
+  const [movObs,setMovObs]=useState("");
+  const [historico,setHistorico]=useState([]);
+  const [loadingHist,setLoadingHist]=useState(false);
+  const [editando,setEditando]=useState(false);
+  const [ed,setEd]=useState({...p});
+
+  async function carregarHistorico(){
+    setLoadingHist(true);
+    try{const rows=await sb(`estoque_historico?select=*&estoque_id=eq.${p.id}&order=created_at.desc&limit=12`);setHistorico(rows||[]);}catch(e){setHistorico([]);}
+    setLoadingHist(false);
+  }
+  useEffect(()=>{if(aberto)carregarHistorico();},[aberto,p.quantidade]);
+
+  async function mover(){
+    const ok=await onMovimentar(p.id,{tipo:movTipo,quantidade:Number(movQtd),origem:"manual",observacao:movObs});
+    if(ok){setMovQtd("1");setMovObs("");await carregarHistorico();}
+  }
+  async function salvarEd(){
+    await onEdit(p.id,{nome:ed.nome,categoria:ed.categoria,sku:ed.sku,codigoBarras:ed.codigoBarras,marca:ed.marca,compatibilidade:ed.compatibilidade,fornecedor:ed.fornecedor,preco:Number(ed.preco),custo:Number(ed.custo),estoqueMinimo:Number(ed.estoqueMinimo)});
+    setEditando(false);
+  }
+
+  return <Card>
+    <button className="w-full flex items-start justify-between gap-3" onClick={()=>setAberto(!aberto)}>
+      <div className="text-left">
+        <div className="text-sm text-[#E5E5EA]">{p.nome}</div>
+        <div className="text-[10px] text-[#6E6E78] mt-1">{p.sku?`SKU ${p.sku} · `:""}{p.compatibilidade|| (p.categoria==="acessorio"?"Acessório":"Peça técnica")}</div>
+        <div className="text-xs text-[#8A8A96] mt-1">{fmt(p.preco)} <span className="text-[#555560]">· custo {fmt(p.custo)}</span></div>
+      </div>
+      <div className="flex items-center gap-3"><EstoqueBadge item={p}/>{aberto?<ChevronDown size={16}/>:<ChevronRight size={16}/>}</div>
+    </button>
+
+    {aberto&&<div className="mt-4 pt-4 border-t border-[#2A2A34] space-y-4">
+      <div className="grid sm:grid-cols-3 gap-2">
+        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#5F5F69]">SALDO</div><div className="font-mono text-lg mt-1">{p.quantidade}</div></div>
+        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#5F5F69]">VALOR EM ESTOQUE</div><div className="font-mono text-sm mt-1">{fmt(p.custo*p.quantidade)}</div></div>
+        <div className="rounded-lg border border-white/8 p-2"><div className="text-[8px] text-[#5F5F69]">MARGEM UNITÁRIA</div><div className="font-mono text-sm mt-1">{p.preco>0?`${(((p.preco-p.custo)/p.preco)*100).toFixed(1)}%`:"—"}</div></div>
+      </div>
+
+      <div className="rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-3">
+        <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">MOVIMENTAR ESTOQUE</div>
+        <div className="grid sm:grid-cols-3 gap-2">
+          <select value={movTipo} onChange={e=>setMovTipo(e.target.value)} className="rounded-lg bg-[#111118] border border-[#2A2A34] px-3 py-2 text-xs">
+            <option value="entrada">Entrada de mercadoria</option><option value="ajuste_positivo">Ajuste positivo</option><option value="ajuste_negativo">Ajuste negativo</option><option value="perda">Perda / avaria</option><option value="devolucao">Devolução</option>
+          </select>
+          <Input inputMode="numeric" value={movQtd} onChange={e=>setMovQtd(e.target.value)} placeholder="Quantidade"/>
+          <Input value={movObs} onChange={e=>setMovObs(e.target.value)} placeholder="Observação"/>
         </div>
-        <div className="flex items-center gap-3">
-          <EstoqueBadge item={p} />
-          {aberto ? <ChevronDown size={16} className="text-[#6E6E78]" /> : <ChevronRight size={16} className="text-[#6E6E78]" />}
-        </div>
-      </button>
-      {aberto && (
-        <div className="mt-3 pt-3 border-t border-[#2A2A34]">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-[#8A8A96]">Ajustar quantidade</span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => onEdit(p.id, { quantidade: Math.max(0, p.quantidade - 1) })} className="w-8 h-8 rounded-lg border border-[#2A2A34] text-[#C9C9D2]">−</button>
-              <span className="font-mono w-8 text-center">{p.quantidade}</span>
-              <button onClick={() => onEdit(p.id, { quantidade: p.quantidade + 1 })} className="w-8 h-8 rounded-lg border border-[#2A2A34] text-[#C9C9D2]">+</button>
-            </div>
-          </div>
-          <div className="text-xs text-[#6E6E78] mb-3">Custo: {fmt(p.custo)} · Estoque mínimo: {p.estoqueMinimo}</div>
-          <Button variant="danger" className="w-full" onClick={() => onRemove(p.id)}>
-            <span className="flex items-center justify-center gap-2"><Trash2 size={14} /> Remover produto</span>
-          </Button>
-        </div>
-      )}
-    </Card>
-  );
+        <Button className="w-full mt-2" disabled={!(Number(movQtd)>0)} onClick={mover}>Registrar movimentação</Button>
+      </div>
+
+      <div className="flex items-center justify-between"><div className="text-[9px] tracking-[.2em] text-[#8A8A96]">DADOS DO PRODUTO</div><button onClick={()=>{setEd({...p});setEditando(!editando)}} className="text-[10px] text-cyan-300">{editando?"Cancelar":"Editar cadastro"}</button></div>
+      {editando?<div className="grid sm:grid-cols-2 gap-2">
+        <Input value={ed.nome||""} onChange={e=>setEd({...ed,nome:e.target.value})} placeholder="Nome"/>
+        <Input value={ed.sku||""} onChange={e=>setEd({...ed,sku:e.target.value})} placeholder="SKU"/>
+        <Input value={ed.codigoBarras||""} onChange={e=>setEd({...ed,codigoBarras:e.target.value})} placeholder="Código de barras"/>
+        <Input value={ed.marca||""} onChange={e=>setEd({...ed,marca:e.target.value})} placeholder="Marca"/>
+        <Input value={ed.compatibilidade||""} onChange={e=>setEd({...ed,compatibilidade:e.target.value})} placeholder="Compatibilidade"/>
+        <Input value={ed.fornecedor||""} onChange={e=>setEd({...ed,fornecedor:e.target.value})} placeholder="Fornecedor"/>
+        <Input inputMode="decimal" value={ed.custo??""} onChange={e=>setEd({...ed,custo:e.target.value})} placeholder="Custo"/>
+        <Input inputMode="decimal" value={ed.preco??""} onChange={e=>setEd({...ed,preco:e.target.value})} placeholder="Preço"/>
+        <Input inputMode="numeric" value={ed.estoqueMinimo??""} onChange={e=>setEd({...ed,estoqueMinimo:e.target.value})} placeholder="Estoque mínimo"/>
+        <Button onClick={salvarEd}>Salvar alterações</Button>
+      </div>:<div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-xs text-[#7A7A85]">
+        <div>SKU: <span className="text-[#C9C9D2]">{p.sku||"—"}</span></div><div>Cód. barras: <span className="text-[#C9C9D2]">{p.codigoBarras||"—"}</span></div>
+        <div>Marca: <span className="text-[#C9C9D2]">{p.marca||"—"}</span></div><div>Compatibilidade: <span className="text-[#C9C9D2]">{p.compatibilidade||"—"}</span></div>
+        <div>Fornecedor: <span className="text-[#C9C9D2]">{p.fornecedor||"—"}</span></div><div>Estoque mínimo: <span className="text-[#C9C9D2]">{p.estoqueMinimo}</span></div>
+      </div>}
+
+      <div>
+        <div className="flex items-center justify-between mb-2"><div className="text-[9px] tracking-[.2em] text-[#8A8A96]">HISTÓRICO RECENTE</div><button onClick={carregarHistorico} className="text-[9px] text-cyan-300">Atualizar</button></div>
+        {loadingHist?<div className="text-xs text-[#5F5F69]">Carregando...</div>:!historico.length?<div className="text-xs text-[#5F5F69]">Nenhuma movimentação registrada ainda.</div>:<div className="space-y-1">{historico.map(h=><div key={h.id} className="rounded-lg border border-white/6 px-3 py-2 flex justify-between gap-3 text-[10px]"><div><span className="uppercase text-[#A0A0AA]">{String(h.tipo).replaceAll("_"," ")}</span><div className="text-[#555560]">{new Date(h.created_at).toLocaleString("pt-BR")}{h.observacao?` · ${h.observacao}`:""}</div></div><div className="font-mono text-right"><div>{["entrada","ajuste_positivo","devolucao"].includes(h.tipo)?"+":"-"}{h.quantidade}</div><div className="text-[#555560]">{h.quantidade_anterior} → {h.quantidade_posterior}</div></div></div>)}</div>}
+      </div>
+
+      <Button variant="danger" className="w-full" onClick={()=>onRemove(p.id)}><span className="flex items-center justify-center gap-2"><Trash2 size={14}/> Remover produto</span></Button>
+    </div>}
+  </Card>;
 }
 
 /* ================= OS: LISTA ================= */
