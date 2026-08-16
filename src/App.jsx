@@ -174,10 +174,21 @@ function fmtDateTime(iso) {
 }
 function totaisPorForma(vendas) {
   const t = { dinheiro: 0, pix: 0, debito: 0, credito: 0 };
-  vendas.forEach((v) => { t[v.formaPagamento] = (t[v.formaPagamento] || 0) + v.total; });
+  (vendas || []).filter(v => v.status !== "estornada").forEach((v) => {
+    const pagamentos = Array.isArray(v.pagamentos) && v.pagamentos.length
+      ? v.pagamentos
+      : [{ forma: v.formaPagamento, valor: v.total }];
+    pagamentos.forEach((p) => {
+      const forma = p.forma || v.formaPagamento;
+      if (!forma) return;
+      t[forma] = (t[forma] || 0) + Number(p.valor || 0);
+    });
+  });
   return t;
 }
-function totalGeral(vendas) { return vendas.reduce((s, v) => s + v.total, 0); }
+function totalGeral(vendas) {
+  return (vendas || []).filter(v => v.status !== "estornada").reduce((s, v) => s + Number(v.total || 0), 0);
+}
 function resizeImage(file, maxWidth = 1000, quality = 0.7) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -608,15 +619,20 @@ function EnigmaSistema() {
         method: "PATCH",
         prefer: "return=minimal",
         body: JSON.stringify({
-          status: "fechado", data_fechamento: new Date().toISOString(), total_vendas: totalGeral(vendas),
-          total_por_forma: totais, saldo_esperado_dinheiro: saldoEsperadoDinheiro, valor_contado: Number(valorContado) || 0,
-          diferenca, observacao_fechamento: observacao || "",
+          status: "fechado",
+          data_fechamento: new Date().toISOString(),
+          total_vendas: totalGeral(vendas),
+          total_por_forma: totais,
+          saldo_esperado_dinheiro: saldoEsperadoDinheiro,
+          valor_contado: Number(valorContado) || 0,
+          diferenca,
+          observacao_fechamento: observacao || "",
         }),
       });
       setCaixaAtual(null);
       setSaveError(false);
     } catch (e) { setSaveError(true); }
-    setTab("caixa");
+    setTab("financeiro");
   }
 
   async function excluirVenda(venda, motivo="Estorno solicitado no PDV") {
@@ -976,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.8</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.9</div>
     </aside>
   );
 }
@@ -1219,7 +1235,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.8</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.9</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1633,24 +1649,63 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
   const [fechando, setFechando] = useState(false);
   const [valorContado, setValorContado] = useState("");
   const [obsFechamento, setObsFechamento] = useState("");
+  const [historicoCaixa,setHistoricoCaixa]=useState([]);
+  const [loadingHistorico,setLoadingHistorico]=useState(false);
+  const [detalheFechamento,setDetalheFechamento]=useState(null);
+
+  async function carregarHistoricoCaixa(){
+    setLoadingHistorico(true);
+    try{
+      const rows=await sb("caixa_sessoes?select=*&status=eq.fechado&order=data_fechamento.desc&limit=20");
+      setHistoricoCaixa(rows||[]);
+    }catch(e){console.warn("Histórico de caixa indisponível:",e);}
+    setLoadingHistorico(false);
+  }
+
+  useEffect(()=>{carregarHistoricoCaixa();},[caixaAtual?.id]);
 
   if (!caixaAtual) {
     return (
-      <Card>
-        <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><Unlock size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Abertura de caixa</span></div>
-        <Label>Valor inicial (troco)</Label>
-        <Input inputMode="decimal" placeholder="R$ 0,00" value={valorInicial} onChange={(e) => setValorInicial(e.target.value.replace(",", "."))} className="mb-3" />
-        <Label>Operador</Label>
-        <Input value={operador} onChange={(e) => setOperador(e.target.value)} placeholder="Quem está abrindo o caixa" className="mb-3" />
-        <Label>Observação (opcional)</Label>
-        <Input value={observacao} onChange={(e) => setObservacao(e.target.value)} className="mb-4" />
-        <Button className="w-full" disabled={valorInicial === ""} onClick={() => onAbrir({ valorInicial, operador, observacao })}>Abrir caixa</Button>
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><Unlock size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Abertura de caixa</span></div>
+          <Label>Valor inicial (fundo / troco)</Label>
+          <Input inputMode="decimal" placeholder="R$ 0,00" value={valorInicial} onChange={(e) => setValorInicial(e.target.value.replace(",", "."))} className="mb-3" />
+          <div className="text-[10px] text-[#64646F] -mt-1 mb-3">O fundo inicial não entra como faturamento. Ele serve apenas para conferência do dinheiro físico.</div>
+          <Label>Operador</Label>
+          <Input value={operador} onChange={(e) => setOperador(e.target.value)} placeholder="Quem está abrindo o caixa" className="mb-3" />
+          <Label>Observação (opcional)</Label>
+          <Input value={observacao} onChange={(e) => setObservacao(e.target.value)} className="mb-4" />
+          <Button className="w-full" disabled={valorInicial === ""} onClick={() => onAbrir({ valorInicial, operador, observacao })}>Abrir caixa</Button>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div><div className="text-[9px] tracking-[.2em] text-purple-300">FECHAMENTOS RECENTES</div><div className="text-[10px] text-[#666672] mt-1">Últimos 20 caixas fechados</div></div>
+            <button onClick={carregarHistoricoCaixa} className="text-[10px] text-cyan-300">Atualizar</button>
+          </div>
+          {loadingHistorico?<div className="py-5 text-center text-xs text-[#666672]">Carregando...</div>:
+          !historicoCaixa.length?<div className="py-5 text-center text-xs text-[#666672]">Nenhum fechamento registrado ainda.</div>:
+          <div className="space-y-2">{historicoCaixa.map(c=>{
+            const dif=Number(c.diferenca||0);
+            return <button key={c.id} onClick={()=>setDetalheFechamento(c)} className="w-full text-left rounded-xl border border-white/8 bg-white/[.015] p-3">
+              <div className="flex justify-between gap-3">
+                <div><div className="text-xs text-white">{fmtDateTime(c.data_fechamento||c.data_abertura)}</div><div className="text-[10px] text-[#666672] mt-1">{c.operador||"Operador não informado"}</div></div>
+                <div className="text-right"><div className="font-mono text-xs">{fmt(c.total_vendas)}</div><div className={"text-[9px] mt-1 "+(dif===0?"text-green-300":dif>0?"text-cyan-300":"text-red-300")}>{dif===0?"CONFERE":dif>0?`SOBRA ${fmt(dif)}`:`FALTA ${fmt(Math.abs(dif))}`}</div></div>
+              </div>
+            </button>
+          })}</div>}
+        </Card>
+
+        {detalheFechamento&&<FechamentoCaixaModal caixa={detalheFechamento} onFechar={()=>setDetalheFechamento(null)}/>}
+      </div>
     );
   }
 
   const totais = totaisPorForma(caixaAtual.vendas);
   const totalVendas = totalGeral(caixaAtual.vendas);
+  const vendasValidas=(caixaAtual.vendas||[]).filter(v=>v.status!=="estornada");
+  const vendasEstornadas=(caixaAtual.vendas||[]).filter(v=>v.status==="estornada");
   const saldoEsperadoDinheiro = caixaAtual.valorInicial + totais.dinheiro;
 
   if (!fechando) {
@@ -1660,22 +1715,35 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
           <div className="flex items-center gap-2 mb-3 text-[#C9C9D2]"><Wallet size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Caixa aberto</span></div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div><Label>Aberto em</Label><div className="text-[#E5E5EA]">{fmtDateTime(caixaAtual.dataAbertura)}</div></div>
-            <div><Label>Valor inicial</Label><div className="font-mono text-[#E5E5EA]">{fmt(caixaAtual.valorInicial)}</div></div>
+            <div><Label>Fundo inicial</Label><div className="font-mono text-[#E5E5EA]">{fmt(caixaAtual.valorInicial)}</div></div>
             {caixaAtual.operador && <div className="col-span-2"><Label>Operador</Label><div className="text-[#E5E5EA]">{caixaAtual.operador}</div></div>}
           </div>
         </Card>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <MetricCyber label="VENDAS VÁLIDAS" value={String(vendasValidas.length)} sub="operações"/>
+          <MetricCyber label="ESTORNOS" value={String(vendasEstornadas.length)} sub="fora do total"/>
+          <MetricCyber label="FATURAMENTO" value={fmt(totalVendas)} sub="sem fundo"/>
+          <MetricCyber label="DINHEIRO FÍSICO" value={fmt(saldoEsperadoDinheiro)} sub="esperado"/>
+        </div>
+
         <Card>
-          <Label>Vendas por forma de pagamento</Label>
-          <div className="space-y-2 mt-1">
+          <Label>Recebimentos por forma de pagamento</Label>
+          <div className="space-y-2 mt-2">
             {FORMAS.map((f) => (
               <div key={f.id} className="flex justify-between text-sm"><span className="text-[#8A8A96]">{f.label}</span><span className="font-mono text-[#E5E5EA]">{fmt(totais[f.id])}</span></div>
             ))}
           </div>
-          <div className="flex justify-between mt-3 pt-3 border-t border-[#2A2A34]"><span className="text-sm text-[#C9C9D2]">Total vendido</span><span className="font-mono text-lg text-white">{fmt(totalVendas)}</span></div>
-          <div className="flex justify-between mt-1 text-xs"><span className="text-[#6E6E78]">Esperado em dinheiro</span><span className="font-mono text-purple-300">{fmt(saldoEsperadoDinheiro)}</span></div>
+          <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-[#2A2A34]">
+            <div><div className="text-[9px] tracking-[.16em] text-[#666672]">FUNDO / TROCO</div><div className="font-mono text-sm mt-1">{fmt(caixaAtual.valorInicial)}</div></div>
+            <div className="text-right"><div className="text-[9px] tracking-[.16em] text-[#666672]">VENDAS EM DINHEIRO</div><div className="font-mono text-sm mt-1">{fmt(totais.dinheiro)}</div></div>
+          </div>
+          <div className="flex justify-between mt-4 pt-3 border-t border-[#2A2A34]"><span className="text-sm text-[#C9C9D2]">Esperado na gaveta</span><span className="font-mono text-lg text-purple-300">{fmt(saldoEsperadoDinheiro)}</span></div>
+          <div className="flex justify-between mt-1 text-xs"><span className="text-[#6E6E78]">Total vendido (todas as formas)</span><span className="font-mono text-white">{fmt(totalVendas)}</span></div>
         </Card>
-        <Button variant="danger" className="w-full" onClick={() => setFechando(true)}>
-          <span className="flex items-center justify-center gap-2"><Lock size={15} /> Fechar caixa</span>
+
+        <Button variant="danger" className="w-full" onClick={() => {setFechando(true);setValorContado("");}}>
+          <span className="flex items-center justify-center gap-2"><Lock size={15} /> Fechar caixa com conferência</span>
         </Button>
       </div>
     );
@@ -1683,26 +1751,79 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
 
   const contado = Number(valorContado) || 0;
   const diferenca = contado - saldoEsperadoDinheiro;
+  const diferencaAbs=Math.abs(diferenca);
+
   return (
-    <Card>
-      <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><Lock size={16} className="text-red-400" /><span className="text-sm tracking-wide">Fechamento de caixa</span></div>
-      <div className="text-sm text-[#8A8A96] mb-3">Esperado em dinheiro: <span className="font-mono text-[#E5E5EA]">{fmt(saldoEsperadoDinheiro)}</span></div>
-      <Label>Valor contado na gaveta</Label>
-      <Input inputMode="decimal" placeholder="R$ 0,00" value={valorContado} onChange={(e) => setValorContado(e.target.value.replace(",", "."))} className="mb-3" />
-      {valorContado !== "" && (
-        <div className={"flex items-center gap-2 text-sm mb-3 px-3 py-2 rounded-lg border " + (diferenca === 0 ? "border-green-500/30 text-green-400 bg-green-500/10" : diferenca > 0 ? "border-blue-500/30 text-blue-300 bg-blue-500/10" : "border-red-500/30 text-red-400 bg-red-500/10")}>
-          {diferenca === 0 ? <Check size={15} /> : <AlertCircle size={15} />}
-          {diferenca === 0 ? "Caixa confere" : diferenca > 0 ? `Sobra de ${fmt(diferenca)}` : `Falta de ${fmt(Math.abs(diferenca))}`}
-        </div>
-      )}
-      <Label>Observação (opcional)</Label>
-      <Input value={obsFechamento} onChange={(e) => setObsFechamento(e.target.value)} className="mb-4" />
-      <div className="flex gap-2">
-        <Button variant="ghost" className="flex-1" onClick={() => setFechando(false)}>Voltar</Button>
-        <Button variant="danger" className="flex-1" disabled={valorContado === ""} onClick={() => onFechar({ valorContado, observacao: obsFechamento })}>Confirmar fechamento</Button>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-red-500/15 bg-gradient-to-br from-red-500/[.04] via-transparent to-purple-500/[.04] p-5">
+        <div className="text-[9px] tracking-[.25em] text-red-300">CONFERÊNCIA DE CAIXA</div>
+        <div className="text-xl text-white mt-2">Fechamento inteligente</div>
+        <div className="text-xs text-[#74747F] mt-1">Confira apenas o dinheiro físico. Pix e cartões são conciliados separadamente.</div>
       </div>
-    </Card>
+
+      <Card>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-white/8 p-3"><div className="text-[9px] tracking-[.14em] text-[#666672]">FUNDO INICIAL</div><div className="font-mono text-lg mt-1">{fmt(caixaAtual.valorInicial)}</div></div>
+          <div className="rounded-xl border border-white/8 p-3"><div className="text-[9px] tracking-[.14em] text-[#666672]">DINHEIRO VENDAS</div><div className="font-mono text-lg mt-1">{fmt(totais.dinheiro)}</div></div>
+        </div>
+        <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4 mt-3 flex items-center justify-between gap-3"><div><div className="text-[9px] tracking-[.15em] text-purple-300">ESPERADO NA GAVETA</div><div className="text-[10px] text-[#666672] mt-1">fundo + vendas em dinheiro</div></div><div className="font-mono text-2xl text-white">{fmt(saldoEsperadoDinheiro)}</div></div>
+      </Card>
+
+      <Card>
+        <Label>Valor contado fisicamente na gaveta</Label>
+        <Input autoFocus inputMode="decimal" placeholder="Ex: 430,00" value={valorContado} onChange={(e) => setValorContado(e.target.value.replace(",", "."))} className="mb-3 text-lg font-mono" />
+        {valorContado !== "" && (
+          <div className={"p-4 rounded-xl border " + (diferenca === 0 ? "border-green-500/30 bg-green-500/[.06]" : diferenca > 0 ? "border-cyan-500/30 bg-cyan-500/[.06]" : "border-red-500/30 bg-red-500/[.06]")}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">{diferenca===0?<CheckCircle2 size={18} className="text-green-300"/>:<AlertCircle size={18} className={diferenca>0?"text-cyan-300":"text-red-300"}/>}<div><div className="text-sm text-white">{diferenca===0?"Caixa confere":diferenca>0?"Sobra de caixa":"Falta de caixa"}</div><div className="text-[10px] text-[#71717C]">{diferenca===0?"Valor contado igual ao esperado.":diferenca>0?"Há mais dinheiro que o esperado.":"Há menos dinheiro que o esperado."}</div></div></div>
+              <div className={"font-mono text-xl "+(diferenca===0?"text-green-300":diferenca>0?"text-cyan-300":"text-red-300")}>{diferenca===0?fmt(0):fmt(diferencaAbs)}</div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-3">RESUMO DO TURNO</div>
+        <div className="space-y-2">
+          {FORMAS.map(f=><div key={f.id} className="flex justify-between text-xs"><span className="text-[#777782]">{f.label}</span><span className="font-mono">{fmt(totais[f.id])}</span></div>)}
+          <div className="flex justify-between text-sm pt-3 mt-3 border-t border-white/10"><span>Total vendido</span><span className="font-mono text-white">{fmt(totalVendas)}</span></div>
+          <div className="flex justify-between text-xs"><span className="text-[#777782]">Vendas válidas</span><span>{vendasValidas.length}</span></div>
+          {vendasEstornadas.length>0&&<div className="flex justify-between text-xs"><span className="text-red-300">Vendas estornadas</span><span className="text-red-300">{vendasEstornadas.length}</span></div>}
+        </div>
+      </Card>
+
+      <Card>
+        <Label>Observação do fechamento</Label>
+        <Input value={obsFechamento} onChange={(e) => setObsFechamento(e.target.value)} placeholder={diferenca!==0?"Recomendado informar o motivo da diferença":"Opcional"} className="mb-4" />
+        {valorContado!==""&&diferenca!==0&&!obsFechamento.trim()&&<div className="text-[10px] text-amber-300 mb-3">Existe diferença de caixa. Registre uma observação para facilitar a auditoria.</div>}
+        <div className="flex gap-2">
+          <Button variant="ghost" className="flex-1" onClick={() => setFechando(false)}>Voltar</Button>
+          <Button variant="danger" className="flex-1" disabled={valorContado === "" || (diferenca!==0 && !obsFechamento.trim())} onClick={() => onFechar({ valorContado, observacao: obsFechamento })}>Confirmar fechamento</Button>
+        </div>
+      </Card>
+    </div>
   );
+}
+
+function FechamentoCaixaModal({caixa,onFechar}){
+  const t=caixa.total_por_forma||{};
+  const dif=Number(caixa.diferenca||0);
+  return <div className="fixed inset-0 z-40 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onFechar}>
+    <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#131318] p-5" onClick={e=>e.stopPropagation()}>
+      <div className="flex justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.2em] text-purple-300">FECHAMENTO DE CAIXA</div><div className="text-lg text-white mt-1">{fmtDateTime(caixa.data_fechamento||caixa.data_abertura)}</div><div className="text-xs text-[#666672] mt-1">{caixa.operador||"Operador não informado"}</div></div><button onClick={onFechar}><X size={18}/></button></div>
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="rounded-xl border border-white/8 p-3"><div className="text-[8px] tracking-[.14em] text-[#666672]">FUNDO INICIAL</div><div className="font-mono mt-1">{fmt(caixa.valor_inicial)}</div></div>
+        <div className="rounded-xl border border-white/8 p-3"><div className="text-[8px] tracking-[.14em] text-[#666672]">TOTAL VENDIDO</div><div className="font-mono mt-1">{fmt(caixa.total_vendas)}</div></div>
+        <div className="rounded-xl border border-white/8 p-3"><div className="text-[8px] tracking-[.14em] text-[#666672]">ESPERADO DINHEIRO</div><div className="font-mono mt-1">{fmt(caixa.saldo_esperado_dinheiro)}</div></div>
+        <div className="rounded-xl border border-white/8 p-3"><div className="text-[8px] tracking-[.14em] text-[#666672]">CONTADO</div><div className="font-mono mt-1">{fmt(caixa.valor_contado)}</div></div>
+      </div>
+      <div className="space-y-2 border-y border-white/8 py-3 mb-4">{FORMAS.map(f=><div key={f.id} className="flex justify-between text-xs"><span className="text-[#777782]">{f.label}</span><span className="font-mono">{fmt(t[f.id]||0)}</span></div>)}</div>
+      <div className={"rounded-xl border p-4 "+(dif===0?"border-green-500/25 bg-green-500/[.04]":dif>0?"border-cyan-500/25 bg-cyan-500/[.04]":"border-red-500/25 bg-red-500/[.04]")}>
+        <div className="flex justify-between gap-3"><div><div className="text-[9px] tracking-[.15em] text-[#777782]">RESULTADO DA CONFERÊNCIA</div><div className="text-sm text-white mt-1">{dif===0?"Caixa conferido":dif>0?"Sobra":"Falta"}</div></div><div className={"font-mono text-xl "+(dif===0?"text-green-300":dif>0?"text-cyan-300":"text-red-300")}>{fmt(Math.abs(dif))}</div></div>
+      </div>
+      {caixa.observacao_fechamento&&<div className="mt-4 rounded-xl border border-white/8 p-3"><div className="text-[8px] tracking-[.14em] text-[#666672]">OBSERVAÇÃO</div><div className="text-xs text-[#C9C9D2] mt-1">{caixa.observacao_fechamento}</div></div>}
+    </div>
+  </div>;
 }
 
 /* ================= RELATÓRIO ================= */
