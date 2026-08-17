@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.3.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.4</div>
     </aside>
   );
 }
@@ -1075,171 +1075,308 @@ function MetricCard({ label, value, helper, icon: Icon, accent = "purple" }) {
 }
 
 function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
-  const [dados,setDados]=useState({vendas:[],movs:[],osDetalhadas:[]});
+  const [periodo,setPeriodo]=useState(7);
+  const [dados,setDados]=useState({vendas:[],movs:[]});
   const [loading,setLoading]=useState(true);
-  const hoje=todayISO();
+
+  function intervaloAtual(){
+    const fim=new Date();
+    fim.setHours(23,59,59,999);
+    const inicio=new Date();
+    inicio.setDate(inicio.getDate()-(periodo-1));
+    inicio.setHours(0,0,0,0);
+    return {inicio,fim};
+  }
 
   async function carregarDashboard(){
     setLoading(true);
+    const {inicio,fim}=intervaloAtual();
+    const inicioISO=inicio.toISOString();
+    const fimISO=fim.toISOString();
+    const inicioDia=inicio.toISOString().slice(0,10);
+    const fimDia=fim.toISOString().slice(0,10);
     try{
-      const [vendasRows,movsRows,osRows]=await Promise.all([
-        sb(`vendas?select=*&timestamp=gte.${hoje}T00:00:00&timestamp=lte.${hoje}T23:59:59.999&order=timestamp.desc`),
-        sb(`financeiro_movimentacoes?select=*&data_competencia=eq.${hoje}&order=created_at.desc`),
-        sb(`ordens_servico?select=id,numero,data_entrada,cliente,aparelho,problema_relatado,status,valor_final,timeline&order=data_entrada.desc&limit=100`)
+      const [vendasRows,movsRows]=await Promise.all([
+        sb(`vendas?select=*&timestamp=gte.${inicioISO}&timestamp=lte.${fimISO}&order=timestamp.asc`),
+        sb(`financeiro_movimentacoes?select=*&data_competencia=gte.${inicioDia}&data_competencia=lte.${fimDia}&order=data_competencia.asc`)
       ]);
-      setDados({vendas:(vendasRows||[]).map(rowToVenda),movs:movsRows||[],osDetalhadas:osRows||[]});
+      setDados({vendas:(vendasRows||[]).map(rowToVenda),movs:movsRows||[]});
     }catch(e){
-      console.warn("Dashboard executivo:",e);
-      setDados({vendas:caixaAtual?.vendas||[],movs:[],osDetalhadas:[]});
+      console.warn("Dashboard visual:",e);
+      setDados({vendas:caixaAtual?.vendas||[],movs:[]});
     }
     setLoading(false);
   }
 
-  useEffect(()=>{carregarDashboard();},[caixaAtual?.id]);
+  useEffect(()=>{carregarDashboard();},[periodo,caixaAtual?.id]);
 
   const vendasValidas=dados.vendas.filter(v=>v.status!=="estornada");
-  const faturamentoHoje=totalGeral(vendasValidas);
-  const ticketMedio=vendasValidas.length?faturamentoHoje/vendasValidas.length:0;
-  const itensHoje=vendasValidas.reduce((a,v)=>a+(v.itens||[]).reduce((b,i)=>b+(Number(i.qtd)||0),0),0);
+  const faturamento=totalGeral(vendasValidas);
+  const ticketMedio=vendasValidas.length?faturamento/vendasValidas.length:0;
+  const itensVendidos=vendasValidas.reduce((a,v)=>a+(v.itens||[]).reduce((b,i)=>b+(Number(i.qtd)||0),0),0);
 
-  let custoHoje=0;
+  let custoEstimado=0;
   vendasValidas.forEach(v=>(v.itens||[]).forEach(i=>{
-    const p=estoque.find(x=>x.id===i.estoqueId);
-    if(p) custoHoje+=(Number(p.custo)||0)*(Number(i.qtd)||0);
+    const produto=estoque.find(x=>x.id===i.estoqueId);
+    if(produto) custoEstimado+=(Number(produto.custo)||0)*(Number(i.qtd)||0);
   }));
-  const lucroHoje=faturamentoHoje-custoHoje;
-  const margemHoje=faturamentoHoje>0?(lucroHoje/faturamentoHoje)*100:0;
+  const lucroEstimado=faturamento-custoEstimado;
+  const margem=faturamento>0?(lucroEstimado/faturamento)*100:0;
 
-  const abertas=osIndex.filter(os=>!["entregue","cancelado"].includes(os.status));
+  const {inicio,fim}=intervaloAtual();
+  const dias=[];
+  for(let d=new Date(inicio);d<=fim;d.setDate(d.getDate()+1)){
+    const chave=d.toISOString().slice(0,10);
+    const vendasDia=vendasValidas.filter(v=>String(v.timestamp||"").slice(0,10)===chave);
+    dias.push({
+      chave,
+      label:d.toLocaleDateString("pt-BR",{day:"2-digit",month:periodo>7?"2-digit":undefined,weekday:periodo<=7?"short":undefined}).replace(".",""),
+      valor:totalGeral(vendasDia),
+      vendas:vendasDia.length
+    });
+  }
+
+  const pagamentos=totaisPorForma(vendasValidas);
+  const totalPagamentos=Object.values(pagamentos).reduce((a,b)=>a+Number(b||0),0);
+  const formas=[
+    {id:"pix",label:"Pix",valor:pagamentos.pix||0,classe:"bg-purple-400"},
+    {id:"dinheiro",label:"Dinheiro",valor:pagamentos.dinheiro||0,classe:"bg-cyan-400"},
+    {id:"debito",label:"Débito",valor:pagamentos.debito||0,classe:"bg-blue-400"},
+    {id:"credito",label:"Crédito",valor:pagamentos.credito||0,classe:"bg-fuchsia-400"}
+  ];
+
+  let acumulado=0;
+  const donutStops=formas.map((f,idx)=>{
+    const ini=totalPagamentos?acumulado/totalPagamentos*100:0;
+    acumulado+=f.valor;
+    const fimP=totalPagamentos?acumulado/totalPagamentos*100:0;
+    const cores=["#a855f7","#22d3ee","#60a5fa","#e879f9"];
+    return `${cores[idx]} ${ini}% ${fimP}%`;
+  }).join(",");
+
+  const topMap={};
+  vendasValidas.forEach(v=>(v.itens||[]).forEach(i=>{
+    const nome=i.descricao||"Item";
+    const atual=topMap[nome]||{qtd:0,faturamento:0};
+    atual.qtd+=Number(i.qtd)||0;
+    atual.faturamento+=(Number(i.qtd)||0)*(Number(i.valor)||0);
+    topMap[nome]=atual;
+  }));
+  const ranking=Object.entries(topMap).map(([nome,d])=>({nome,...d})).sort((a,b)=>b.qtd-a.qtd).slice(0,6);
+  const maxQtd=Math.max(1,...ranking.map(x=>x.qtd));
+
+  const estoqueAcessorios=estoque.filter(p=>p.categoria==="acessorio");
+  const zerados=estoqueAcessorios.filter(p=>Number(p.quantidade)<=0);
+  const criticos=estoqueAcessorios.filter(p=>Number(p.quantidade)>0&&Number(p.quantidade)<=Number(p.estoqueMinimo||0));
+  const saudaveis=estoqueAcessorios.filter(p=>Number(p.quantidade)>Number(p.estoqueMinimo||0));
+  const totalEstoqueStatus=Math.max(1,estoqueAcessorios.length);
+  const saudePct=Math.round((saudaveis.length/totalEstoqueStatus)*100);
+  const capitalEstoque=estoqueAcessorios.reduce((a,p)=>a+(Number(p.custo)||0)*(Number(p.quantidade)||0),0);
+
   const aguardando=osIndex.filter(os=>os.status==="aguardando_aprovacao");
-  const prontas=osIndex.filter(os=>os.status==="pronto");
   const emReparo=osIndex.filter(os=>os.status==="em_reparo");
-  const recebidasHoje=osIndex.filter(os=>String(os.dataEntrada||"").slice(0,10)===hoje);
+  const prontas=osIndex.filter(os=>os.status==="pronto");
+  const diagnostico=osIndex.filter(os=>os.status==="diagnostico");
+  const recebidas=osIndex.filter(os=>os.status==="recebido");
+  const abertas=osIndex.filter(os=>!["entregue","cancelado"].includes(os.status));
 
-  const estoqueBaixo=estoque.filter(p=>Number(p.quantidade)<=Number(p.estoqueMinimo||0));
-  const semEstoque=estoque.filter(p=>Number(p.quantidade)<=0);
-  const capitalEstoque=estoque.filter(p=>p.categoria==="acessorio").reduce((a,p)=>a+(Number(p.custo)||0)*(Number(p.quantidade)||0),0);
+  const entradas=dados.movs.filter(x=>x.tipo==="entrada"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
+  const saidas=dados.movs.filter(x=>x.tipo==="saida"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
+  const resultado=entradas-saidas;
 
-  const entradasHoje=dados.movs.filter(x=>x.tipo==="entrada"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
-  const saidasHoje=dados.movs.filter(x=>x.tipo==="saida"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
-  const resultadoHoje=entradasHoje-saidasHoje;
+  const insights=[];
+  if(ranking[0]) insights.push({icon:"↗",titulo:`${ranking[0].nome} lidera o período`,texto:`${ranking[0].qtd} unidade(s) vendida(s) e ${fmt(ranking[0].faturamento)} em vendas.`,acao:"relatorio"});
+  if(zerados.length||criticos.length) insights.push({icon:"!",titulo:"Estoque pede atenção",texto:`${zerados.length} zerado(s) e ${criticos.length} próximo(s) do mínimo.`,acao:"estoque"});
+  if(aguardando.length) insights.push({icon:"◷",titulo:"Aprovações pendentes",texto:`${aguardando.length} OS aguardando resposta do cliente.`,acao:"os"});
+  if(prontas.length) insights.push({icon:"✓",titulo:"Aparelhos prontos",texto:`${prontas.length} aparelho(s) aguardando retirada.`,acao:"os"});
+  if(!insights.length) insights.push({icon:"✓",titulo:"Operação equilibrada",texto:"Nenhum alerta relevante detectado neste momento.",acao:null});
 
-  const alertas=[];
-  if(!caixaAtual) alertas.push({nivel:"amber",titulo:"Caixa fechado",texto:"Abra o caixa antes de iniciar vendas no PDV.",acao:"financeiro"});
-  if(prontas.length) alertas.push({nivel:"green",titulo:`${prontas.length} aparelho(s) pronto(s)`,texto:"Há aparelhos aguardando retirada do cliente.",acao:"os"});
-  if(aguardando.length) alertas.push({nivel:"amber",titulo:`${aguardando.length} orçamento(s) aguardando aprovação`,texto:"Acompanhe os clientes para evitar OS paradas.",acao:"os"});
-  if(semEstoque.length) alertas.push({nivel:"red",titulo:`${semEstoque.length} produto(s) zerado(s)`,texto:"Existem itens sem estoque disponível.",acao:"estoque"});
-  else if(estoqueBaixo.length) alertas.push({nivel:"red",titulo:`${estoqueBaixo.length} item(ns) em estoque crítico`,texto:"Considere reposição antes de faltar produto.",acao:"estoque"});
-  if(!alertas.length) alertas.push({nivel:"green",titulo:"Operação sem alertas críticos",texto:"Nenhuma pendência importante detectada agora.",acao:null});
-
-  const recentes=osIndex.slice(0,5);
-  const topItens={};
-  vendasValidas.forEach(v=>(v.itens||[]).forEach(i=>{
-    const k=i.descricao||"Item";
-    topItens[k]=(topItens[k]||0)+(Number(i.qtd)||0);
-  }));
-  const rankingHoje=Object.entries(topItens).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const recentes=osIndex.slice(0,4);
 
   return (
     <div className="space-y-5">
-      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,.16),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,.07),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
-        <div className="relative z-[1] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_88%_10%,rgba(139,92,246,.20),transparent_30%),radial-gradient(circle_at_12%_100%,rgba(34,211,238,.08),transparent_32%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
+        <div className="absolute right-[-40px] top-[-55px] w-48 h-48 rounded-full border border-purple-400/10 shadow-[0_0_80px_rgba(139,92,246,.15)]"/>
+        <div className="relative z-[1] flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
           <div>
-            <div className="inline-flex items-center gap-2 text-[9px] tracking-[.22em] uppercase text-purple-300 border border-purple-400/20 bg-purple-500/10 rounded-full px-3 py-1 mb-3"><Sparkles size={12}/> ENIGMA // COMMAND CENTER</div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-white">Visão executiva da operação.</h1>
-            <p className="text-sm text-[#8E8E99] mt-2 max-w-2xl">O que vendeu, o que está parado e o que precisa da sua decisão hoje.</p>
+            <div className="inline-flex items-center gap-2 text-[9px] tracking-[.24em] uppercase text-purple-300 border border-purple-400/20 bg-purple-500/10 rounded-full px-3 py-1 mb-3"><Sparkles size={12}/> ENIGMA // VISUAL COMMAND CENTER</div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-white">A operação em movimento.</h1>
+            <p className="text-sm text-[#8E8E99] mt-2 max-w-2xl">Vendas, estoque e assistência traduzidos em sinais visuais para decidir mais rápido.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={16}/> Nova OS</span></Button>
-            <Button variant="ghost" onClick={()=>onNavigate("pdv")}><span className="flex items-center gap-2"><ShoppingBag size={16}/> Nova venda</span></Button>
-            <button onClick={carregarDashboard} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-cyan-300">{loading?"Atualizando...":"Atualizar"}</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
+              {[7,30,90].map(n=><button key={n} onClick={()=>setPeriodo(n)} className={"rounded-lg px-3 py-2 text-[10px] transition "+(periodo===n?"bg-purple-500/20 text-purple-200 border border-purple-500/25":"text-[#70707B] border border-transparent")}>{n} dias</button>)}
+            </div>
+            <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={15}/> Nova OS</span></Button>
+            <Button variant="ghost" onClick={()=>onNavigate("pdv")}><span className="flex items-center gap-2"><ShoppingBag size={15}/> Venda</span></Button>
+            <button onClick={carregarDashboard} className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center text-cyan-300"><RefreshCw size={15} className={loading?"animate-spin":""}/></button>
           </div>
         </div>
       </section>
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <MetricCard label="Faturamento hoje" value={fmt(faturamentoHoje)} helper={`${vendasValidas.length} venda(s) · ${itensHoje} item(ns)`} icon={TrendingUp} accent="green"/>
-        <MetricCard label="Lucro bruto est." value={fmt(lucroHoje)} helper={`${margemHoje.toFixed(1)}% de margem`} icon={BarChart3} accent="purple"/>
-        <MetricCard label="Ticket médio" value={fmt(ticketMedio)} helper="vendas concluídas" icon={ShoppingBag} accent="blue"/>
-        <MetricCard label="OS em andamento" value={abertas.length} helper={`${recebidasHoje.length} recebida(s) hoje`} icon={Wrench} accent="amber"/>
+        <MetricCard label="Faturamento" value={fmt(faturamento)} helper={`${vendasValidas.length} venda(s) no período`} icon={TrendingUp} accent="green"/>
+        <MetricCard label="Lucro bruto est." value={fmt(lucroEstimado)} helper={`${margem.toFixed(1)}% de margem`} icon={BarChart3} accent="purple"/>
+        <MetricCard label="Ticket médio" value={fmt(ticketMedio)} helper={`${itensVendidos} item(ns) vendidos`} icon={ShoppingBag} accent="blue"/>
+        <MetricCard label="OS em andamento" value={abertas.length} helper={`${prontas.length} pronta(s) para retirada`} icon={Wrench} accent="amber"/>
       </section>
 
-      <section className="grid xl:grid-cols-[1.25fr_.75fr] gap-4">
-        <div className="rounded-2xl border border-white/10 bg-white/[.012] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/8 flex items-center justify-between">
-            <div><div className="text-[9px] tracking-[.22em] text-red-300">CENTRAL DE ATENÇÃO</div><div className="text-xs text-[#696974] mt-1">Prioridades que podem exigir uma ação sua</div></div>
-            <span className="text-[10px] text-[#555560]">{alertas.length} alerta(s)</span>
+      <section className="grid xl:grid-cols-[1.6fr_.8fr] gap-4">
+        <div className="rounded-2xl border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.018),rgba(255,255,255,.005))] p-5 overflow-hidden">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div><div className="text-[9px] tracking-[.22em] text-purple-300">EVOLUÇÃO DAS VENDAS</div><div className="text-xs text-[#666672] mt-1">Faturamento diário · últimos {periodo} dias</div></div>
+            <div className="text-right"><div className="font-mono text-lg text-white">{fmt(faturamento)}</div><div className="text-[9px] text-[#5F5F69]">TOTAL DO PERÍODO</div></div>
           </div>
-          <div className="divide-y divide-white/[.06]">{alertas.map((a,idx)=>{
-            const cls=a.nivel==="red"?"text-red-300 bg-red-500/10 border-red-500/20":a.nivel==="amber"?"text-amber-300 bg-amber-500/10 border-amber-500/20":"text-green-300 bg-green-500/10 border-green-500/20";
-            return <button key={idx} disabled={!a.acao} onClick={()=>a.acao&&onNavigate(a.acao)} className="w-full text-left p-4 flex items-center justify-between gap-4 hover:bg-white/[.02]">
-              <div className="flex gap-3"><div className={"w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center "+cls}><AlertCircle size={15}/></div><div><div className="text-sm text-white">{a.titulo}</div><div className="text-[10px] text-[#71717C] mt-1">{a.texto}</div></div></div>
-              {a.acao&&<ChevronRight size={16} className="text-[#555560]"/>}
-            </button>
-          })}</div>
+          <DashboardLineChart dados={dias}/>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.018),rgba(255,255,255,.005))] p-5">
+          <div className="text-[9px] tracking-[.22em] text-cyan-300">FORMAS DE PAGAMENTO</div>
+          <div className="text-xs text-[#666672] mt-1">Distribuição das vendas</div>
+          <div className="flex items-center justify-center py-5">
+            <div className="relative w-40 h-40 rounded-full" style={{background:totalPagamentos?`conic-gradient(${donutStops})`:"#1f1f28"}}>
+              <div className="absolute inset-[18px] rounded-full bg-[#101016] border border-white/5 flex flex-col items-center justify-center">
+                <div className="text-[8px] tracking-[.15em] text-[#656570]">TOTAL</div>
+                <div className="font-mono text-base text-white mt-1">{fmt(totalPagamentos)}</div>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            {formas.map(f=><div key={f.id} className="flex items-center justify-between gap-2 text-[10px]"><div className="flex items-center gap-2 min-w-0"><span className={"w-2 h-2 rounded-full shrink-0 "+f.classe}/><span className="text-[#8B8B96] truncate">{f.label}</span></div><span className="font-mono text-[#D5D5DB]">{totalPagamentos?Math.round(f.valor/totalPagamentos*100):0}%</span></div>)}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid xl:grid-cols-[1.05fr_.95fr] gap-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <div><div className="text-[9px] tracking-[.22em] text-green-300">TOP PRODUTOS</div><div className="text-xs text-[#666672] mt-1">Ranking visual por quantidade</div></div>
+            <button onClick={()=>onNavigate("relatorio")} className="text-[10px] text-purple-300">Analisar giro →</button>
+          </div>
+          {!ranking.length?<div className="h-48 flex items-center justify-center text-xs text-[#5F5F69]">Sem vendas no período.</div>:
+          <div className="space-y-4">{ranking.map((r,idx)=><div key={r.nome}>
+            <div className="flex justify-between gap-3 mb-1.5"><div className="text-xs text-[#CBCBD2] truncate"><span className="text-[#555560] mr-2">0{idx+1}</span>{r.nome}</div><div className="text-right shrink-0"><span className="font-mono text-xs text-green-300">{r.qtd} un</span><span className="text-[9px] text-[#555560] ml-2">{fmt(r.faturamento)}</span></div></div>
+            <div className="h-2 rounded-full bg-white/[.045] overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-purple-600 via-purple-400 to-cyan-400 shadow-[0_0_12px_rgba(168,85,247,.2)]" style={{width:`${Math.max(6,r.qtd/maxQtd*100)}%`}}/></div>
+          </div>)}</div>}
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
-          <div className="text-[9px] tracking-[.2em] text-cyan-300">CAIXA & FINANCEIRO // HOJE</div>
-          <div className="flex items-center gap-2 mt-3"><span className={"w-2 h-2 rounded-full "+(caixaAtual?"bg-emerald-400":"bg-[#55555F]")}/><span className="text-sm text-white">{caixaAtual?"Caixa aberto":"Caixa fechado"}</span></div>
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            <div><div className="text-[8px] text-[#5F5F69]">ENTRADAS</div><div className="font-mono text-xs text-green-300 mt-1">{fmt(entradasHoje)}</div></div>
-            <div><div className="text-[8px] text-[#5F5F69]">SAÍDAS</div><div className="font-mono text-xs text-red-300 mt-1">{fmt(saidasHoje)}</div></div>
-            <div><div className="text-[8px] text-[#5F5F69]">RESULTADO</div><div className={"font-mono text-xs mt-1 "+(resultadoHoje>=0?"text-green-300":"text-red-300")}>{fmt(resultadoHoje)}</div></div>
+          <div className="flex items-center justify-between gap-3">
+            <div><div className="text-[9px] tracking-[.22em] text-purple-300">FLUXO DA ASSISTÊNCIA</div><div className="text-xs text-[#666672] mt-1">Onde estão as OS agora</div></div>
+            <button onClick={()=>onNavigate("os")} className="text-[10px] text-purple-300">Abrir OS →</button>
           </div>
-          <button onClick={()=>onNavigate("financeiro")} className="mt-5 text-xs text-purple-300">Abrir financeiro →</button>
+          <div className="mt-6 space-y-4">
+            {[
+              ["Recebidos",recebidas.length,"bg-blue-400"],
+              ["Diagnóstico",diagnostico.length,"bg-cyan-400"],
+              ["Aguardando",aguardando.length,"bg-amber-400"],
+              ["Em reparo",emReparo.length,"bg-purple-400"],
+              ["Prontos",prontas.length,"bg-green-400"]
+            ].map(([label,qtd,cls])=>{
+              const max=Math.max(1,abertas.length);
+              return <div key={label} className="grid grid-cols-[92px_1fr_28px] gap-3 items-center">
+                <div className="text-[10px] text-[#858590]">{label}</div>
+                <div className="h-3 rounded-full bg-white/[.04] overflow-hidden"><div className={"h-full rounded-full "+cls} style={{width:`${qtd?Math.max(8,Number(qtd)/max*100):0}%`}}/></div>
+                <div className="font-mono text-xs text-white text-right">{qtd}</div>
+              </div>
+            })}
+          </div>
+          <div className="mt-6 rounded-xl border border-white/8 bg-black/15 p-3 flex justify-between items-center">
+            <div><div className="text-[8px] tracking-[.15em] text-[#5F5F69]">TOTAL EM ANDAMENTO</div><div className="text-sm text-white mt-1">{abertas.length} ordem(ns)</div></div>
+            <Wrench size={24} className="text-purple-300/70"/>
+          </div>
         </div>
       </section>
 
-      <section className="grid lg:grid-cols-3 gap-4">
-        <Card className="!rounded-2xl">
-          <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Assistência agora</div><div className="text-[10px] text-[#666672]">Fluxo das ordens abertas</div></div><Wrench size={17} className="text-purple-300"/></div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg border border-white/8 p-3 text-center"><div className="font-mono text-xl">{aguardando.length}</div><div className="text-[8px] text-[#666672] mt-1">AGUARDANDO</div></div>
-            <div className="rounded-lg border border-white/8 p-3 text-center"><div className="font-mono text-xl">{emReparo.length}</div><div className="text-[8px] text-[#666672] mt-1">EM REPARO</div></div>
-            <div className="rounded-lg border border-white/8 p-3 text-center"><div className="font-mono text-xl text-green-300">{prontas.length}</div><div className="text-[8px] text-[#666672] mt-1">PRONTAS</div></div>
+      <section className="grid xl:grid-cols-[.8fr_1.2fr] gap-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
+          <div className="flex justify-between gap-3">
+            <div><div className="text-[9px] tracking-[.22em] text-cyan-300">SAÚDE DO ESTOQUE</div><div className="text-xs text-[#666672] mt-1">Disponibilidade dos acessórios</div></div>
+            <Package size={18} className="text-cyan-300"/>
           </div>
-          <button onClick={()=>onNavigate("os")} className="mt-4 text-xs text-purple-300">Gerenciar ordens →</button>
-        </Card>
-
-        <Card className="!rounded-2xl">
-          <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Estoque</div><div className="text-[10px] text-[#666672]">Disponibilidade e capital</div></div><Package size={17} className="text-cyan-300"/></div>
-          <div className="grid grid-cols-3 gap-2">
-            <div><div className="text-[8px] text-[#5F5F69]">ITENS</div><div className="font-mono text-lg mt-1">{estoque.length}</div></div>
-            <div><div className="text-[8px] text-[#5F5F69]">CRÍTICOS</div><div className="font-mono text-lg text-red-300 mt-1">{estoqueBaixo.length}</div></div>
-            <div><div className="text-[8px] text-[#5F5F69]">CAPITAL</div><div className="font-mono text-xs mt-2">{fmt(capitalEstoque)}</div></div>
+          <div className="flex items-end justify-between gap-4 mt-6">
+            <div><div className="font-mono text-4xl text-white">{saudePct}%</div><div className="text-[10px] text-[#666672] mt-1">estoque saudável</div></div>
+            <div className="text-right"><div className="text-[9px] text-[#666672]">CAPITAL EM ESTOQUE</div><div className="font-mono text-sm text-white mt-1">{fmt(capitalEstoque)}</div></div>
           </div>
-          <button onClick={()=>onNavigate("estoque")} className="mt-4 text-xs text-purple-300">Abrir estoque →</button>
-        </Card>
+          <div className="h-3 rounded-full overflow-hidden bg-white/[.04] flex mt-5">
+            <div className="bg-green-400" style={{width:`${saudaveis.length/totalEstoqueStatus*100}%`}}/>
+            <div className="bg-amber-400" style={{width:`${criticos.length/totalEstoqueStatus*100}%`}}/>
+            <div className="bg-red-400" style={{width:`${zerados.length/totalEstoqueStatus*100}%`}}/>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+            <div><div className="font-mono text-lg text-green-300">{saudaveis.length}</div><div className="text-[8px] text-[#5F5F69]">SAUDÁVEL</div></div>
+            <div><div className="font-mono text-lg text-amber-300">{criticos.length}</div><div className="text-[8px] text-[#5F5F69]">BAIXO</div></div>
+            <div><div className="font-mono text-lg text-red-300">{zerados.length}</div><div className="text-[8px] text-[#5F5F69]">ZERADO</div></div>
+          </div>
+        </div>
 
-        <Card className="!rounded-2xl">
-          <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Mais vendidos hoje</div><div className="text-[10px] text-[#666672]">Ranking rápido do PDV</div></div><TrendingUp size={17} className="text-green-300"/></div>
-          {!rankingHoje.length?<div className="text-xs text-[#666672] py-5">Ainda não há vendas hoje.</div>:<div className="space-y-2">{rankingHoje.map(([nome,qtd],idx)=><div key={nome} className="flex justify-between gap-3 border-b border-white/5 pb-2"><div className="text-xs text-[#C9C9D2] truncate"><span className="text-[#555560] mr-2">#{idx+1}</span>{nome}</div><div className="font-mono text-xs text-green-300">{qtd} un</div></div>)}</div>}
-          <button onClick={()=>onNavigate("relatorio")} className="mt-4 text-xs text-purple-300">Ver relatórios →</button>
-        </Card>
+        <div className="rounded-2xl border border-purple-500/15 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.08),transparent_35%),rgba(255,255,255,.01)] p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div><div className="text-[9px] tracking-[.23em] text-purple-300">⚡ INSIGHTS ENIGMA</div><div className="text-xs text-[#666672] mt-1">Leituras rápidas para orientar sua próxima ação</div></div>
+            <div className={"font-mono text-[10px] "+(resultado>=0?"text-green-300":"text-red-300")}>Resultado financeiro {fmt(resultado)}</div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {insights.slice(0,4).map((i,idx)=><button key={idx} disabled={!i.acao} onClick={()=>i.acao&&onNavigate(i.acao)} className="text-left rounded-xl border border-white/8 bg-black/10 p-3 hover:border-purple-500/20">
+              <div className="flex gap-3"><div className="w-8 h-8 rounded-lg border border-purple-500/20 bg-purple-500/10 flex items-center justify-center text-purple-300 font-mono">{i.icon}</div><div><div className="text-xs text-white">{i.titulo}</div><div className="text-[9px] leading-4 text-[#666672] mt-1">{i.texto}</div></div></div>
+            </button>)}
+          </div>
+        </div>
       </section>
 
-      <section className="grid lg:grid-cols-[1.45fr_.55fr] gap-4">
-        <Card className="!rounded-2xl !p-0 overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
-            <div><div className="font-medium text-white">Ordens recentes</div><div className="text-xs text-[#6F6F79]">Movimentação mais recente da assistência</div></div>
-            <button onClick={()=>onNavigate("os")} className="text-xs text-purple-300 flex items-center gap-1">Ver todas <ArrowUpRight size={13}/></button>
+      <section className="grid lg:grid-cols-[1.35fr_.65fr] gap-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/8 flex justify-between gap-3">
+            <div><div className="text-sm text-white">Ordens recentes</div><div className="text-[10px] text-[#666672] mt-1">Últimos movimentos da assistência</div></div>
+            <button onClick={()=>onNavigate("os")} className="text-[10px] text-purple-300">Ver todas →</button>
           </div>
-          <div className="divide-y divide-white/[.06]">
-            {!recentes.length&&<div className="px-5 py-8 text-sm text-[#666672] text-center">Nenhuma OS cadastrada.</div>}
-            {recentes.map(os=><button key={os.id} onClick={()=>onNavigate("os")} className="w-full px-5 py-3.5 flex items-center justify-between gap-4 text-left hover:bg-white/[.025]"><div className="min-w-0"><div className="text-sm text-white truncate">#{os.numero} · {os.clienteNome||"Cliente"}</div><div className="text-xs text-[#6F6F79] truncate">{os.aparelho||"Aparelho não informado"}</div></div><StatusBadge status={os.status}/></button>)}
+          <div className="divide-y divide-white/[.05]">
+            {!recentes.length?<div className="p-7 text-xs text-[#666672] text-center">Nenhuma OS cadastrada.</div>:recentes.map(os=><button key={os.id} onClick={()=>onNavigate("os")} className="w-full p-3.5 flex justify-between gap-3 items-center text-left hover:bg-white/[.02]"><div className="min-w-0"><div className="text-xs text-white truncate">#{os.numero} · {os.clienteNome||"Cliente"}</div><div className="text-[9px] text-[#656570] truncate mt-1">{os.aparelho||"Aparelho não informado"}</div></div><StatusBadge status={os.status}/></button>)}
           </div>
-        </Card>
+        </div>
 
-        <Card className="!rounded-2xl">
-          <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">ATALHOS</div>
-          <div className="space-y-2">
-            {[["pdv","Nova venda"],["os","Ordens de serviço"],["estoque","Estoque"],["relatorio","Relatórios"],["financeiro","Financeiro"]].map(([id,label])=><button key={id} onClick={()=>onNavigate(id)} className="w-full rounded-xl border border-white/8 px-3 py-2.5 flex justify-between items-center text-xs text-[#BDBDC6] hover:border-purple-500/25"><span>{label}</span><ChevronRight size={14}/></button>)}
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
+          <div className="text-[9px] tracking-[.2em] text-cyan-300">CAIXA / PERÍODO</div>
+          <div className="flex items-center gap-2 mt-3"><span className={"w-2 h-2 rounded-full "+(caixaAtual?"bg-green-400":"bg-[#55555F]")}/><span className="text-xs text-white">{caixaAtual?"Caixa aberto":"Caixa fechado"}</span></div>
+          <div className="space-y-2 mt-4">
+            <div className="flex justify-between text-[10px]"><span className="text-[#666672]">Entradas</span><span className="font-mono text-green-300">{fmt(entradas)}</span></div>
+            <div className="flex justify-between text-[10px]"><span className="text-[#666672]">Saídas</span><span className="font-mono text-red-300">{fmt(saidas)}</span></div>
+            <div className="flex justify-between text-xs border-t border-white/8 pt-2"><span>Resultado</span><span className={"font-mono "+(resultado>=0?"text-green-300":"text-red-300")}>{fmt(resultado)}</span></div>
           </div>
-        </Card>
+          <button onClick={()=>onNavigate("financeiro")} className="mt-4 text-[10px] text-purple-300">Abrir financeiro →</button>
+        </div>
       </section>
     </div>
   );
+}
+
+function DashboardLineChart({dados=[]}){
+  const w=760,h=260,padX=34,padY=28;
+  const max=Math.max(1,...dados.map(d=>Number(d.valor)||0));
+  const pts=dados.map((d,i)=>{
+    const x=dados.length===1?w/2:padX+i*((w-padX*2)/(dados.length-1));
+    const y=h-padY-(Number(d.valor||0)/max)*(h-padY*2);
+    return {...d,x,y};
+  });
+  const linha=pts.map((p,i)=>`${i===0?"M":"L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const area=pts.length?`${linha} L ${pts[pts.length-1].x} ${h-padY} L ${pts[0].x} ${h-padY} Z`:"";
+  const labels=pts.filter((_,i)=>dados.length<=10||i===0||i===dados.length-1||i%Math.ceil(dados.length/6)===0);
+  return <div className="w-full overflow-hidden">
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[220px] md:h-[260px]">
+      <defs>
+        <linearGradient id="enigmaArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a855f7" stopOpacity=".28"/><stop offset="100%" stopColor="#22d3ee" stopOpacity=".015"/></linearGradient>
+        <linearGradient id="enigmaLine" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#8b5cf6"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient>
+      </defs>
+      {[0,.25,.5,.75,1].map((n,i)=><line key={i} x1={padX} x2={w-padX} y1={padY+n*(h-padY*2)} y2={padY+n*(h-padY*2)} stroke="rgba(255,255,255,.055)" strokeWidth="1"/>)}
+      {area&&<path d={area} fill="url(#enigmaArea)"/>}
+      {linha&&<path d={linha} fill="none" stroke="url(#enigmaLine)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>}
+      {pts.map((p,i)=><g key={p.chave} className="group">
+        <circle cx={p.x} cy={p.y} r="10" fill="transparent"/>
+        <circle cx={p.x} cy={p.y} r="4" fill="#111119" stroke={i===pts.length-1?"#22d3ee":"#a855f7"} strokeWidth="2"/>
+        <title>{`${p.label}: ${fmt(p.valor)} · ${p.vendas} venda(s)`}</title>
+      </g>)}
+      {labels.map(p=><text key={`l-${p.chave}`} x={p.x} y={h-7} textAnchor="middle" fill="#62626d" fontSize="10">{p.label}</text>)}
+    </svg>
+  </div>;
 }
 
 function AtendimentoTab({ osIndex, onNovaOS, onAbrirOS }) {
@@ -1336,7 +1473,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.3.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
