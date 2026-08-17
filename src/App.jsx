@@ -949,6 +949,7 @@ function EnigmaSistema() {
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
+        {tab === "peliculas" && <TabelaPeliculasTab estoque={estoque} />}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} estoque={estoque} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab />}
       </main>
@@ -965,6 +966,7 @@ const NAV_ITEMS = [
   { id: "clientes", label: "Clientes", icon: Users },
   { id: "avaliacao", label: "Avaliação de Usados", short: "Usados", icon: Smartphone },
   { id: "estoque", label: "Estoque", icon: Package },
+  { id: "peliculas", label: "Tabela de Películas", short: "Películas", icon: Layers },
   { id: "financeiro", label: "Financeiro", icon: Wallet },
   { id: "relatorio", label: "Relatórios", icon: BarChart3 },
   { id: "config", label: "Configurações", icon: Settings },
@@ -992,7 +994,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.4</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.5</div>
     </aside>
   );
 }
@@ -1473,7 +1475,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.5</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -2895,6 +2897,132 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
 }
 
 /* ================= ESTOQUE ================= */
+function TabelaPeliculasTab({ estoque=[] }) {
+  const [busca,setBusca]=useState("");
+  const [selecionado,setSelecionado]=useState("");
+  const [modo,setModo]=useState("consulta");
+
+  const normalizar=(v="")=>String(v).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]+/g," ").trim();
+
+  const parecePelicula=(p)=>{
+    const t=normalizar(`${p.nome||""} ${p.sku||""} ${p.compatibilidade||""}`);
+    return t.includes("pelicula")||t.includes("vidro")||t.includes("3d")||t.includes("9d")||t.includes("ceramica")||t.includes("hidrogel");
+  };
+
+  const peliculas=estoque.filter(p=>p.categoria==="acessorio"&&parecePelicula(p));
+
+  const extrairModelos=(p)=>{
+    const fonte=String(p.compatibilidade||p.nome||"");
+    return fonte.split(/[,;|/]+/).map(x=>x.trim()).filter(Boolean);
+  };
+
+  const modelosUnicos=[...new Set(peliculas.flatMap(extrairModelos))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  const q=normalizar(busca);
+  const sugestoes=q.length<2?[]:modelosUnicos.filter(m=>normalizar(m).includes(q)).slice(0,10);
+
+  const termo=normalizar(selecionado||busca);
+  const palavras=termo.split(" ").filter(x=>x.length>1);
+  const resultados=termo.length<2?[]:peliculas.map(p=>{
+    const texto=normalizar(`${p.nome} ${p.compatibilidade||""} ${p.marca||""} ${p.sku||""}`);
+    const exato=texto.includes(termo);
+    const pontos=exato?100:palavras.reduce((a,w)=>a+(texto.includes(w)?12:0),0);
+    return {...p,pontos};
+  }).filter(p=>p.pontos>0).sort((a,b)=>{
+    const dispA=Number(a.quantidade)>0?1:0,dispB=Number(b.quantidade)>0?1:0;
+    return dispB-dispA||b.pontos-a.pontos||Number(b.quantidade)-Number(a.quantidade);
+  });
+
+  const disponiveis=resultados.filter(p=>Number(p.quantidade)>0);
+  const indisponiveis=resultados.filter(p=>Number(p.quantidade)<=0);
+  const compatRelacionadas=[...new Set(resultados.flatMap(extrairModelos))]
+    .filter(m=>!termo||!normalizar(m).includes(termo))
+    .slice(0,12);
+
+  return <div className="space-y-5">
+    <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_85%_15%,rgba(139,92,246,.18),transparent_30%),radial-gradient(circle_at_10%_100%,rgba(34,211,238,.07),transparent_32%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+        <div>
+          <div className="inline-flex items-center gap-2 text-[9px] tracking-[.22em] text-purple-300 border border-purple-500/20 bg-purple-500/10 rounded-full px-3 py-1"><Layers size={12}/> ENIGMA // SCREEN MATCH</div>
+          <h1 className="text-2xl md:text-3xl font-semibold text-white mt-3">Tabela de Películas</h1>
+          <p className="text-sm text-[#858590] mt-2 max-w-2xl">Pesquise o aparelho e encontre rapidamente as películas compatíveis que já existem no estoque da loja.</p>
+        </div>
+        <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.04] px-4 py-3 min-w-[180px]">
+          <div className="text-[8px] tracking-[.18em] text-cyan-300">PELÍCULAS IDENTIFICADAS</div>
+          <div className="font-mono text-2xl text-white mt-1">{peliculas.length}</div>
+          <div className="text-[9px] text-[#666672]">{peliculas.filter(p=>Number(p.quantidade)>0).length} com estoque</div>
+        </div>
+      </div>
+    </section>
+
+    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
+      <button onClick={()=>setModo("consulta")} className={"rounded-lg py-2.5 text-xs border "+(modo==="consulta"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Consulta rápida</button>
+      <button onClick={()=>setModo("base")} className={"rounded-lg py-2.5 text-xs border "+(modo==="base"?"border-cyan-500/30 bg-cyan-500/[.06] text-white":"border-transparent text-[#777783]")}>Base da loja</button>
+    </div>
+
+    {modo==="consulta"&&<>
+      <Card>
+        <div className="text-[9px] tracking-[.22em] text-purple-300 mb-2">QUAL É O APARELHO?</div>
+        <div className="relative">
+          <Search size={19} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-300"/>
+          <input autoFocus value={busca} onChange={e=>{setBusca(e.target.value);setSelecionado("")}} placeholder="Ex: Galaxy A15, iPhone 13, Moto G54..." className="w-full h-14 rounded-2xl border border-purple-500/20 bg-black/25 pl-12 pr-4 text-base text-white outline-none focus:border-purple-400/50 shadow-[inset_0_0_20px_rgba(139,92,246,.025)]"/>
+        </div>
+        {sugestoes.length>0&&!selecionado&&<div className="mt-2 rounded-xl border border-white/8 bg-[#101016] overflow-hidden">
+          {sugestoes.map(m=><button key={m} onClick={()=>{setSelecionado(m);setBusca(m)}} className="w-full text-left px-4 py-2.5 border-b border-white/5 last:border-0 text-xs text-[#BDBDC6] hover:bg-purple-500/[.06] flex justify-between"><span>{m}</span><ChevronRight size={14} className="text-[#555560]"/></button>)}
+        </div>}
+        <div className="text-[9px] text-[#5F5F69] mt-3">A V3.5 cruza a consulta com os campos de compatibilidade já cadastrados no seu estoque. A camada de consulta externa online entra na próxima integração.</div>
+      </Card>
+
+      {termo.length>=2&&<div className="grid grid-cols-3 gap-2">
+        <MetricCyber label="COMPATÍVEIS" value={String(resultados.length)} sub="cadastros encontrados"/>
+        <MetricCyber label="DISPONÍVEIS" value={String(disponiveis.length)} sub="com saldo em estoque"/>
+        <MetricCyber label="UNIDADES" value={String(disponiveis.reduce((a,p)=>a+Number(p.quantidade||0),0))} sub="prontas para venda"/>
+      </div>}
+
+      {termo.length>=2&&<Card>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div><div className="text-[9px] tracking-[.2em] text-green-300">DISPONÍVEL NA ENIGMA</div><div className="text-xs text-[#666672] mt-1">Resultados para “{selecionado||busca}”</div></div>
+          <div className="text-[10px] text-[#666672]">{disponiveis.length} opção(ões)</div>
+        </div>
+        {!disponiveis.length?<div className="rounded-xl border border-amber-500/15 bg-amber-500/[.035] p-5 text-center"><div className="text-sm text-amber-200">Nenhuma película compatível disponível no estoque.</div><div className="text-[10px] text-[#777783] mt-2">Confira abaixo se existe cadastro zerado ou ajuste a compatibilidade do produto no Estoque.</div></div>:
+        <div className="grid md:grid-cols-2 gap-3">{disponiveis.map(p=><div key={p.id} className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4">
+          <div className="flex justify-between gap-3"><div className="min-w-0"><div className="text-sm text-white">{p.nome}</div><div className="text-[10px] text-[#71717C] mt-1">{p.compatibilidade||"Compatibilidade não detalhada"}</div></div><div className="shrink-0 rounded-lg border border-green-500/20 bg-green-500/10 px-2 py-1 h-fit text-[9px] text-green-300">EM ESTOQUE</div></div>
+          <div className="grid grid-cols-3 gap-2 mt-4 border-t border-white/6 pt-3">
+            <div><div className="text-[8px] text-[#555560]">SALDO</div><div className="font-mono text-sm text-green-300 mt-1">{p.quantidade} un</div></div>
+            <div><div className="text-[8px] text-[#555560]">PREÇO</div><div className="font-mono text-xs text-white mt-1">{fmt(p.preco)}</div></div>
+            <div><div className="text-[8px] text-[#555560]">SKU</div><div className="font-mono text-[10px] text-[#9999A3] mt-1 truncate">{p.sku||"—"}</div></div>
+          </div>
+        </div>)}</div>}
+      </Card>}
+
+      {termo.length>=2&&compatRelacionadas.length>0&&<Card>
+        <div className="text-[9px] tracking-[.2em] text-cyan-300">OUTROS MODELOS ENCONTRADOS NAS MESMAS PELÍCULAS</div>
+        <div className="flex flex-wrap gap-2 mt-3">{compatRelacionadas.map(m=><button key={m} onClick={()=>{setBusca(m);setSelecionado(m)}} className="rounded-full border border-cyan-500/15 bg-cyan-500/[.035] px-3 py-1.5 text-[10px] text-cyan-200">{m}</button>)}</div>
+      </Card>}
+
+      {termo.length>=2&&indisponiveis.length>0&&<Card>
+        <div className="text-[9px] tracking-[.2em] text-red-300 mb-3">COMPATÍVEIS CADASTRADAS · SEM ESTOQUE</div>
+        <div className="space-y-2">{indisponiveis.map(p=><div key={p.id} className="rounded-lg border border-white/7 p-3 flex justify-between gap-3"><div><div className="text-xs text-[#BDBDC6]">{p.nome}</div><div className="text-[9px] text-[#60606B] mt-1">{p.compatibilidade||"—"}</div></div><span className="text-[9px] text-red-300">ZERADO</span></div>)}</div>
+      </Card>}
+    </>}
+
+    {modo==="base"&&<Card>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div><div className="text-[9px] tracking-[.2em] text-cyan-300">BASE DE PELÍCULAS DA LOJA</div><div className="text-xs text-[#666672] mt-1">Detectada automaticamente a partir do estoque atual.</div></div>
+        <div className="text-[10px] text-[#666672]">{peliculas.length} cadastro(s)</div>
+      </div>
+      {!peliculas.length?<div className="py-10 text-center text-xs text-[#666672]">Nenhum produto identificado como película. Cadastre as películas no Estoque usando nome e campo “Compatibilidade / Modelo”.</div>:
+      <div className="space-y-2">{peliculas.map(p=><div key={p.id} className="rounded-xl border border-white/8 bg-white/[.012] p-3 grid md:grid-cols-[1.4fr_1.3fr_.5fr_.6fr] gap-3 items-center">
+        <div><div className="text-xs text-white">{p.nome}</div><div className="text-[9px] text-[#5F5F69] mt-1">{p.sku||"Sem SKU"}</div></div>
+        <div><div className="text-[8px] text-[#555560]">COMPATIBILIDADE</div><div className="text-[10px] text-[#A0A0AA] mt-1">{p.compatibilidade||"Não informada"}</div></div>
+        <div><div className="text-[8px] text-[#555560]">SALDO</div><div className={"font-mono text-xs mt-1 "+(Number(p.quantidade)>0?"text-green-300":"text-red-300")}>{p.quantidade} un</div></div>
+        <div className="md:text-right"><div className="text-[8px] text-[#555560]">VENDA</div><div className="font-mono text-xs mt-1">{fmt(p.preco)}</div></div>
+      </div>)}</div>}
+    </Card>}
+  </div>;
+}
+
 function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onMovimentar, onAdd, onEdit, onRemove }) {
   const [secao,setSecao]=useState("produtos");
   const [mostrarForm,setMostrarForm]=useState(false);
