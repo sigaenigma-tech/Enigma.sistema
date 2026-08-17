@@ -3235,8 +3235,19 @@ function TabelaPeliculasTab({ estoque=[] }) {
       <div className="space-y-4">
         <Card>
           <button onClick={()=>setSelecionado(null)} className="text-[10px] text-purple-300 mb-3">← Voltar aos resultados</button>
-          <div className="flex justify-between gap-3"><div><div className="text-[9px] tracking-[.2em] text-purple-300">GRUPO COMPATÍVEL</div><div className="text-xl text-white mt-1">{selecionado.nome}</div><div className="text-xs text-[#666672] mt-1">{selecionado.marca||"Marca não informada"}</div></div><button onClick={()=>editarGrupo(selecionado)} className="text-xs text-cyan-300">Editar</button></div>
-          <div className="flex flex-wrap gap-2 mt-4">{(selecionado.modelos||[]).map(m=><span key={m} className={"rounded-full border px-3 py-1.5 text-[10px] "+(normalizar(m)===q?"border-purple-500/35 bg-purple-500/10 text-purple-200":"border-white/8 text-[#A0A0AA]")}>{m}</span>)}</div>
+          <div className="flex justify-between gap-3">
+            <div className="flex-1">
+              <div className="text-[9px] tracking-[.2em] text-cyan-300">VOCÊ PESQUISOU</div>
+              <div className="text-2xl text-white mt-1">{(selecionado.modelos||[]).find(m=>normalizar(m)===q)||busca.trim()}</div>
+              <div className="mt-4 rounded-xl border border-purple-500/15 bg-purple-500/[.035] p-3">
+                <div className="text-[8px] tracking-[.2em] text-purple-300">GRUPO COMPATÍVEL</div>
+                <div className="text-sm text-white mt-1">{(selecionado.modelos||[]).join(" / ")}</div>
+                <div className="text-[10px] text-[#666672] mt-1">Referência da base: {selecionado.nome} · {selecionado.marca||"Marca não informada"}</div>
+              </div>
+            </div>
+            <button onClick={()=>editarGrupo(selecionado)} className="text-xs text-cyan-300 self-start">Editar</button>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-4">{(selecionado.modelos||[]).map(m=><span key={m} className={"rounded-full border px-3 py-1.5 text-[10px] "+(normalizar(m)===q?"border-cyan-500/40 bg-cyan-500/10 text-cyan-200":"border-white/8 text-[#A0A0AA]")}>{m}{normalizar(m)===q?" · pesquisado":""}</span>)}</div>
           {selecionado.observacao&&<div className="mt-4 text-xs text-[#777783]">{selecionado.observacao}</div>}
           <div className="mt-4 pt-4 border-t border-white/6">
             {!vinculando?<button onClick={()=>setVinculando(true)} className="inline-flex items-center gap-2 text-[10px] text-cyan-300"><LinkIcon size={13}/> Vincular produto do estoque manualmente</button>:
