@@ -1078,8 +1078,9 @@ function MetricCard({ label, value, helper, icon: Icon, accent = "purple" }) {
 
 function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
   const [periodo,setPeriodo]=useState(7);
-  const [dados,setDados]=useState({vendas:[],movs:[]});
+  const [dados,setDados]=useState({vendas:[],movs:[],vendasAnteriores:[]});
   const [loading,setLoading]=useState(true);
+  const [mostrarInsights,setMostrarInsights]=useState(false);
 
   function intervaloAtual(){
     const fim=new Date();
@@ -1097,15 +1098,28 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
     const fimISO=fim.toISOString();
     const inicioDia=inicio.toISOString().slice(0,10);
     const fimDia=fim.toISOString().slice(0,10);
+
+    const fimAnterior=new Date(inicio);
+    fimAnterior.setMilliseconds(-1);
+    const inicioAnterior=new Date(inicio);
+    inicioAnterior.setDate(inicioAnterior.getDate()-periodo);
+    const inicioAnteriorISO=inicioAnterior.toISOString();
+    const fimAnteriorISO=fimAnterior.toISOString();
+
     try{
-      const [vendasRows,movsRows]=await Promise.all([
+      const [vendasRows,movsRows,vendasAnterioresRows]=await Promise.all([
         sb(`vendas?select=*&timestamp=gte.${inicioISO}&timestamp=lte.${fimISO}&order=timestamp.asc`),
-        sb(`financeiro_movimentacoes?select=*&data_competencia=gte.${inicioDia}&data_competencia=lte.${fimDia}&order=data_competencia.asc`)
+        sb(`financeiro_movimentacoes?select=*&data_competencia=gte.${inicioDia}&data_competencia=lte.${fimDia}&order=data_competencia.asc`),
+        sb(`vendas?select=*&timestamp=gte.${inicioAnteriorISO}&timestamp=lte.${fimAnteriorISO}&order=timestamp.asc`)
       ]);
-      setDados({vendas:(vendasRows||[]).map(rowToVenda),movs:movsRows||[]});
+      setDados({
+        vendas:(vendasRows||[]).map(rowToVenda),
+        movs:movsRows||[],
+        vendasAnteriores:(vendasAnterioresRows||[]).map(rowToVenda)
+      });
     }catch(e){
       console.warn("Dashboard visual:",e);
-      setDados({vendas:caixaAtual?.vendas||[],movs:[]});
+      setDados({vendas:caixaAtual?.vendas||[],movs:[],vendasAnteriores:[]});
     }
     setLoading(false);
   }
@@ -1186,12 +1200,126 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
   const saidas=dados.movs.filter(x=>x.tipo==="saida"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
   const resultado=entradas-saidas;
 
-  const insights=[];
-  if(ranking[0]) insights.push({icon:"↗",titulo:`${ranking[0].nome} lidera o período`,texto:`${ranking[0].qtd} unidade(s) vendida(s) e ${fmt(ranking[0].faturamento)} em vendas.`,acao:"relatorio"});
-  if(zerados.length||criticos.length) insights.push({icon:"!",titulo:"Estoque pede atenção",texto:`${zerados.length} zerado(s) e ${criticos.length} próximo(s) do mínimo.`,acao:"estoque"});
-  if(aguardando.length) insights.push({icon:"◷",titulo:"Aprovações pendentes",texto:`${aguardando.length} OS aguardando resposta do cliente.`,acao:"os"});
-  if(prontas.length) insights.push({icon:"✓",titulo:"Aparelhos prontos",texto:`${prontas.length} aparelho(s) aguardando retirada.`,acao:"os"});
-  if(!insights.length) insights.push({icon:"✓",titulo:"Operação equilibrada",texto:"Nenhum alerta relevante detectado neste momento.",acao:null});
+  const vendasAnterioresValidas=(dados.vendasAnteriores||[]).filter(v=>v.status!=="estornada");
+  const faturamentoAnterior=totalGeral(vendasAnterioresValidas);
+  const variacaoFaturamento=faturamentoAnterior>0?((faturamento-faturamentoAnterior)/faturamentoAnterior)*100:null;
+
+  const vendidoPorId={};
+  vendasValidas.forEach(v=>(v.itens||[]).forEach(i=>{
+    if(!i.estoqueId)return;
+    vendidoPorId[i.estoqueId]=(vendidoPorId[i.estoqueId]||0)+(Number(i.qtd)||0);
+  }));
+
+  const estoqueSemGiro=estoqueAcessorios
+    .filter(p=>Number(p.quantidade)>0&&!vendidoPorId[p.id])
+    .map(p=>({...p,capitalParado:(Number(p.custo)||0)*(Number(p.quantidade)||0)}))
+    .sort((a,b)=>b.capitalParado-a.capitalParado);
+
+  const capitalParado=estoqueSemGiro.reduce((a,p)=>a+p.capitalParado,0);
+
+  const altoGiroBaixoEstoque=estoqueAcessorios
+    .map(p=>({...p,vendido:Number(vendidoPorId[p.id]||0)}))
+    .filter(p=>p.vendido>=3&&Number(p.quantidade)<=Math.max(2,Number(p.estoqueMinimo||0)))
+    .sort((a,b)=>b.vendido-a.vendido);
+
+  const agora=Date.now();
+  const aprovacoesAntigas=aguardando.filter(os=>{
+    const t=new Date(os.dataEntrada||0).getTime();
+    return t && (agora-t)>(24*60*60*1000);
+  });
+
+  const insightsCandidatos=[];
+
+  if(altoGiroBaixoEstoque[0]){
+    const p=altoGiroBaixoEstoque[0];
+    insightsCandidatos.push({
+      prioridade:100, nivel:"critico", icon:"↗",
+      titulo:`Repor ${p.nome}`,
+      texto:`Vendeu ${p.vendido} un. no período e restam ${p.quantidade}.`,
+      acao:"estoque", cta:"Abrir estoque"
+    });
+  }
+
+  if(estoqueSemGiro[0]&&capitalParado>0){
+    const p=estoqueSemGiro[0];
+    insightsCandidatos.push({
+      prioridade:82, nivel:"atencao", icon:"◌",
+      titulo:"Capital parado em estoque",
+      texto:`${fmt(capitalParado)} sem giro no período. Maior concentração: ${p.nome}.`,
+      acao:"relatorio", cta:"Analisar giro"
+    });
+  }
+
+  if(aprovacoesAntigas.length){
+    insightsCandidatos.push({
+      prioridade:95, nivel:"critico", icon:"◷",
+      titulo:"Orçamentos aguardando há mais de 24h",
+      texto:`${aprovacoesAntigas.length} OS podem precisar de follow-up com o cliente.`,
+      acao:"os", cta:"Ver ordens"
+    });
+  }else if(aguardando.length){
+    insightsCandidatos.push({
+      prioridade:72, nivel:"atencao", icon:"◷",
+      titulo:"Aprovações pendentes",
+      texto:`${aguardando.length} OS aguardando resposta do cliente.`,
+      acao:"os", cta:"Ver ordens"
+    });
+  }
+
+  if(prontas.length){
+    insightsCandidatos.push({
+      prioridade:88, nivel:"oportunidade", icon:"✓",
+      titulo:"Aparelhos prontos para retirada",
+      texto:`${prontas.length} aparelho(s) já podem ser entregues.`,
+      acao:"os", cta:"Ver prontas"
+    });
+  }
+
+  if(zerados.length){
+    insightsCandidatos.push({
+      prioridade:90, nivel:"critico", icon:"!",
+      titulo:"Produtos zerados",
+      texto:`${zerados.length} item(ns) sem saldo disponível.`,
+      acao:"estoque", cta:"Repor estoque"
+    });
+  }else if(criticos.length){
+    insightsCandidatos.push({
+      prioridade:78, nivel:"atencao", icon:"!",
+      titulo:"Estoque próximo do mínimo",
+      texto:`${criticos.length} item(ns) precisam de acompanhamento.`,
+      acao:"estoque", cta:"Abrir estoque"
+    });
+  }
+
+  if(variacaoFaturamento!==null&&Math.abs(variacaoFaturamento)>=15){
+    const caiu=variacaoFaturamento<0;
+    insightsCandidatos.push({
+      prioridade:caiu?86:65,
+      nivel:caiu?"atencao":"oportunidade",
+      icon:caiu?"↓":"↑",
+      titulo:caiu?"Faturamento caiu no comparativo":"Faturamento cresceu no comparativo",
+      texto:`${Math.abs(variacaoFaturamento).toFixed(0)}% ${caiu?"abaixo":"acima"} dos ${periodo} dias anteriores.`,
+      acao:"relatorio", cta:"Investigar vendas"
+    });
+  }
+
+  if(ranking[0]){
+    insightsCandidatos.push({
+      prioridade:55, nivel:"oportunidade", icon:"★",
+      titulo:`${ranking[0].nome} é o destaque`,
+      texto:`Lidera com ${ranking[0].qtd} un. e ${fmt(ranking[0].faturamento)} em vendas.`,
+      acao:"relatorio", cta:"Ver ranking"
+    });
+  }
+
+  const insights=insightsCandidatos.sort((a,b)=>b.prioridade-a.prioridade);
+  if(!insights.length) insights.push({
+    prioridade:1,nivel:"oportunidade",icon:"✓",
+    titulo:"Operação equilibrada",
+    texto:"Nenhum ponto crítico detectado neste momento.",
+    acao:null,cta:null
+  });
+  const insightsPrincipais=insights.slice(0,3);
 
   const recentes=osIndex.slice(0,4);
 
@@ -1217,7 +1345,7 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
       </section>
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <MetricCard label="Faturamento" value={fmt(faturamento)} helper={`${vendasValidas.length} venda(s) no período`} icon={TrendingUp} accent="green"/>
+        <MetricCard label="Faturamento" value={fmt(faturamento)} helper={`${vendasValidas.length} venda(s) · ${variacaoFaturamento===null?"sem histórico":`${variacaoFaturamento>=0?"+":""}${variacaoFaturamento.toFixed(0)}% vs período anterior`}`} icon={TrendingUp} accent="green"/>
         <MetricCard label="Lucro bruto est." value={fmt(lucroEstimado)} helper={`${margem.toFixed(1)}% de margem`} icon={BarChart3} accent="purple"/>
         <MetricCard label="Ticket médio" value={fmt(ticketMedio)} helper={`${itensVendidos} item(ns) vendidos`} icon={ShoppingBag} accent="blue"/>
         <MetricCard label="OS em andamento" value={abertas.length} helper={`${prontas.length} pronta(s) para retirada`} icon={Wrench} accent="amber"/>
@@ -1314,16 +1442,45 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
 
         <div className="rounded-2xl border border-purple-500/15 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.08),transparent_35%),rgba(255,255,255,.01)] p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <div><div className="text-[9px] tracking-[.23em] text-purple-300">⚡ INSIGHTS ENIGMA</div><div className="text-xs text-[#666672] mt-1">Leituras rápidas para orientar sua próxima ação</div></div>
-            <div className={"font-mono text-[10px] "+(resultado>=0?"text-green-300":"text-red-300")}>Resultado financeiro {fmt(resultado)}</div>
+            <div><div className="text-[9px] tracking-[.23em] text-purple-300">⚡ INSIGHTS ENIGMA</div><div className="text-xs text-[#666672] mt-1">Só o que merece sua atenção agora</div></div>
+            <button onClick={()=>setMostrarInsights(true)} className="text-[10px] text-purple-300">Ver todos ({insights.length}) →</button>
           </div>
-          <div className="grid sm:grid-cols-2 gap-2">
-            {insights.slice(0,4).map((i,idx)=><button key={idx} disabled={!i.acao} onClick={()=>i.acao&&onNavigate(i.acao)} className="text-left rounded-xl border border-white/8 bg-black/10 p-3 hover:border-purple-500/20">
-              <div className="flex gap-3"><div className="w-8 h-8 rounded-lg border border-purple-500/20 bg-purple-500/10 flex items-center justify-center text-purple-300 font-mono">{i.icon}</div><div><div className="text-xs text-white">{i.titulo}</div><div className="text-[9px] leading-4 text-[#666672] mt-1">{i.texto}</div></div></div>
-            </button>)}
+          <div className="space-y-2">
+            {insightsPrincipais.map((i,idx)=>{
+              const visual=i.nivel==="critico"
+                ?"border-red-500/15 bg-red-500/[.025] text-red-300"
+                :i.nivel==="atencao"
+                ?"border-amber-500/15 bg-amber-500/[.025] text-amber-300"
+                :"border-green-500/15 bg-green-500/[.025] text-green-300";
+              return <button key={idx} disabled={!i.acao} onClick={()=>i.acao&&onNavigate(i.acao)} className={"w-full text-left rounded-xl border p-3 hover:border-purple-500/20 "+visual}>
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 shrink-0 rounded-lg border border-current/20 bg-black/10 flex items-center justify-center font-mono">{i.icon}</div>
+                  <div className="min-w-0 flex-1"><div className="text-xs text-white">{i.titulo}</div><div className="text-[9px] leading-4 text-[#73737E] mt-1">{i.texto}</div>{i.cta&&<div className="text-[9px] mt-2 opacity-90">{i.cta} →</div>}</div>
+                </div>
+              </button>
+            })}
           </div>
         </div>
       </section>
+
+      {mostrarInsights&&<div className="fixed inset-0 z-40 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={()=>setMostrarInsights(false)}>
+        <div className="w-full max-w-xl max-h-[88vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#121218] p-5" onClick={e=>e.stopPropagation()}>
+          <div className="flex justify-between items-start gap-3 mb-5">
+            <div><div className="text-[9px] tracking-[.22em] text-purple-300">INSIGHTS ENIGMA // {periodo} DIAS</div><div className="text-xl text-white mt-1">Análise completa</div><div className="text-xs text-[#666672] mt-1">O Dashboard mostra só os 3 prioritários; aqui você vê o restante.</div></div>
+            <button onClick={()=>setMostrarInsights(false)}><X size={18}/></button>
+          </div>
+          <div className="space-y-2">{insights.map((i,idx)=>{
+            const visual=i.nivel==="critico"
+              ?"border-red-500/15 bg-red-500/[.025]"
+              :i.nivel==="atencao"
+              ?"border-amber-500/15 bg-amber-500/[.025]"
+              :"border-green-500/15 bg-green-500/[.025]";
+            return <button key={idx} disabled={!i.acao} onClick={()=>{setMostrarInsights(false);i.acao&&onNavigate(i.acao)}} className={"w-full text-left rounded-xl border p-4 "+visual}>
+              <div className="flex gap-3"><div className="font-mono text-lg text-purple-300">{i.icon}</div><div><div className="text-sm text-white">{i.titulo}</div><div className="text-[10px] text-[#74747F] leading-4 mt-1">{i.texto}</div>{i.cta&&<div className="text-[9px] text-purple-300 mt-2">{i.cta} →</div>}</div></div>
+            </button>
+          })}</div>
+        </div>
+      </div>}
 
       <section className="grid lg:grid-cols-[1.35fr_.65fr] gap-4">
         <div className="rounded-2xl border border-white/10 bg-white/[.012] overflow-hidden">
@@ -3035,7 +3192,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V3.7 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V3.8 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
