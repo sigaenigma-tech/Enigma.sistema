@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.2</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.3</div>
     </aside>
   );
 }
@@ -1075,67 +1075,168 @@ function MetricCard({ label, value, helper, icon: Icon, accent = "purple" }) {
 }
 
 function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
-  const vendas = caixaAtual?.vendas || [];
-  const totalHoje = totalGeral(vendas);
-  const abertas = osIndex.filter((os) => !["entregue", "cancelado"].includes(os.status));
-  const aguardando = osIndex.filter((os) => os.status === "aguardando_aprovacao");
-  const prontas = osIndex.filter((os) => os.status === "pronto");
-  const estoqueBaixo = estoque.filter((p) => p.quantidade <= p.estoqueMinimo);
-  const recentes = osIndex.slice(0, 5);
+  const [dados,setDados]=useState({vendas:[],movs:[],osDetalhadas:[]});
+  const [loading,setLoading]=useState(true);
+  const hoje=todayISO();
+
+  async function carregarDashboard(){
+    setLoading(true);
+    try{
+      const [vendasRows,movsRows,osRows]=await Promise.all([
+        sb(`vendas?select=*&timestamp=gte.${hoje}T00:00:00&timestamp=lte.${hoje}T23:59:59.999&order=timestamp.desc`),
+        sb(`financeiro_movimentacoes?select=*&data_competencia=eq.${hoje}&order=created_at.desc`),
+        sb(`ordens_servico?select=id,numero,data_entrada,cliente,aparelho,problema_relatado,status,valor_final,timeline&order=data_entrada.desc&limit=100`)
+      ]);
+      setDados({vendas:(vendasRows||[]).map(rowToVenda),movs:movsRows||[],osDetalhadas:osRows||[]});
+    }catch(e){
+      console.warn("Dashboard executivo:",e);
+      setDados({vendas:caixaAtual?.vendas||[],movs:[],osDetalhadas:[]});
+    }
+    setLoading(false);
+  }
+
+  useEffect(()=>{carregarDashboard();},[caixaAtual?.id]);
+
+  const vendasValidas=dados.vendas.filter(v=>v.status!=="estornada");
+  const faturamentoHoje=totalGeral(vendasValidas);
+  const ticketMedio=vendasValidas.length?faturamentoHoje/vendasValidas.length:0;
+  const itensHoje=vendasValidas.reduce((a,v)=>a+(v.itens||[]).reduce((b,i)=>b+(Number(i.qtd)||0),0),0);
+
+  let custoHoje=0;
+  vendasValidas.forEach(v=>(v.itens||[]).forEach(i=>{
+    const p=estoque.find(x=>x.id===i.estoqueId);
+    if(p) custoHoje+=(Number(p.custo)||0)*(Number(i.qtd)||0);
+  }));
+  const lucroHoje=faturamentoHoje-custoHoje;
+  const margemHoje=faturamentoHoje>0?(lucroHoje/faturamentoHoje)*100:0;
+
+  const abertas=osIndex.filter(os=>!["entregue","cancelado"].includes(os.status));
+  const aguardando=osIndex.filter(os=>os.status==="aguardando_aprovacao");
+  const prontas=osIndex.filter(os=>os.status==="pronto");
+  const emReparo=osIndex.filter(os=>os.status==="em_reparo");
+  const recebidasHoje=osIndex.filter(os=>String(os.dataEntrada||"").slice(0,10)===hoje);
+
+  const estoqueBaixo=estoque.filter(p=>Number(p.quantidade)<=Number(p.estoqueMinimo||0));
+  const semEstoque=estoque.filter(p=>Number(p.quantidade)<=0);
+  const capitalEstoque=estoque.filter(p=>p.categoria==="acessorio").reduce((a,p)=>a+(Number(p.custo)||0)*(Number(p.quantidade)||0),0);
+
+  const entradasHoje=dados.movs.filter(x=>x.tipo==="entrada"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
+  const saidasHoje=dados.movs.filter(x=>x.tipo==="saida"&&x.status==="pago").reduce((a,x)=>a+Number(x.valor||0),0);
+  const resultadoHoje=entradasHoje-saidasHoje;
+
+  const alertas=[];
+  if(!caixaAtual) alertas.push({nivel:"amber",titulo:"Caixa fechado",texto:"Abra o caixa antes de iniciar vendas no PDV.",acao:"financeiro"});
+  if(prontas.length) alertas.push({nivel:"green",titulo:`${prontas.length} aparelho(s) pronto(s)`,texto:"Há aparelhos aguardando retirada do cliente.",acao:"os"});
+  if(aguardando.length) alertas.push({nivel:"amber",titulo:`${aguardando.length} orçamento(s) aguardando aprovação`,texto:"Acompanhe os clientes para evitar OS paradas.",acao:"os"});
+  if(semEstoque.length) alertas.push({nivel:"red",titulo:`${semEstoque.length} produto(s) zerado(s)`,texto:"Existem itens sem estoque disponível.",acao:"estoque"});
+  else if(estoqueBaixo.length) alertas.push({nivel:"red",titulo:`${estoqueBaixo.length} item(ns) em estoque crítico`,texto:"Considere reposição antes de faltar produto.",acao:"estoque"});
+  if(!alertas.length) alertas.push({nivel:"green",titulo:"Operação sem alertas críticos",texto:"Nenhuma pendência importante detectada agora.",acao:null});
+
+  const recentes=osIndex.slice(0,5);
+  const topItens={};
+  vendasValidas.forEach(v=>(v.itens||[]).forEach(i=>{
+    const k=i.descricao||"Item";
+    topItens[k]=(topItens[k]||0)+(Number(i.qtd)||0);
+  }));
+  const rankingHoje=Object.entries(topItens).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,.14),transparent_35%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
+    <div className="space-y-5">
+      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,.16),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,.07),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
         <div className="relative z-[1] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
           <div>
-            <div className="inline-flex items-center gap-2 text-[10px] tracking-[.18em] uppercase text-purple-300 border border-purple-400/20 bg-purple-500/10 rounded-full px-3 py-1 mb-3"><Sparkles size={12}/> Central operacional</div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-white">Tudo o que precisa da sua atenção, em um lugar.</h1>
-            <p className="text-sm text-[#8E8E99] mt-2 max-w-2xl">Acompanhe vendas, reparos, caixa e estoque sem navegar por várias telas.</p>
+            <div className="inline-flex items-center gap-2 text-[9px] tracking-[.22em] uppercase text-purple-300 border border-purple-400/20 bg-purple-500/10 rounded-full px-3 py-1 mb-3"><Sparkles size={12}/> ENIGMA // COMMAND CENTER</div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-white">Visão executiva da operação.</h1>
+            <p className="text-sm text-[#8E8E99] mt-2 max-w-2xl">O que vendeu, o que está parado e o que precisa da sua decisão hoje.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={16}/> Nova OS</span></Button>
-            <Button variant="ghost" onClick={() => onNavigate("pdv")}><span className="flex items-center gap-2"><ShoppingBag size={16}/> Nova venda</span></Button>
+            <Button variant="ghost" onClick={()=>onNavigate("pdv")}><span className="flex items-center gap-2"><ShoppingBag size={16}/> Nova venda</span></Button>
+            <button onClick={carregarDashboard} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-cyan-300">{loading?"Atualizando...":"Atualizar"}</button>
           </div>
         </div>
       </section>
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <MetricCard label="Vendas do caixa" value={fmt(totalHoje)} helper={`${vendas.length} venda(s)`} icon={TrendingUp} accent="green" />
-        <MetricCard label="OS em andamento" value={abertas.length} helper="não finalizadas" icon={Wrench} accent="purple" />
-        <MetricCard label="Aguardando cliente" value={aguardando.length} helper="aprovação pendente" icon={Clock} accent="amber" />
-        <MetricCard label="Prontas" value={prontas.length} helper="para retirada" icon={CheckCircle2} accent="blue" />
+        <MetricCard label="Faturamento hoje" value={fmt(faturamentoHoje)} helper={`${vendasValidas.length} venda(s) · ${itensHoje} item(ns)`} icon={TrendingUp} accent="green"/>
+        <MetricCard label="Lucro bruto est." value={fmt(lucroHoje)} helper={`${margemHoje.toFixed(1)}% de margem`} icon={BarChart3} accent="purple"/>
+        <MetricCard label="Ticket médio" value={fmt(ticketMedio)} helper="vendas concluídas" icon={ShoppingBag} accent="blue"/>
+        <MetricCard label="OS em andamento" value={abertas.length} helper={`${recebidasHoje.length} recebida(s) hoje`} icon={Wrench} accent="amber"/>
       </section>
 
-      <section className="grid lg:grid-cols-[1.6fr_.9fr] gap-4">
+      <section className="grid xl:grid-cols-[1.25fr_.75fr] gap-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/8 flex items-center justify-between">
+            <div><div className="text-[9px] tracking-[.22em] text-red-300">CENTRAL DE ATENÇÃO</div><div className="text-xs text-[#696974] mt-1">Prioridades que podem exigir uma ação sua</div></div>
+            <span className="text-[10px] text-[#555560]">{alertas.length} alerta(s)</span>
+          </div>
+          <div className="divide-y divide-white/[.06]">{alertas.map((a,idx)=>{
+            const cls=a.nivel==="red"?"text-red-300 bg-red-500/10 border-red-500/20":a.nivel==="amber"?"text-amber-300 bg-amber-500/10 border-amber-500/20":"text-green-300 bg-green-500/10 border-green-500/20";
+            return <button key={idx} disabled={!a.acao} onClick={()=>a.acao&&onNavigate(a.acao)} className="w-full text-left p-4 flex items-center justify-between gap-4 hover:bg-white/[.02]">
+              <div className="flex gap-3"><div className={"w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center "+cls}><AlertTriangle size={15}/></div><div><div className="text-sm text-white">{a.titulo}</div><div className="text-[10px] text-[#71717C] mt-1">{a.texto}</div></div></div>
+              {a.acao&&<ChevronRight size={16} className="text-[#555560]"/>}
+            </button>
+          })}</div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
+          <div className="text-[9px] tracking-[.2em] text-cyan-300">CAIXA & FINANCEIRO // HOJE</div>
+          <div className="flex items-center gap-2 mt-3"><span className={"w-2 h-2 rounded-full "+(caixaAtual?"bg-emerald-400":"bg-[#55555F]")}/><span className="text-sm text-white">{caixaAtual?"Caixa aberto":"Caixa fechado"}</span></div>
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            <div><div className="text-[8px] text-[#5F5F69]">ENTRADAS</div><div className="font-mono text-xs text-green-300 mt-1">{fmt(entradasHoje)}</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">SAÍDAS</div><div className="font-mono text-xs text-red-300 mt-1">{fmt(saidasHoje)}</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">RESULTADO</div><div className={"font-mono text-xs mt-1 "+(resultadoHoje>=0?"text-green-300":"text-red-300")}>{fmt(resultadoHoje)}</div></div>
+          </div>
+          <button onClick={()=>onNavigate("financeiro")} className="mt-5 text-xs text-purple-300">Abrir financeiro →</button>
+        </div>
+      </section>
+
+      <section className="grid lg:grid-cols-3 gap-4">
+        <Card className="!rounded-2xl">
+          <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Assistência agora</div><div className="text-[10px] text-[#666672]">Fluxo das ordens abertas</div></div><Wrench size={17} className="text-purple-300"/></div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-white/8 p-3 text-center"><div className="font-mono text-xl">{aguardando.length}</div><div className="text-[8px] text-[#666672] mt-1">AGUARDANDO</div></div>
+            <div className="rounded-lg border border-white/8 p-3 text-center"><div className="font-mono text-xl">{emReparo.length}</div><div className="text-[8px] text-[#666672] mt-1">EM REPARO</div></div>
+            <div className="rounded-lg border border-white/8 p-3 text-center"><div className="font-mono text-xl text-green-300">{prontas.length}</div><div className="text-[8px] text-[#666672] mt-1">PRONTAS</div></div>
+          </div>
+          <button onClick={()=>onNavigate("os")} className="mt-4 text-xs text-purple-300">Gerenciar ordens →</button>
+        </Card>
+
+        <Card className="!rounded-2xl">
+          <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Estoque</div><div className="text-[10px] text-[#666672]">Disponibilidade e capital</div></div><Package size={17} className="text-cyan-300"/></div>
+          <div className="grid grid-cols-3 gap-2">
+            <div><div className="text-[8px] text-[#5F5F69]">ITENS</div><div className="font-mono text-lg mt-1">{estoque.length}</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">CRÍTICOS</div><div className="font-mono text-lg text-red-300 mt-1">{estoqueBaixo.length}</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">CAPITAL</div><div className="font-mono text-xs mt-2">{fmt(capitalEstoque)}</div></div>
+          </div>
+          <button onClick={()=>onNavigate("estoque")} className="mt-4 text-xs text-purple-300">Abrir estoque →</button>
+        </Card>
+
+        <Card className="!rounded-2xl">
+          <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Mais vendidos hoje</div><div className="text-[10px] text-[#666672]">Ranking rápido do PDV</div></div><TrendingUp size={17} className="text-green-300"/></div>
+          {!rankingHoje.length?<div className="text-xs text-[#666672] py-5">Ainda não há vendas hoje.</div>:<div className="space-y-2">{rankingHoje.map(([nome,qtd],idx)=><div key={nome} className="flex justify-between gap-3 border-b border-white/5 pb-2"><div className="text-xs text-[#C9C9D2] truncate"><span className="text-[#555560] mr-2">#{idx+1}</span>{nome}</div><div className="font-mono text-xs text-green-300">{qtd} un</div></div>)}</div>}
+          <button onClick={()=>onNavigate("relatorios")} className="mt-4 text-xs text-purple-300">Ver relatórios →</button>
+        </Card>
+      </section>
+
+      <section className="grid lg:grid-cols-[1.45fr_.55fr] gap-4">
         <Card className="!rounded-2xl !p-0 overflow-hidden">
           <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
             <div><div className="font-medium text-white">Ordens recentes</div><div className="text-xs text-[#6F6F79]">Movimentação mais recente da assistência</div></div>
-            <button onClick={() => onNavigate("os")} className="text-xs text-purple-300 flex items-center gap-1">Ver todas <ArrowUpRight size={13}/></button>
+            <button onClick={()=>onNavigate("os")} className="text-xs text-purple-300 flex items-center gap-1">Ver todas <ArrowUpRight size={13}/></button>
           </div>
           <div className="divide-y divide-white/[.06]">
-            {recentes.length === 0 && <div className="px-5 py-8 text-sm text-[#666672] text-center">Nenhuma OS cadastrada.</div>}
-            {recentes.map((os) => (
-              <button key={os.id} onClick={() => { onNavigate("os"); }} className="w-full px-5 py-3.5 flex items-center justify-between gap-4 text-left hover:bg-white/[.025]">
-                <div className="min-w-0"><div className="text-sm text-white truncate">#{os.numero} · {os.clienteNome || "Cliente"}</div><div className="text-xs text-[#6F6F79] truncate">{os.aparelho || "Aparelho não informado"}</div></div>
-                <StatusBadge status={os.status}/>
-              </button>
-            ))}
+            {!recentes.length&&<div className="px-5 py-8 text-sm text-[#666672] text-center">Nenhuma OS cadastrada.</div>}
+            {recentes.map(os=><button key={os.id} onClick={()=>onNavigate("os")} className="w-full px-5 py-3.5 flex items-center justify-between gap-4 text-left hover:bg-white/[.025]"><div className="min-w-0"><div className="text-sm text-white truncate">#{os.numero} · {os.clienteNome||"Cliente"}</div><div className="text-xs text-[#6F6F79] truncate">{os.aparelho||"Aparelho não informado"}</div></div><StatusBadge status={os.status}/></button>)}
           </div>
         </Card>
-        <div className="space-y-4">
-          <Card className="!rounded-2xl">
-            <div className="flex items-center justify-between mb-3"><div className="font-medium text-white">Estoque crítico</div><Package size={17} className="text-red-300"/></div>
-            {estoqueBaixo.length === 0 ? <div className="text-sm text-[#74747F]">Nenhum item em nível crítico.</div> : (
-              <div className="space-y-2">{estoqueBaixo.slice(0,5).map((p) => <div key={p.id} className="flex items-center justify-between text-sm"><span className="text-[#BDBDC6] truncate mr-3">{p.nome}</span><span className="font-mono text-red-300">{p.quantidade}</span></div>)}</div>
-            )}
-            <button onClick={() => onNavigate("estoque")} className="mt-4 text-xs text-purple-300">Abrir estoque →</button>
-          </Card>
-          <Card className="!rounded-2xl">
-            <div className="text-[11px] uppercase tracking-[.14em] text-[#74747F] mb-2">Caixa</div>
-            <div className="flex items-center gap-2"><span className={"w-2 h-2 rounded-full " + (caixaAtual ? "bg-emerald-400" : "bg-[#55555F]")}/><span className="text-sm text-white">{caixaAtual ? "Operação aberta" : "Caixa fechado"}</span></div>
-            <button onClick={() => onNavigate("financeiro")} className="mt-4 text-xs text-purple-300">Gerenciar caixa →</button>
-          </Card>
-        </div>
+
+        <Card className="!rounded-2xl">
+          <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">ATALHOS</div>
+          <div className="space-y-2">
+            {[["pdv","Nova venda"],["os","Ordens de serviço"],["estoque","Estoque"],["relatorios","Relatórios"],["financeiro","Financeiro"]].map(([id,label])=><button key={id} onClick={()=>onNavigate(id)} className="w-full rounded-xl border border-white/8 px-3 py-2.5 flex justify-between items-center text-xs text-[#BDBDC6] hover:border-purple-500/25"><span>{label}</span><ChevronRight size={14}/></button>)}
+          </div>
+        </Card>
       </section>
     </div>
   );
@@ -1235,7 +1336,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
