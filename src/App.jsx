@@ -6,7 +6,7 @@ import {
   Plus, Clock, AlertCircle, X, Wallet, Lock, Unlock, Check, ShoppingBag,
   TrendingUp, Package, ChevronRight, ChevronDown, Printer, PenTool,
   BellRing, Eraser, Minus, LayoutDashboard, Users, Settings, Headset,
-  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Link as LinkIcon
+  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Layers, Link as LinkIcon
 } from "lucide-react";
 
 /* ---------------- Supabase ---------------- */
@@ -994,7 +994,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.5</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.5.1</div>
     </aside>
   );
 }
@@ -1475,7 +1475,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.5</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.5.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -2971,7 +2971,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
         {sugestoes.length>0&&!selecionado&&<div className="mt-2 rounded-xl border border-white/8 bg-[#101016] overflow-hidden">
           {sugestoes.map(m=><button key={m} onClick={()=>{setSelecionado(m);setBusca(m)}} className="w-full text-left px-4 py-2.5 border-b border-white/5 last:border-0 text-xs text-[#BDBDC6] hover:bg-purple-500/[.06] flex justify-between"><span>{m}</span><ChevronRight size={14} className="text-[#555560]"/></button>)}
         </div>}
-        <div className="text-[9px] text-[#5F5F69] mt-3">A V3.5 cruza a consulta com os campos de compatibilidade já cadastrados no seu estoque. A camada de consulta externa online entra na próxima integração.</div>
+        <div className="text-[9px] text-[#5F5F69] mt-3">A V3.5.1 cruza a consulta com os campos de compatibilidade já cadastrados no seu estoque. A camada de consulta externa online entra na próxima integração.</div>
       </Card>
 
       {termo.length>=2&&<div className="grid grid-cols-3 gap-2">
