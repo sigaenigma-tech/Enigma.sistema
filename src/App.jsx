@@ -96,7 +96,7 @@ function rowToVenda(r) {
   };
 }
 function rowToOSIndex(r) {
-  return { id: r.id, numero: r.numero, clienteNome: r.cliente?.nome || "", clienteTelefone: r.cliente?.telefone || "", aparelho: r.aparelho?.marcaModelo || "", status: r.status, dataEntrada: r.data_entrada };
+  return { id: r.id, numero: r.numero, clienteId: r.cliente_id || null, clienteNome: r.cliente?.nome || "", clienteTelefone: r.cliente?.telefone || "", aparelho: r.aparelho?.marcaModelo || "", status: r.status, dataEntrada: r.data_entrada, valorFinal:Number(r.valor_final||0) };
 }
 function rowToOSDetail(r) {
   return {
@@ -1602,7 +1602,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.1</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.2</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1633,19 +1633,31 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   }
 
   const ordensDo=(c)=>osIndex.filter(os=>{
+    if(os.clienteId&&c.id) return os.clienteId===c.id;
     const tel=String(c.telefone||"").replace(/\D/g,"");
     const osTel=String(os.clienteTelefone||"").replace(/\D/g,"");
     return (tel&&osTel&&tel===osTel) || (!tel && String(os.clienteNome||"").toLowerCase()===String(c.nome||"").toLowerCase());
   });
 
+  const comprasValidas=compras.filter(v=>v.status!=="estornada");
+  const ordensSelecionado=selecionado?ordensDo(selecionado):[];
+  const totalCompras=comprasValidas.reduce((a,v)=>a+Number(v.total||0),0);
+  const totalServicos=ordensSelecionado.filter(o=>o.status!=="cancelado").reduce((a,o)=>a+Number(o.valorFinal||0),0);
+  const aparelhos=[...new Set(ordensSelecionado.map(o=>o.aparelho).filter(Boolean))];
+  const interacoes=[
+    ...comprasValidas.map(v=>({tipo:"compra",data:v.timestamp,titulo:"Compra no PDV",valor:v.total,id:v.id})),
+    ...ordensSelecionado.map(o=>({tipo:"os",data:o.dataEntrada,titulo:`OS #${o.numero} · ${o.aparelho}`,valor:o.valorFinal,id:o.id,status:o.status}))
+  ].filter(x=>x.data).sort((a,b)=>new Date(b.data)-new Date(a.data));
+  const ultimaInteracao=interacoes[0];
+
   return <div className="space-y-4">
-    <Card className="!rounded-2xl">
+    <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_85%_10%,rgba(139,92,246,.14),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5">
       <div className="flex items-center justify-between gap-4 mb-4">
-        <div><div className="font-medium text-white">Base de clientes</div><div className="text-xs text-[#74747F]">Cadastro único para PDV e assistência técnica.</div></div>
+        <div><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA // CUSTOMER 360</div><div className="text-xl font-semibold text-white mt-1">Clientes</div><div className="text-xs text-[#74747F] mt-1">Uma única identidade para compras, aparelhos e assistência.</div></div>
         <div className="flex items-center gap-3"><div className="text-2xl font-semibold">{clientes.length}</div><Button onClick={()=>setMostrarForm(!mostrarForm)}>+ Cliente</Button></div>
       </div>
       <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar nome, telefone, e-mail ou documento" className="pl-9"/></div>
-    </Card>
+    </section>
 
     {mostrarForm&&<Card>
       <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">NOVO CLIENTE</div>
@@ -1662,21 +1674,45 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
     <div className="grid md:grid-cols-2 gap-3">{filtrados.map(c=>{const oss=ordensDo(c);return <Card key={c.id} className="!rounded-2xl">
       <button onClick={()=>abrirCliente(c)} className="w-full flex items-start gap-3 text-left">
         <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><User size={17}/></div>
-        <div className="min-w-0 flex-1"><div className="text-sm font-medium text-white truncate">{c.nome}</div><div className="text-xs text-[#777782]">{c.telefone||"Telefone não informado"}</div><div className="text-[10px] text-[#5F5F69] mt-2">{oss.length} OS vinculada(s)</div></div><ChevronRight size={18} className="text-purple-300"/>
+        <div className="min-w-0 flex-1"><div className="text-sm font-medium text-white truncate">{c.nome}</div><div className="text-xs text-[#777782]">{c.telefone||"Telefone não informado"}</div><div className="flex gap-3 text-[10px] text-[#5F5F69] mt-2"><span>{oss.length} OS</span><span>{[...new Set(oss.map(o=>o.aparelho).filter(Boolean))].length} aparelho(s)</span></div></div><ChevronRight size={18} className="text-purple-300"/>
       </button>
     </Card>})}</div>
 
     {selecionado&&<div className="fixed inset-0 bg-black/80 z-30 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={()=>setSelecionado(null)}>
-      <div className="bg-[#131318] border border-[#2A2A34] rounded-t-2xl sm:rounded-2xl w-full max-w-xl max-h-[88vh] overflow-y-auto p-5" onClick={e=>e.stopPropagation()}>
-        <div className="flex justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.22em] text-purple-300">CLIENTE</div><div className="text-xl text-white mt-1">{selecionado.nome}</div><div className="text-xs text-[#777782]">{selecionado.telefone||"Sem telefone"}{selecionado.email?` · ${selecionado.email}`:""}</div></div><button onClick={()=>setSelecionado(null)}><X size={18}/></button></div>
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          <MetricCyber label="COMPRAS" value={String(compras.filter(v=>v.status!=="estornada").length)} sub="PDV"/>
-          <MetricCyber label="TOTAL COMPRADO" value={fmt(compras.filter(v=>v.status!=="estornada").reduce((a,v)=>a+v.total,0))} sub="vendas válidas"/>
-          <MetricCyber label="ORDENS" value={String(ordensDo(selecionado).length)} sub="assistência"/>
+      <div className="bg-[#111117] border border-[#2A2A34] rounded-t-2xl sm:rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5" onClick={e=>e.stopPropagation()}>
+        <div className="flex justify-between gap-3 mb-5">
+          <div><div className="text-[9px] tracking-[.22em] text-purple-300">CLIENTE 360°</div><div className="text-2xl text-white mt-1">{selecionado.nome}</div><div className="text-xs text-[#777782] mt-1">{selecionado.telefone||"Sem telefone"}{selecionado.email?` · ${selecionado.email}`:""}{selecionado.documento?` · ${selecionado.documento}`:""}</div></div>
+          <button onClick={()=>setSelecionado(null)}><X size={18}/></button>
         </div>
-        <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-2">HISTÓRICO DE COMPRAS</div>
-        {carregando?<div className="text-xs text-[#666672] py-5">Carregando...</div>:!compras.length?<div className="text-xs text-[#666672] py-5">Nenhuma compra vinculada ainda.</div>:<div className="space-y-2">{compras.map(v=><div key={v.id} className="rounded-lg border border-white/8 p-3 flex justify-between gap-3"><div><div className="text-xs">{fmtDateTime(v.timestamp)}</div><div className="text-[10px] text-[#656570]">{(v.itens||[]).map(i=>i.descricao).join(", ")}</div></div><div className="text-right"><div className="font-mono text-xs">{fmt(v.total)}</div><div className={v.status==="estornada"?"text-[9px] text-red-300":"text-[9px] text-green-300"}>{v.status==="estornada"?"ESTORNADA":"CONCLUÍDA"}</div></div></div>)}</div>}
-        {ordensDo(selecionado).length>0&&<Button className="w-full mt-4" variant="ghost" onClick={()=>onAbrirOS(ordensDo(selecionado)[0].id)}>Abrir última OS</Button>}
+
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-5">
+          <MetricCyber label="RELACIONAMENTO" value={fmt(totalCompras+totalServicos)} sub="PDV + serviços"/>
+          <MetricCyber label="COMPRAS" value={String(comprasValidas.length)} sub={fmt(totalCompras)}/>
+          <MetricCyber label="ORDENS" value={String(ordensSelecionado.length)} sub={fmt(totalServicos)}/>
+          <MetricCyber label="APARELHOS" value={String(aparelhos.length)} sub="histórico técnico"/>
+          <MetricCyber label="ÚLTIMA INTERAÇÃO" value={ultimaInteracao?new Date(ultimaInteracao.data).toLocaleDateString("pt-BR"):"—"} sub={ultimaInteracao?.tipo==="os"?"assistência":ultimaInteracao?"PDV":"sem histórico"}/>
+        </div>
+
+        {aparelhos.length>0&&<div className="mb-5">
+          <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-2">APARELHOS DO CLIENTE</div>
+          <div className="flex flex-wrap gap-2">{aparelhos.map(a=><span key={a} className="rounded-full border border-cyan-500/15 bg-cyan-500/[.035] px-3 py-1.5 text-[10px] text-cyan-100">{a}</span>)}</div>
+        </div>}
+
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div>
+            <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-2">ORDENS DE SERVIÇO</div>
+            {!ordensSelecionado.length?<div className="rounded-xl border border-white/8 p-5 text-xs text-[#666672]">Nenhuma OS vinculada.</div>:<div className="space-y-2">{ordensSelecionado.slice(0,8).map(o=><button key={o.id} onClick={()=>onAbrirOS(o.id)} className="w-full rounded-xl border border-white/8 p-3 flex justify-between gap-3 text-left hover:bg-white/[.025]"><div><div className="text-xs text-white">OS #{o.numero} · {o.aparelho}</div><div className="text-[10px] text-[#656570] mt-1">{o.dataEntrada?fmtDateTime(o.dataEntrada):""}</div></div><div className="text-right"><StatusBadge status={o.status}/>{Number(o.valorFinal)>0&&<div className="font-mono text-[10px] mt-1">{fmt(o.valorFinal)}</div>}</div></button>)}</div>}
+          </div>
+          <div>
+            <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-2">COMPRAS NO PDV</div>
+            {carregando?<div className="text-xs text-[#666672] py-5">Carregando...</div>:!compras.length?<div className="rounded-xl border border-white/8 p-5 text-xs text-[#666672]">Nenhuma compra vinculada ainda.</div>:<div className="space-y-2">{compras.slice(0,8).map(v=><div key={v.id} className="rounded-xl border border-white/8 p-3 flex justify-between gap-3"><div><div className="text-xs">{fmtDateTime(v.timestamp)}</div><div className="text-[10px] text-[#656570] mt-1 line-clamp-1">{(v.itens||[]).map(i=>i.descricao).join(", ")}</div></div><div className="text-right"><div className="font-mono text-xs">{fmt(v.total)}</div><div className={v.status==="estornada"?"text-[9px] text-red-300":"text-[9px] text-green-300"}>{v.status==="estornada"?"ESTORNADA":"CONCLUÍDA"}</div></div></div>)}</div>}
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-white/8">
+          <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">LINHA DO TEMPO DO RELACIONAMENTO</div>
+          {!interacoes.length?<div className="text-xs text-[#666672]">Ainda não há interações registradas.</div>:<div className="space-y-2">{interacoes.slice(0,10).map((x,i)=><div key={`${x.tipo}-${x.id}-${i}`} className="flex gap-3 items-center"><div className={"w-2 h-2 rounded-full "+(x.tipo==="os"?"bg-purple-400":"bg-cyan-400")}/><div className="min-w-0 flex-1"><div className="text-xs text-[#CFCFD6]">{x.titulo}</div><div className="text-[9px] text-[#5F5F69]">{fmtDateTime(x.data)}</div></div>{Number(x.valor)>0&&<div className="font-mono text-[10px]">{fmt(x.valor)}</div>}</div>)}</div>}
+        </div>
       </div>
     </div>}
   </div>;
@@ -3245,7 +3281,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.1 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.2 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4731,7 +4767,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.1</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.2</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
