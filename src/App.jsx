@@ -101,7 +101,7 @@ function rowToOSIndex(r) {
 function rowToOSDetail(r) {
   return {
     id: r.id, numero: r.numero, dataEntrada: r.data_entrada,
-    cliente: r.cliente, aparelho: r.aparelho, problemaRelatado: r.problema_relatado || "",
+    cliente: r.cliente, clienteId: r.cliente_id || null, aparelho: r.aparelho, problemaRelatado: r.problema_relatado || "",
     checklist: r.checklist || [], condicaoAparelho: r.condicao_aparelho || [], observacoesCondicao: r.observacoes_condicao || "",
     fotos: r.fotos || [], pecasUsadas: r.pecas_usadas || [], timeline: r.timeline || [], notificacoes: r.notificacoes || [],
     termos: r.termos ?? TERMO_PADRAO, assinaturaCliente: r.assinatura_cliente || null, status: r.status,
@@ -112,7 +112,7 @@ function rowToOSDetail(r) {
 }
 function osDetailToRow(d) {
   return {
-    cliente: d.cliente, aparelho: d.aparelho, problema_relatado: d.problemaRelatado,
+    cliente: d.cliente, cliente_id: d.clienteId || null, aparelho: d.aparelho, problema_relatado: d.problemaRelatado,
     checklist: d.checklist, condicao_aparelho: d.condicaoAparelho, observacoes_condicao: d.observacoesCondicao,
     fotos: d.fotos, pecas_usadas: d.pecasUsadas, timeline: d.timeline, notificacoes: d.notificacoes,
     termos: d.termos, assinatura_cliente: d.assinaturaCliente, status: d.status,
@@ -931,7 +931,7 @@ function EnigmaSistema() {
           <DashboardTab caixaAtual={caixaAtual} osIndex={osIndex} estoque={estoque} onNavigate={navigate} onNovaOS={() => { setTab("os"); setOsView("nova"); }} />
         )}
         {tab === "atendimento" && (
-          <AtendimentoTab osIndex={osIndex} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />
+          <AtendimentoTab osIndex={osIndex} clientes={clientes} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} onAbrirCliente={() => setTab("clientes")} />
         )}
         {tab === "pdv" && (
           <PDVTab caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
@@ -1540,21 +1540,62 @@ function DashboardLineChart({dados=[]}){
   </div>;
 }
 
-function AtendimentoTab({ osIndex, onNovaOS, onAbrirOS }) {
+function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirCliente }) {
   const [busca, setBusca] = useState("");
-  const filtradas = osIndex.filter((os) => `${os.clienteNome} ${os.clienteTelefone} ${os.aparelho} ${os.numero}`.toLowerCase().includes(busca.toLowerCase()));
-  return (
-    <div className="space-y-4">
-      <Card className="!rounded-2xl">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between mb-4">
-          <div><div className="font-medium text-white">Atendimento rápido</div><div className="text-xs text-[#74747F]">Localize cliente, aparelho ou OS antes de abrir um novo atendimento.</div></div>
-          <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={15}/> Abrir nova OS</span></Button>
-        </div>
-        <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={(e)=>setBusca(e.target.value)} placeholder="Cliente, telefone, aparelho ou número da OS" className="pl-9"/></div>
-      </Card>
-      {busca && <Card className="!rounded-2xl !p-0 overflow-hidden"><div className="divide-y divide-white/[.06]">{filtradas.length === 0 ? <div className="p-6 text-sm text-[#696974] text-center">Nenhum atendimento encontrado.</div> : filtradas.slice(0,20).map((os)=><button key={os.id} onClick={()=>onAbrirOS(os.id)} className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-white/[.025]"><div><div className="text-sm text-white">{os.clienteNome || "Cliente"} · #{os.numero}</div><div className="text-xs text-[#6F6F79]">{os.clienteTelefone || "Sem telefone"} · {os.aparelho}</div></div><StatusBadge status={os.status}/></button>)}</div></Card>}
+  const q=busca.trim().toLowerCase();
+  const norm=v=>String(v||"").replace(/\D/g,"");
+  const ordens=osIndex.filter(os=>!q||`${os.clienteNome} ${os.clienteTelefone} ${os.aparelho} ${os.numero}`.toLowerCase().includes(q));
+  const clientesFiltrados=q?clientes.filter(c=>`${c.nome||""} ${c.telefone||""} ${c.email||""} ${c.documento||""}`.toLowerCase().includes(q)).slice(0,6):[];
+  const ativos=osIndex.filter(os=>!["entregue","cancelado"].includes(os.status));
+  const aguardando=ativos.filter(os=>os.status==="aguardando_aprovacao");
+  const reparo=ativos.filter(os=>os.status==="em_reparo");
+  const prontas=ativos.filter(os=>os.status==="pronto");
+
+  const ultimaOSDo=c=>{
+    const tel=norm(c.telefone);
+    return osIndex.find(os=>(tel&&norm(os.clienteTelefone)===tel)||(!tel&&String(os.clienteNome||"").toLowerCase()===String(c.nome||"").toLowerCase()));
+  };
+
+  return <div className="space-y-5">
+    <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_85%_10%,rgba(139,92,246,.16),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+        <div><div className="text-[9px] tracking-[.22em] text-purple-300">ENIGMA // OPERATION FLOW</div><h1 className="text-2xl md:text-3xl font-semibold text-white mt-2">Central de Atendimento</h1><p className="text-sm text-[#858590] mt-2">Comece pelo cliente e acompanhe o aparelho até a entrega, sem redigitar informações.</p></div>
+        <Button onClick={onNovaOS}><span className="flex items-center gap-2"><Plus size={15}/> Novo atendimento / OS</span></Button>
+      </div>
+      <div className="relative mt-5"><Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-300"/><Input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Busque cliente, telefone, aparelho ou número da OS" className="pl-11 !h-12"/></div>
+    </section>
+
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      <MetricCyber label="EM ANDAMENTO" value={String(ativos.length)} sub="fluxo operacional"/>
+      <MetricCyber label="AGUARDANDO" value={String(aguardando.length)} sub="aprovação"/>
+      <MetricCyber label="EM REPARO" value={String(reparo.length)} sub="na bancada"/>
+      <MetricCyber label="PRONTAS" value={String(prontas.length)} sub="para retirada"/>
     </div>
-  );
+
+    {q&&clientesFiltrados.length>0&&<Card>
+      <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">CLIENTES ENCONTRADOS</div>
+      <div className="grid md:grid-cols-2 gap-2">{clientesFiltrados.map(c=>{const ultima=ultimaOSDo(c);return <div key={c.id} className="rounded-xl border border-white/8 bg-white/[.015] p-3 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><User size={15}/></div>
+        <button onClick={()=>onAbrirCliente(c)} className="min-w-0 flex-1 text-left"><div className="text-xs text-white truncate">{c.nome}</div><div className="text-[10px] text-[#6F6F79]">{c.telefone||"Sem telefone"}{ultima?` · última OS #${ultima.numero}`:" · sem OS"}</div></button>
+        {ultima&&<button onClick={()=>onAbrirOS(ultima.id)} className="text-[9px] text-cyan-300">Abrir OS →</button>}
+      </div>})}</div>
+    </Card>}
+
+    <Card className="!p-0 overflow-hidden">
+      <div className="p-4 border-b border-white/[.06] flex items-center justify-between"><div><div className="text-sm text-white">{q?"Resultados do atendimento":"Fluxo recente"}</div><div className="text-[10px] text-[#666672]">{q?"Cliente e histórico ficam conectados à OS.":"Ordens que ainda exigem ação da equipe."}</div></div><div className="text-[10px] text-purple-300">{ordens.filter(os=>!["entregue","cancelado"].includes(os.status)).length} ativa(s)</div></div>
+      <div className="divide-y divide-white/[.06]">
+        {ordens.filter(os=>q||!["entregue","cancelado"].includes(os.status)).slice(0,20).map(os=><button key={os.id} onClick={()=>onAbrirOS(os.id)} className="w-full p-4 grid grid-cols-[1fr_auto] gap-3 text-left hover:bg-white/[.025]">
+          <div><div className="text-sm text-white">#{os.numero} · {os.clienteNome||"Cliente"}</div><div className="text-xs text-[#6F6F79] mt-1">{os.aparelho} · {os.clienteTelefone||"sem telefone"}</div></div><StatusBadge status={os.status}/>
+        </button>)}
+        {!ordens.filter(os=>q||!["entregue","cancelado"].includes(os.status)).length&&<div className="p-8 text-center text-xs text-[#666672]">Nenhum atendimento encontrado.</div>}
+      </div>
+    </Card>
+
+    <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.0</div>
+      <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
+    </div>
+  </div>;
 }
 
 function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) {
@@ -3194,7 +3235,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V3.9 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.0 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5072,6 +5113,23 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
               {detail.cliente.telefone && <button onClick={abrirWhatsApp} className="flex items-center gap-1 text-[11px] text-green-300 border border-green-500/20 bg-green-500/[.06] rounded-full px-2.5 py-1"><Phone size={12}/> WhatsApp</button>}
               <button onClick={() => window.print()} className="flex items-center gap-1 text-[11px] text-[#8A8A96] border border-[#2A2A34] rounded-full px-2.5 py-1"><Printer size={12}/> Imprimir</button>
             </div>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-3">
+          <div className="flex items-center justify-between gap-3 mb-3"><div className="text-[9px] tracking-[.2em] text-purple-300">JORNADA DO ATENDIMENTO</div><div className="text-[9px] text-[#666672]">OS #{detail.numero}</div></div>
+          <div className="grid grid-cols-4 md:grid-cols-8 gap-1">
+            {[
+              ["recebido","Entrada"],["diagnostico","Diagnóstico"],["aguardando_aprovacao","Aprovação"],["em_reparo","Reparo"],
+              ["pronto","Pronto"],["pronto","Pagamento"],["entregue","Entrega"],["entregue","Pós-venda"]
+            ].map(([id,label],idx)=>{
+              const alvo=Math.max(0,FLUXO_PRINCIPAL.indexOf(id));
+              const concluida=etapaAtual>alvo||(detail.status==="entregue"&&id==="entregue");
+              const atual=etapaAtual===alvo&&detail.status!=="entregue";
+              return <button key={idx} onClick={()=>{if(id==="recebido")setSub("entrada");else if(id==="diagnostico")setSub("checklist");else if(id==="aguardando_aprovacao")setSub("orcamento");else if(id==="em_reparo")setSub("reparo");else setSub("entrega")}} className={"rounded-lg border px-2 py-2 text-center "+(atual?"border-purple-400/40 bg-purple-500/15 text-purple-200":concluida?"border-green-500/20 bg-green-500/[.05] text-green-300":"border-white/8 bg-white/[.01] text-[#5F5F69]")}>
+                <div className="font-mono text-[9px]">{concluida?"✓":String(idx+1).padStart(2,"0")}</div><div className="text-[8px] mt-1 truncate">{label}</div>
+              </button>
+            })}
           </div>
         </div>
 
