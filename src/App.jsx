@@ -6,7 +6,7 @@ import {
   Plus, Clock, AlertCircle, X, Wallet, Lock, Unlock, Check, ShoppingBag,
   TrendingUp, Package, ChevronRight, ChevronDown, Printer, PenTool,
   BellRing, Eraser, Minus, LayoutDashboard, Users, Settings, Headset,
-  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Layers, Link as LinkIcon
+  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Layers, Upload, Link as LinkIcon
 } from "lucide-react";
 
 /* ---------------- Supabase ---------------- */
@@ -994,7 +994,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.5.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.6</div>
     </aside>
   );
 }
@@ -1475,7 +1475,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.5.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.6</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -2898,128 +2898,381 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
 
 /* ================= ESTOQUE ================= */
 function TabelaPeliculasTab({ estoque=[] }) {
+  const [secao,setSecao]=useState("consulta");
+  const [grupos,setGrupos]=useState([]);
+  const [loading,setLoading]=useState(true);
   const [busca,setBusca]=useState("");
-  const [selecionado,setSelecionado]=useState("");
-  const [modo,setModo]=useState("consulta");
+  const [selecionado,setSelecionado]=useState(null);
+  const [mostrarForm,setMostrarForm]=useState(false);
+  const [editando,setEditando]=useState(null);
+  const [form,setForm]=useState({nome:"",marca:"",modelosText:"",observacao:""});
+  const [arquivoNome,setArquivoNome]=useState("");
+  const [importRows,setImportRows]=useState([]);
+  const [importPreview,setImportPreview]=useState(null);
+  const [importando,setImportando]=useState(false);
+  const fileRef=useRef(null);
 
   const normalizar=(v="")=>String(v).toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
     .replace(/[^a-z0-9]+/g," ").trim();
 
-  const parecePelicula=(p)=>{
-    const t=normalizar(`${p.nome||""} ${p.sku||""} ${p.compatibilidade||""}`);
-    return t.includes("pelicula")||t.includes("vidro")||t.includes("3d")||t.includes("9d")||t.includes("ceramica")||t.includes("hidrogel");
-  };
+  async function carregar(){
+    setLoading(true);
+    try{
+      const rows=await sb("pelicula_grupos?select=*&ativo=eq.true&order=marca.asc,nome.asc");
+      setGrupos((rows||[]).map(r=>({...r,modelos:Array.isArray(r.modelos)?r.modelos:[]})));
+    }catch(e){
+      console.warn("Base de películas indisponível:",e);
+      setGrupos([]);
+    }
+    setLoading(false);
+  }
+  useEffect(()=>{carregar();},[]);
 
-  const peliculas=estoque.filter(p=>p.categoria==="acessorio"&&parecePelicula(p));
+  function resetForm(){
+    setForm({nome:"",marca:"",modelosText:"",observacao:""});
+    setEditando(null);
+    setMostrarForm(false);
+  }
 
-  const extrairModelos=(p)=>{
-    const fonte=String(p.compatibilidade||p.nome||"");
-    return fonte.split(/[,;|/]+/).map(x=>x.trim()).filter(Boolean);
-  };
+  async function salvarGrupo(){
+    const nome=form.nome.trim();
+    const modelos=[...new Set(form.modelosText.split(/[\n,;|]+/).map(x=>x.trim()).filter(Boolean))];
+    if(!nome||!modelos.length){
+      alert("Informe o nome do grupo e pelo menos um modelo compatível.");
+      return;
+    }
+    const body={
+      nome,
+      marca:form.marca.trim()||null,
+      modelos,
+      observacao:form.observacao.trim()||null,
+      ativo:true,
+      updated_at:new Date().toISOString()
+    };
+    try{
+      if(editando){
+        await sb(`pelicula_grupos?id=eq.${editando.id}`,{method:"PATCH",body:JSON.stringify(body)});
+      }else{
+        await sb("pelicula_grupos",{method:"POST",body:JSON.stringify(body)});
+      }
+      resetForm();
+      await carregar();
+    }catch(e){
+      console.error(e);
+      alert("Não foi possível salvar o grupo. Confira se o SQL da V3.6 já foi executado.");
+    }
+  }
 
-  const modelosUnicos=[...new Set(peliculas.flatMap(extrairModelos))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  function editarGrupo(g){
+    setEditando(g);
+    setForm({
+      nome:g.nome||"",
+      marca:g.marca||"",
+      modelosText:(g.modelos||[]).join("\n"),
+      observacao:g.observacao||""
+    });
+    setMostrarForm(true);
+    setSecao("base");
+  }
+
+  async function excluirGrupo(g){
+    if(!confirm(`Desativar o grupo "${g.nome}"?`)) return;
+    try{
+      await sb(`pelicula_grupos?id=eq.${g.id}`,{
+        method:"PATCH",
+        body:JSON.stringify({ativo:false,updated_at:new Date().toISOString()})
+      });
+      if(selecionado?.id===g.id)setSelecionado(null);
+      await carregar();
+    }catch(e){alert("Não foi possível desativar o grupo.");}
+  }
+
   const q=normalizar(busca);
-  const sugestoes=q.length<2?[]:modelosUnicos.filter(m=>normalizar(m).includes(q)).slice(0,10);
-
-  const termo=normalizar(selecionado||busca);
-  const palavras=termo.split(" ").filter(x=>x.length>1);
-  const resultados=termo.length<2?[]:peliculas.map(p=>{
-    const texto=normalizar(`${p.nome} ${p.compatibilidade||""} ${p.marca||""} ${p.sku||""}`);
-    const exato=texto.includes(termo);
-    const pontos=exato?100:palavras.reduce((a,w)=>a+(texto.includes(w)?12:0),0);
-    return {...p,pontos};
-  }).filter(p=>p.pontos>0).sort((a,b)=>{
-    const dispA=Number(a.quantidade)>0?1:0,dispB=Number(b.quantidade)>0?1:0;
-    return dispB-dispA||b.pontos-a.pontos||Number(b.quantidade)-Number(a.quantidade);
+  const encontrados=q.length<2?[]:grupos.filter(g=>{
+    const t=normalizar(`${g.nome||""} ${g.marca||""} ${(g.modelos||[]).join(" ")}`);
+    return t.includes(q) || q.split(" ").filter(Boolean).every(p=>t.includes(p));
+  }).sort((a,b)=>{
+    const ax=(a.modelos||[]).some(m=>normalizar(m)===q)?1:0;
+    const bx=(b.modelos||[]).some(m=>normalizar(m)===q)?1:0;
+    return bx-ax||String(a.nome).localeCompare(String(b.nome),"pt-BR");
   });
 
-  const disponiveis=resultados.filter(p=>Number(p.quantidade)>0);
-  const indisponiveis=resultados.filter(p=>Number(p.quantidade)<=0);
-  const compatRelacionadas=[...new Set(resultados.flatMap(extrairModelos))]
-    .filter(m=>!termo||!normalizar(m).includes(termo))
-    .slice(0,12);
+  function parecePelicula(p){
+    const t=normalizar(`${p.nome||""} ${p.sku||""} ${p.compatibilidade||""}`);
+    return t.includes("pelicula")||t.includes("vidro")||t.includes("3d")||t.includes("9d")||t.includes("ceramica")||t.includes("hidrogel");
+  }
+  const peliculasEstoque=estoque.filter(p=>p.categoria==="acessorio"&&parecePelicula(p));
+
+  function estoqueDoGrupo(g){
+    const termos=[g.nome,...(g.modelos||[])].map(normalizar).filter(Boolean);
+    return peliculasEstoque.filter(p=>{
+      const t=normalizar(`${p.nome||""} ${p.compatibilidade||""} ${p.sku||""}`);
+      return termos.some(k=>k.length>=3 && (t.includes(k)||k.includes(t)));
+    }).sort((a,b)=>(Number(b.quantidade)>0?1:0)-(Number(a.quantidade)>0?1:0)||Number(b.quantidade)-Number(a.quantidade));
+  }
+
+  const estoqueSelecionado=selecionado?estoqueDoGrupo(selecionado):[];
+  const estoqueDisponivel=estoqueSelecionado.filter(p=>Number(p.quantidade)>0);
+
+  function limparImportacao(){
+    setArquivoNome("");
+    setImportRows([]);
+    setImportPreview(null);
+    if(fileRef.current)fileRef.current.value="";
+  }
+
+  function autoPick(headers,patterns){
+    return headers.find(h=>patterns.some(p=>normalizar(h).includes(p)))||"";
+  }
+
+  async function lerArquivo(file){
+    if(!file)return;
+    setArquivoNome(file.name);
+    try{
+      let rows=[];
+      if(file.name.toLowerCase().endsWith(".csv")){
+        const text=await file.text();
+        const lines=text.split(/\r?\n/).filter(Boolean);
+        if(!lines.length) throw new Error("Arquivo vazio");
+        const sep=(lines[0].split(";").length>lines[0].split(",").length)?";":",";
+        const parseLine=(line)=>{
+          const out=[];let cur="",quoted=false;
+          for(let i=0;i<line.length;i++){
+            const c=line[i];
+            if(c==='"'){if(quoted&&line[i+1]==='"'){cur+='"';i++;}else quoted=!quoted;}
+            else if(c===sep&&!quoted){out.push(cur.trim());cur="";}
+            else cur+=c;
+          }
+          out.push(cur.trim());return out;
+        };
+        const headers=parseLine(lines[0]);
+        rows=lines.slice(1).map(l=>{
+          const vals=parseLine(l);const o={};
+          headers.forEach((h,i)=>o[h]=vals[i]??"");
+          return o;
+        });
+      }else{
+        const XLSX=await import("xlsx");
+        const buf=await file.arrayBuffer();
+        const wb=XLSX.read(buf,{type:"array"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+      }
+      if(!rows.length) throw new Error("Nenhuma linha encontrada");
+      const headers=Object.keys(rows[0]||{});
+      const mapping={
+        grupo:autoPick(headers,["grupo","pelicula","referencia","familia"]),
+        marca:autoPick(headers,["marca","fabricante"]),
+        modelo:autoPick(headers,["modelo","aparelho","compatibilidade","compativel"]),
+        observacao:autoPick(headers,["observacao","obs","nota"])
+      };
+      setImportRows(rows);
+      gerarPreview(rows,mapping);
+    }catch(e){
+      console.error(e);
+      limparImportacao();
+      alert("Não consegui ler esse arquivo. Use XLSX, XLS ou CSV com cabeçalho.");
+    }
+  }
+
+  function gerarPreview(rows,mapping){
+    if(!mapping.grupo&&!mapping.modelo){
+      setImportPreview({erro:"Não foi possível identificar as colunas de grupo/modelo automaticamente.",mapping,headers:Object.keys(rows[0]||{})});
+      return;
+    }
+    const mapa=new Map();
+    rows.forEach(r=>{
+      const modelo=String(r[mapping.modelo]||"").trim();
+      let nome=String(r[mapping.grupo]||"").trim();
+      const marca=String(r[mapping.marca]||"").trim();
+      const obs=String(r[mapping.observacao]||"").trim();
+      if(!nome) nome=modelo;
+      if(!nome||!modelo)return;
+      const key=normalizar(`${marca}|${nome}`);
+      if(!mapa.has(key))mapa.set(key,{nome,marca,observacao:obs,modelos:[]});
+      const g=mapa.get(key);
+      if(modelo&&!g.modelos.some(x=>normalizar(x)===normalizar(modelo)))g.modelos.push(modelo);
+    });
+    const novos=[...mapa.values()];
+    let duplicados=0,novosGrupos=0,novosModelos=0;
+    novos.forEach(g=>{
+      const existente=grupos.find(x=>normalizar(`${x.marca||""}|${x.nome}`)===normalizar(`${g.marca||""}|${g.nome}`));
+      if(existente){
+        duplicados++;
+        novosModelos+=g.modelos.filter(m=>!(existente.modelos||[]).some(x=>normalizar(x)===normalizar(m))).length;
+      }else{
+        novosGrupos++;
+        novosModelos+=g.modelos.length;
+      }
+    });
+    setImportPreview({mapping,headers:Object.keys(rows[0]||{}),grupos:novos,linhas:rows.length,novosGrupos,duplicados,novosModelos});
+  }
+
+  function mudarMapping(campo,valor){
+    if(!importPreview)return;
+    const mapping={...importPreview.mapping,[campo]:valor};
+    gerarPreview(importRows,mapping);
+  }
+
+  async function confirmarImportacao(){
+    if(!importPreview?.grupos?.length)return;
+    setImportando(true);
+    try{
+      for(const g of importPreview.grupos){
+        const existente=grupos.find(x=>normalizar(`${x.marca||""}|${x.nome}`)===normalizar(`${g.marca||""}|${g.nome}`));
+        if(existente){
+          const modelos=[...(existente.modelos||[])];
+          g.modelos.forEach(m=>{if(!modelos.some(x=>normalizar(x)===normalizar(m)))modelos.push(m);});
+          await sb(`pelicula_grupos?id=eq.${existente.id}`,{
+            method:"PATCH",
+            body:JSON.stringify({
+              modelos,
+              observacao:existente.observacao||g.observacao||null,
+              updated_at:new Date().toISOString()
+            })
+          });
+        }else{
+          await sb("pelicula_grupos",{
+            method:"POST",
+            body:JSON.stringify({
+              nome:g.nome,
+              marca:g.marca||null,
+              modelos:g.modelos,
+              observacao:g.observacao||null,
+              ativo:true
+            })
+          });
+        }
+      }
+      await carregar();
+      limparImportacao();
+      alert("Importação concluída.");
+    }catch(e){
+      console.error(e);
+      alert("A importação foi interrompida. Confira a tabela no Supabase e tente novamente.");
+    }
+    setImportando(false);
+  }
+
+  function exportarCSV(){
+    const esc=(v)=>`"${String(v??"").replace(/"/g,'""')}"`;
+    const linhas=["grupo;marca;modelo;observacao"];
+    grupos.forEach(g=>(g.modelos||[]).forEach(m=>{
+      linhas.push([g.nome,g.marca||"",m,g.observacao||""].map(esc).join(";"));
+    }));
+    const blob=new Blob(["\ufeff"+linhas.join("\n")],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download="enigma-tabela-peliculas.csv";a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
 
   return <div className="space-y-5">
     <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_85%_15%,rgba(139,92,246,.18),transparent_30%),radial-gradient(circle_at_10%_100%,rgba(34,211,238,.07),transparent_32%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
         <div>
-          <div className="inline-flex items-center gap-2 text-[9px] tracking-[.22em] text-purple-300 border border-purple-500/20 bg-purple-500/10 rounded-full px-3 py-1"><Layers size={12}/> ENIGMA // SCREEN MATCH</div>
+          <div className="inline-flex items-center gap-2 text-[9px] tracking-[.22em] text-purple-300 border border-purple-500/20 bg-purple-500/10 rounded-full px-3 py-1"><Layers size={12}/> ENIGMA // COMPATIBILITY BASE</div>
           <h1 className="text-2xl md:text-3xl font-semibold text-white mt-3">Tabela de Películas</h1>
-          <p className="text-sm text-[#858590] mt-2 max-w-2xl">Pesquise o aparelho e encontre rapidamente as películas compatíveis que já existem no estoque da loja.</p>
+          <p className="text-sm text-[#858590] mt-2 max-w-2xl">Base própria da loja: pesquise um aparelho, veja o grupo compatível e confira imediatamente o que existe no estoque.</p>
         </div>
-        <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.04] px-4 py-3 min-w-[180px]">
-          <div className="text-[8px] tracking-[.18em] text-cyan-300">PELÍCULAS IDENTIFICADAS</div>
-          <div className="font-mono text-2xl text-white mt-1">{peliculas.length}</div>
-          <div className="text-[9px] text-[#666672]">{peliculas.filter(p=>Number(p.quantidade)>0).length} com estoque</div>
+        <div className="grid grid-cols-2 gap-2 min-w-[250px]">
+          <div className="rounded-xl border border-purple-500/15 bg-purple-500/[.04] px-4 py-3"><div className="text-[8px] text-purple-300 tracking-[.16em]">GRUPOS</div><div className="font-mono text-2xl mt-1">{grupos.length}</div></div>
+          <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.04] px-4 py-3"><div className="text-[8px] text-cyan-300 tracking-[.16em]">MODELOS</div><div className="font-mono text-2xl mt-1">{grupos.reduce((a,g)=>a+(g.modelos||[]).length,0)}</div></div>
         </div>
       </div>
     </section>
 
-    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
-      <button onClick={()=>setModo("consulta")} className={"rounded-lg py-2.5 text-xs border "+(modo==="consulta"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Consulta rápida</button>
-      <button onClick={()=>setModo("base")} className={"rounded-lg py-2.5 text-xs border "+(modo==="base"?"border-cyan-500/30 bg-cyan-500/[.06] text-white":"border-transparent text-[#777783]")}>Base da loja</button>
+    <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-white/[.015] p-1">
+      {[["consulta","Consulta"],["base","Base interna"],["importar","Importar"]].map(([id,label])=><button key={id} onClick={()=>setSecao(id)} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(secao===id?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>{label}</button>)}
     </div>
 
-    {modo==="consulta"&&<>
+    {secao==="consulta"&&<>
       <Card>
         <div className="text-[9px] tracking-[.22em] text-purple-300 mb-2">QUAL É O APARELHO?</div>
-        <div className="relative">
-          <Search size={19} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-300"/>
-          <input autoFocus value={busca} onChange={e=>{setBusca(e.target.value);setSelecionado("")}} placeholder="Ex: Galaxy A15, iPhone 13, Moto G54..." className="w-full h-14 rounded-2xl border border-purple-500/20 bg-black/25 pl-12 pr-4 text-base text-white outline-none focus:border-purple-400/50 shadow-[inset_0_0_20px_rgba(139,92,246,.025)]"/>
-        </div>
-        {sugestoes.length>0&&!selecionado&&<div className="mt-2 rounded-xl border border-white/8 bg-[#101016] overflow-hidden">
-          {sugestoes.map(m=><button key={m} onClick={()=>{setSelecionado(m);setBusca(m)}} className="w-full text-left px-4 py-2.5 border-b border-white/5 last:border-0 text-xs text-[#BDBDC6] hover:bg-purple-500/[.06] flex justify-between"><span>{m}</span><ChevronRight size={14} className="text-[#555560]"/></button>)}
-        </div>}
-        <div className="text-[9px] text-[#5F5F69] mt-3">A V3.5.1 cruza a consulta com os campos de compatibilidade já cadastrados no seu estoque. A camada de consulta externa online entra na próxima integração.</div>
+        <div className="relative"><Search size={19} className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-300"/><input autoFocus value={busca} onChange={e=>{setBusca(e.target.value);setSelecionado(null)}} placeholder="Ex: Galaxy A15, iPhone 13, Moto G54..." className="w-full h-14 rounded-2xl border border-purple-500/20 bg-black/25 pl-12 pr-4 text-base text-white outline-none focus:border-purple-400/50"/></div>
       </Card>
 
-      {termo.length>=2&&<div className="grid grid-cols-3 gap-2">
-        <MetricCyber label="COMPATÍVEIS" value={String(resultados.length)} sub="cadastros encontrados"/>
-        <MetricCyber label="DISPONÍVEIS" value={String(disponiveis.length)} sub="com saldo em estoque"/>
-        <MetricCyber label="UNIDADES" value={String(disponiveis.reduce((a,p)=>a+Number(p.quantidade||0),0))} sub="prontas para venda"/>
-      </div>}
-
-      {termo.length>=2&&<Card>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div><div className="text-[9px] tracking-[.2em] text-green-300">DISPONÍVEL NA ENIGMA</div><div className="text-xs text-[#666672] mt-1">Resultados para “{selecionado||busca}”</div></div>
-          <div className="text-[10px] text-[#666672]">{disponiveis.length} opção(ões)</div>
+      {loading?<Card className="text-center py-10"><div className="text-xs text-[#666672]">Carregando base de compatibilidade...</div></Card>:
+      q.length<2?<div className="rounded-2xl border border-white/8 bg-white/[.01] p-8 text-center"><Layers size={30} className="mx-auto text-purple-300/60"/><div className="text-sm text-[#A0A0AA] mt-3">Digite pelo menos 2 caracteres para consultar.</div></div>:
+      !selecionado?<Card>
+        <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">GRUPOS ENCONTRADOS</div>
+        {!encontrados.length?<div className="py-8 text-center"><div className="text-sm text-amber-200">Nenhuma compatibilidade cadastrada.</div><button onClick={()=>{setForm({nome:busca,marca:"",modelosText:busca,observacao:""});setMostrarForm(true);setSecao("base")}} className="mt-3 text-xs text-purple-300">+ Criar grupo para “{busca}”</button></div>:
+        <div className="space-y-2">{encontrados.map(g=><button key={g.id} onClick={()=>setSelecionado(g)} className="w-full rounded-xl border border-white/8 p-4 text-left hover:border-purple-500/25 flex justify-between gap-3"><div><div className="text-sm text-white">{g.nome}</div><div className="text-[10px] text-[#666672] mt-1">{g.marca||"Marca não informada"} · {(g.modelos||[]).length} modelo(s)</div><div className="flex flex-wrap gap-1 mt-2">{(g.modelos||[]).slice(0,5).map(m=><span key={m} className="rounded-full border border-white/7 px-2 py-1 text-[8px] text-[#8A8A96]">{m}</span>)}{(g.modelos||[]).length>5&&<span className="text-[8px] text-[#555560] py-1">+{g.modelos.length-5}</span>}</div></div><ChevronRight size={18} className="text-purple-300"/></button>)}</div>}
+      </Card>:
+      <div className="space-y-4">
+        <Card>
+          <button onClick={()=>setSelecionado(null)} className="text-[10px] text-purple-300 mb-3">← Voltar aos resultados</button>
+          <div className="flex justify-between gap-3"><div><div className="text-[9px] tracking-[.2em] text-purple-300">GRUPO COMPATÍVEL</div><div className="text-xl text-white mt-1">{selecionado.nome}</div><div className="text-xs text-[#666672] mt-1">{selecionado.marca||"Marca não informada"}</div></div><button onClick={()=>editarGrupo(selecionado)} className="text-xs text-cyan-300">Editar</button></div>
+          <div className="flex flex-wrap gap-2 mt-4">{(selecionado.modelos||[]).map(m=><span key={m} className={"rounded-full border px-3 py-1.5 text-[10px] "+(normalizar(m)===q?"border-purple-500/35 bg-purple-500/10 text-purple-200":"border-white/8 text-[#A0A0AA]")}>{m}</span>)}</div>
+          {selecionado.observacao&&<div className="mt-4 text-xs text-[#777783]">{selecionado.observacao}</div>}
+        </Card>
+        <div className="grid grid-cols-3 gap-2">
+          <MetricCyber label="PRODUTOS" value={String(estoqueSelecionado.length)} sub="películas relacionadas"/>
+          <MetricCyber label="DISPONÍVEIS" value={String(estoqueDisponivel.length)} sub="com saldo"/>
+          <MetricCyber label="UNIDADES" value={String(estoqueDisponivel.reduce((a,p)=>a+Number(p.quantidade||0),0))} sub="em estoque"/>
         </div>
-        {!disponiveis.length?<div className="rounded-xl border border-amber-500/15 bg-amber-500/[.035] p-5 text-center"><div className="text-sm text-amber-200">Nenhuma película compatível disponível no estoque.</div><div className="text-[10px] text-[#777783] mt-2">Confira abaixo se existe cadastro zerado ou ajuste a compatibilidade do produto no Estoque.</div></div>:
-        <div className="grid md:grid-cols-2 gap-3">{disponiveis.map(p=><div key={p.id} className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4">
-          <div className="flex justify-between gap-3"><div className="min-w-0"><div className="text-sm text-white">{p.nome}</div><div className="text-[10px] text-[#71717C] mt-1">{p.compatibilidade||"Compatibilidade não detalhada"}</div></div><div className="shrink-0 rounded-lg border border-green-500/20 bg-green-500/10 px-2 py-1 h-fit text-[9px] text-green-300">EM ESTOQUE</div></div>
-          <div className="grid grid-cols-3 gap-2 mt-4 border-t border-white/6 pt-3">
-            <div><div className="text-[8px] text-[#555560]">SALDO</div><div className="font-mono text-sm text-green-300 mt-1">{p.quantidade} un</div></div>
-            <div><div className="text-[8px] text-[#555560]">PREÇO</div><div className="font-mono text-xs text-white mt-1">{fmt(p.preco)}</div></div>
-            <div><div className="text-[8px] text-[#555560]">SKU</div><div className="font-mono text-[10px] text-[#9999A3] mt-1 truncate">{p.sku||"—"}</div></div>
-          </div>
-        </div>)}</div>}
-      </Card>}
-
-      {termo.length>=2&&compatRelacionadas.length>0&&<Card>
-        <div className="text-[9px] tracking-[.2em] text-cyan-300">OUTROS MODELOS ENCONTRADOS NAS MESMAS PELÍCULAS</div>
-        <div className="flex flex-wrap gap-2 mt-3">{compatRelacionadas.map(m=><button key={m} onClick={()=>{setBusca(m);setSelecionado(m)}} className="rounded-full border border-cyan-500/15 bg-cyan-500/[.035] px-3 py-1.5 text-[10px] text-cyan-200">{m}</button>)}</div>
-      </Card>}
-
-      {termo.length>=2&&indisponiveis.length>0&&<Card>
-        <div className="text-[9px] tracking-[.2em] text-red-300 mb-3">COMPATÍVEIS CADASTRADAS · SEM ESTOQUE</div>
-        <div className="space-y-2">{indisponiveis.map(p=><div key={p.id} className="rounded-lg border border-white/7 p-3 flex justify-between gap-3"><div><div className="text-xs text-[#BDBDC6]">{p.nome}</div><div className="text-[9px] text-[#60606B] mt-1">{p.compatibilidade||"—"}</div></div><span className="text-[9px] text-red-300">ZERADO</span></div>)}</div>
-      </Card>}
+        <Card>
+          <div className="text-[9px] tracking-[.2em] text-green-300 mb-3">DISPONÍVEL NA ENIGMA</div>
+          {!estoqueDisponivel.length?<div className="rounded-xl border border-amber-500/15 bg-amber-500/[.035] p-5 text-center text-sm text-amber-200">O grupo existe, mas nenhuma película compatível foi localizada com saldo no estoque.</div>:
+          <div className="grid md:grid-cols-2 gap-3">{estoqueDisponivel.map(p=><div key={p.id} className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4"><div className="flex justify-between gap-3"><div><div className="text-sm">{p.nome}</div><div className="text-[9px] text-[#666672] mt-1">{p.compatibilidade||"Sem descrição de compatibilidade"}</div></div><span className="text-[9px] text-green-300">{p.quantidade} un</span></div><div className="flex justify-between mt-3 pt-3 border-t border-white/6"><span className="text-[9px] text-[#555560]">{p.sku||"Sem SKU"}</span><span className="font-mono text-xs">{fmt(p.preco)}</span></div></div>)}</div>}
+        </Card>
+      </div>}
     </>}
 
-    {modo==="base"&&<Card>
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div><div className="text-[9px] tracking-[.2em] text-cyan-300">BASE DE PELÍCULAS DA LOJA</div><div className="text-xs text-[#666672] mt-1">Detectada automaticamente a partir do estoque atual.</div></div>
-        <div className="text-[10px] text-[#666672]">{peliculas.length} cadastro(s)</div>
+    {secao==="base"&&<>
+      <div className="flex flex-wrap justify-between gap-2">
+        <div className="text-xs text-[#666672] self-center">Cadastre grupos de modelos que usam a mesma película.</div>
+        <div className="flex gap-2"><Button variant="ghost" onClick={exportarCSV}>Exportar CSV</Button><Button onClick={()=>{resetForm();setMostrarForm(true)}}><span className="flex items-center gap-2"><Plus size={14}/> Novo grupo</span></Button></div>
       </div>
-      {!peliculas.length?<div className="py-10 text-center text-xs text-[#666672]">Nenhum produto identificado como película. Cadastre as películas no Estoque usando nome e campo “Compatibilidade / Modelo”.</div>:
-      <div className="space-y-2">{peliculas.map(p=><div key={p.id} className="rounded-xl border border-white/8 bg-white/[.012] p-3 grid md:grid-cols-[1.4fr_1.3fr_.5fr_.6fr] gap-3 items-center">
-        <div><div className="text-xs text-white">{p.nome}</div><div className="text-[9px] text-[#5F5F69] mt-1">{p.sku||"Sem SKU"}</div></div>
-        <div><div className="text-[8px] text-[#555560]">COMPATIBILIDADE</div><div className="text-[10px] text-[#A0A0AA] mt-1">{p.compatibilidade||"Não informada"}</div></div>
-        <div><div className="text-[8px] text-[#555560]">SALDO</div><div className={"font-mono text-xs mt-1 "+(Number(p.quantidade)>0?"text-green-300":"text-red-300")}>{p.quantidade} un</div></div>
-        <div className="md:text-right"><div className="text-[8px] text-[#555560]">VENDA</div><div className="font-mono text-xs mt-1">{fmt(p.preco)}</div></div>
-      </div>)}</div>}
-    </Card>}
+
+      {mostrarForm&&<Card>
+        <div className="flex items-center justify-between mb-4"><div><div className="text-[9px] tracking-[.22em] text-purple-300">{editando?"EDITAR GRUPO":"NOVO GRUPO"}</div><div className="text-xs text-[#666672] mt-1">Uma película pode atender vários aparelhos.</div></div><button onClick={resetForm}><X size={17}/></button></div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div><Label>Nome do grupo *</Label><Input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Samsung A15 / A24"/></div>
+          <div><Label>Marca</Label><Input value={form.marca} onChange={e=>setForm({...form,marca:e.target.value})} placeholder="Samsung"/></div>
+          <div className="md:col-span-2"><Label>Modelos compatíveis *</Label><Textarea rows={7} value={form.modelosText} onChange={e=>setForm({...form,modelosText:e.target.value})} placeholder={"Um por linha, por exemplo:\nGalaxy A15\nGalaxy A15 5G\nGalaxy A24"}/><div className="text-[9px] text-[#5F5F69] mt-1">Pode usar linha nova, vírgula ou ponto e vírgula.</div></div>
+          <div className="md:col-span-2"><Label>Observação</Label><Input value={form.observacao} onChange={e=>setForm({...form,observacao:e.target.value})} placeholder="Ex: mesmo recorte e medida"/></div>
+        </div>
+        <div className="flex gap-2 mt-4"><Button variant="ghost" onClick={resetForm}>Cancelar</Button><Button onClick={salvarGrupo}>{editando?"Salvar alterações":"Criar grupo"}</Button></div>
+      </Card>}
+
+      {loading?<Card className="text-center py-10"><div className="text-xs text-[#666672]">Carregando...</div></Card>:
+      !grupos.length?<Card className="text-center py-10"><div className="text-sm text-[#777783]">Sua base ainda está vazia.</div><div className="text-xs text-[#5F5F69] mt-2">Cadastre manualmente ou importe uma planilha na guia Importar.</div></Card>:
+      <div className="space-y-2">{grupos.map(g=><Card key={g.id} className="!p-0 overflow-hidden"><div className="p-4 grid md:grid-cols-[1fr_1.6fr_auto] gap-4 items-center"><div><div className="text-sm text-white">{g.nome}</div><div className="text-[10px] text-[#666672] mt-1">{g.marca||"Sem marca"} · {(g.modelos||[]).length} modelo(s)</div></div><div className="flex flex-wrap gap-1.5">{(g.modelos||[]).slice(0,8).map(m=><span key={m} className="rounded-full border border-white/7 px-2 py-1 text-[8px] text-[#9999A3]">{m}</span>)}{(g.modelos||[]).length>8&&<span className="text-[8px] text-[#555560] py-1">+{g.modelos.length-8}</span>}</div><div className="flex gap-2"><button onClick={()=>editarGrupo(g)} className="text-[10px] text-cyan-300">Editar</button><button onClick={()=>excluirGrupo(g)} className="text-[10px] text-red-300">Desativar</button></div></div></Card>)}</div>}
+    </>}
+
+    {secao==="importar"&&<>
+      <Card>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div><div className="text-[9px] tracking-[.22em] text-purple-300">IMPORTAÇÃO EM MASSA</div><div className="text-sm text-white mt-1">Excel ou CSV</div><div className="text-xs text-[#666672] mt-1">O arquivo é analisado primeiro. Nada é gravado antes da confirmação.</div></div>
+          <div className="flex gap-2"><input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={e=>lerArquivo(e.target.files?.[0])} className="hidden"/><Button onClick={()=>fileRef.current?.click()}><span className="flex items-center gap-2"><Upload size={14}/> Escolher arquivo</span></Button></div>
+        </div>
+        {arquivoNome&&<div className="mt-4 rounded-xl border border-white/8 bg-black/15 p-3 flex justify-between gap-3"><div><div className="text-xs text-white">{arquivoNome}</div><div className="text-[9px] text-[#666672] mt-1">{importRows.length} linha(s) lida(s)</div></div><button onClick={limparImportacao} className="text-[10px] text-red-300">Remover</button></div>}
+      </Card>
+
+      <Card>
+        <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">FORMATO RECOMENDADO</div>
+        <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="text-[#666672]"><th className="text-left p-2">grupo</th><th className="text-left p-2">marca</th><th className="text-left p-2">modelo</th><th className="text-left p-2">observacao</th></tr></thead><tbody><tr className="border-t border-white/7"><td className="p-2">Samsung A15/A24</td><td className="p-2">Samsung</td><td className="p-2">Galaxy A15</td><td className="p-2">Mesmo recorte</td></tr><tr className="border-t border-white/7"><td className="p-2">Samsung A15/A24</td><td className="p-2">Samsung</td><td className="p-2">Galaxy A24</td><td className="p-2">Mesmo recorte</td></tr></tbody></table></div>
+        <div className="text-[9px] text-[#5F5F69] mt-2">O importador tenta reconhecer automaticamente nomes de colunas diferentes.</div>
+      </Card>
+
+      {importPreview&&<Card>
+        <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">PRÉVIA DA IMPORTAÇÃO</div>
+        {importPreview.headers&&<div className="grid md:grid-cols-4 gap-2 mb-4">
+          {[["grupo","Coluna de grupo"],["marca","Coluna de marca"],["modelo","Coluna de modelo"],["observacao","Coluna de observação"]].map(([key,label])=><div key={key}><Label>{label}</Label><select value={importPreview.mapping?.[key]||""} onChange={e=>mudarMapping(key,e.target.value)} className="w-full rounded-lg bg-[#0F0F14] border border-[#2A2A34] px-2 py-2 text-xs"><option value="">Não usar</option>{importPreview.headers.map(h=><option key={h} value={h}>{h}</option>)}</select></div>)}
+        </div>}
+        {importPreview.erro?<div className="rounded-xl border border-red-500/20 bg-red-500/[.035] p-4 text-xs text-red-200">{importPreview.erro}</div>:<>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+            <MetricCyber label="LINHAS" value={String(importPreview.linhas||0)} sub="arquivo"/>
+            <MetricCyber label="NOVOS GRUPOS" value={String(importPreview.novosGrupos||0)} sub="serão criados"/>
+            <MetricCyber label="GRUPOS EXISTENTES" value={String(importPreview.duplicados||0)} sub="serão mesclados"/>
+            <MetricCyber label="NOVOS MODELOS" value={String(importPreview.novosModelos||0)} sub="compatibilidades"/>
+          </div>
+          <div className="max-h-72 overflow-y-auto space-y-2">{(importPreview.grupos||[]).slice(0,50).map((g,i)=><div key={i} className="rounded-lg border border-white/7 p-3 flex justify-between gap-3"><div><div className="text-xs text-white">{g.nome}</div><div className="text-[9px] text-[#666672] mt-1">{g.marca||"Sem marca"}</div></div><div className="text-right"><div className="font-mono text-xs text-cyan-300">{g.modelos.length}</div><div className="text-[8px] text-[#555560]">modelo(s)</div></div></div>)}</div>
+          <div className="flex justify-end mt-4"><Button disabled={importando||!importPreview.grupos?.length} onClick={confirmarImportacao}>{importando?"Importando...":"Confirmar importação"}</Button></div>
+        </>}
+      </Card>}
+    </>}
   </div>;
 }
 
