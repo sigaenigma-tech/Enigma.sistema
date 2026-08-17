@@ -2454,7 +2454,7 @@ const ENIGMA_PRINT = {
   subtitulo:"Assistência técnica e acessórios",
   whatsapp:"(22) 99262-9718",
   endereco:"Rua Samuel Bessa, 20, Loja 1",
-  instagram:"@enigma"
+  instagram:"@siga.enigma"
 };
 function enigmaPrintHeader(titulo, meta=""){
   return `<div class="enigma-head">
