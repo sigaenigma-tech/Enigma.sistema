@@ -96,7 +96,7 @@ function rowToVenda(r) {
   };
 }
 function rowToOSIndex(r) {
-  return { id: r.id, numero: r.numero, clienteId: r.cliente_id || null, clienteNome: r.cliente?.nome || "", clienteTelefone: r.cliente?.telefone || "", aparelho: r.aparelho?.marcaModelo || "", status: r.status, dataEntrada: r.data_entrada, valorFinal:Number(r.valor_final||0) };
+  return { id: r.id, numero: r.numero, clienteId: r.cliente_id || null, clienteNome: r.cliente?.nome || "", clienteTelefone: r.cliente?.telefone || "", aparelho: r.aparelho?.marcaModelo || "", aparelhoTipo:r.aparelho?.tipo || "", aparelhoSerial:r.aparelho?.serial || "", aparelhoCor:r.aparelho?.cor || "", status: r.status, dataEntrada: r.data_entrada, valorFinal:Number(r.valor_final||0) };
 }
 function rowToOSDetail(r) {
   return {
@@ -769,7 +769,7 @@ function EnigmaSistema() {
     const novaOS = {
       cliente_id: form.clienteId || null,
       cliente: { nome: form.clienteNome, telefone: form.clienteTelefone, cpf: form.clienteCpf, endereco: form.clienteEndereco },
-      aparelho: { tipo: form.aparelhoTipo, marcaModelo: form.aparelhoMarcaModelo, serial: form.aparelhoSerial },
+      aparelho: { tipo: form.aparelhoTipo, marcaModelo: form.aparelhoMarcaModelo, serial: form.aparelhoSerial, cor: form.aparelhoCor || "" },
       problema_relatado: form.problemaRelatado,
       checklist: CHECKLIST_PADRAO.map((item) => ({ id: genId(), item, status: "nao_testado" })),
       condicao_aparelho: CONDICAO_PADRAO.map((item) => ({ id: genId(), item, status: "nao_testado" })),
@@ -1602,7 +1602,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.2</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.3</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1643,7 +1643,13 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   const ordensSelecionado=selecionado?ordensDo(selecionado):[];
   const totalCompras=comprasValidas.reduce((a,v)=>a+Number(v.total||0),0);
   const totalServicos=ordensSelecionado.filter(o=>o.status!=="cancelado").reduce((a,o)=>a+Number(o.valorFinal||0),0);
-  const aparelhos=[...new Set(ordensSelecionado.map(o=>o.aparelho).filter(Boolean))];
+  const aparelhos=Object.values(ordensSelecionado.reduce((acc,o)=>{
+    const chave=(o.aparelhoSerial||o.aparelho||"aparelho").trim().toLowerCase();
+    if(!acc[chave]) acc[chave]={chave,nome:o.aparelho||"Aparelho",serial:o.aparelhoSerial||"",cor:o.aparelhoCor||"",tipo:o.aparelhoTipo||"",ordens:[],ultima:null};
+    acc[chave].ordens.push(o);
+    if(!acc[chave].ultima||new Date(o.dataEntrada)>new Date(acc[chave].ultima.dataEntrada)) acc[chave].ultima=o;
+    return acc;
+  },{}));
   const interacoes=[
     ...comprasValidas.map(v=>({tipo:"compra",data:v.timestamp,titulo:"Compra no PDV",valor:v.total,id:v.id})),
     ...ordensSelecionado.map(o=>({tipo:"os",data:o.dataEntrada,titulo:`OS #${o.numero} · ${o.aparelho}`,valor:o.valorFinal,id:o.id,status:o.status}))
@@ -1694,14 +1700,17 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
         </div>
 
         {aparelhos.length>0&&<div className="mb-5">
-          <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-2">APARELHOS DO CLIENTE</div>
-          <div className="flex flex-wrap gap-2">{aparelhos.map(a=><span key={a} className="rounded-full border border-cyan-500/15 bg-cyan-500/[.035] px-3 py-1.5 text-[10px] text-cyan-100">{a}</span>)}</div>
+          <div className="flex items-end justify-between gap-3 mb-2"><div><div className="text-[9px] tracking-[.2em] text-cyan-300">APARELHOS DO CLIENTE</div><div className="text-[10px] text-[#60606B] mt-1">Histórico técnico agrupado por aparelho / IMEI.</div></div><div className="text-[9px] text-[#6B6B76]">{aparelhos.length} cadastrado(s)</div></div>
+          <div className="grid sm:grid-cols-2 gap-2">{aparelhos.map(a=><div key={a.chave} className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.025] p-3">
+            <div className="flex items-start gap-3"><div className="w-9 h-9 rounded-lg bg-cyan-500/[.06] border border-cyan-500/15 flex items-center justify-center text-cyan-300"><Smartphone size={15}/></div><div className="min-w-0 flex-1"><div className="text-xs text-white font-medium">{a.nome}</div><div className="text-[9px] text-[#73737E] mt-1">{a.serial?`IMEI / Serial: ${a.serial}`:"IMEI / Serial não informado"}{a.cor?` · ${a.cor}`:""}</div></div><div className="font-mono text-[10px] text-cyan-300">{a.ordens.length} OS</div></div>
+            <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between gap-3"><div className="text-[9px] text-[#666672]">Última entrada: {a.ultima?.dataEntrada?new Date(a.ultima.dataEntrada).toLocaleDateString("pt-BR"):"—"}</div>{a.ultima&&<button onClick={()=>onAbrirOS(a.ultima.id)} className="text-[9px] text-purple-300">Ver histórico →</button>}</div>
+          </div>)}</div>
         </div>}
 
         <div className="grid lg:grid-cols-2 gap-4">
           <div>
             <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-2">ORDENS DE SERVIÇO</div>
-            {!ordensSelecionado.length?<div className="rounded-xl border border-white/8 p-5 text-xs text-[#666672]">Nenhuma OS vinculada.</div>:<div className="space-y-2">{ordensSelecionado.slice(0,8).map(o=><button key={o.id} onClick={()=>onAbrirOS(o.id)} className="w-full rounded-xl border border-white/8 p-3 flex justify-between gap-3 text-left hover:bg-white/[.025]"><div><div className="text-xs text-white">OS #{o.numero} · {o.aparelho}</div><div className="text-[10px] text-[#656570] mt-1">{o.dataEntrada?fmtDateTime(o.dataEntrada):""}</div></div><div className="text-right"><StatusBadge status={o.status}/>{Number(o.valorFinal)>0&&<div className="font-mono text-[10px] mt-1">{fmt(o.valorFinal)}</div>}</div></button>)}</div>}
+            {!ordensSelecionado.length?<div className="rounded-xl border border-white/8 p-5 text-xs text-[#666672]">Nenhuma OS vinculada.</div>:<div className="space-y-2">{ordensSelecionado.slice(0,8).map(o=><button key={o.id} onClick={()=>onAbrirOS(o.id)} className="w-full rounded-xl border border-white/8 p-3 flex justify-between gap-3 text-left hover:bg-white/[.025]"><div><div className="text-xs text-white">OS #{o.numero} · {o.aparelho}</div><div className="text-[10px] text-[#656570] mt-1">{o.dataEntrada?fmtDateTime(o.dataEntrada):""}</div></div><div className="text-right"><StatusBadge status={o.status}/>{o.status==="cancelado"?<div className="text-[9px] text-red-300 mt-1">não contabilizada</div>:Number(o.valorFinal)>0&&<div className="font-mono text-[10px] mt-1">{fmt(o.valorFinal)}</div>}</div></button>)}</div>}
           </div>
           <div>
             <div className="text-[9px] tracking-[.2em] text-[#8A8A96] mb-2">COMPRAS NO PDV</div>
@@ -1711,7 +1720,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 
         <div className="mt-5 pt-4 border-t border-white/8">
           <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">LINHA DO TEMPO DO RELACIONAMENTO</div>
-          {!interacoes.length?<div className="text-xs text-[#666672]">Ainda não há interações registradas.</div>:<div className="space-y-2">{interacoes.slice(0,10).map((x,i)=><div key={`${x.tipo}-${x.id}-${i}`} className="flex gap-3 items-center"><div className={"w-2 h-2 rounded-full "+(x.tipo==="os"?"bg-purple-400":"bg-cyan-400")}/><div className="min-w-0 flex-1"><div className="text-xs text-[#CFCFD6]">{x.titulo}</div><div className="text-[9px] text-[#5F5F69]">{fmtDateTime(x.data)}</div></div>{Number(x.valor)>0&&<div className="font-mono text-[10px]">{fmt(x.valor)}</div>}</div>)}</div>}
+          {!interacoes.length?<div className="text-xs text-[#666672]">Ainda não há interações registradas.</div>:<div className="space-y-2">{interacoes.slice(0,10).map((x,i)=><div key={`${x.tipo}-${x.id}-${i}`} className="flex gap-3 items-center"><div className={"w-2 h-2 rounded-full "+(x.tipo==="os"?"bg-purple-400":"bg-cyan-400")}/><div className="min-w-0 flex-1"><div className="text-xs text-[#CFCFD6]">{x.titulo}</div><div className="text-[9px] text-[#5F5F69]">{fmtDateTime(x.data)}</div></div>{x.tipo==="os"&&x.status==="cancelado"?<div className="text-[9px] text-red-300">Cancelada · não contabilizada</div>:Number(x.valor)>0&&<div className="font-mono text-[10px]">{fmt(x.valor)}</div>}</div>)}</div>}
         </div>
       </div>
     </div>}
@@ -1721,7 +1730,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.6</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -3281,7 +3290,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.2 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.3 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4718,6 +4727,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   const [aparelhoTipo, setAparelhoTipo] = useState("smartphone");
   const [aparelhoMarcaModelo, setAparelhoMarcaModelo] = useState("");
   const [aparelhoSerial, setAparelhoSerial] = useState("");
+  const [aparelhoCor, setAparelhoCor] = useState("");
   const [problemaRelatado, setProblemaRelatado] = useState("");
   const [acessoriosRecebidos, setAcessoriosRecebidos] = useState("");
   const [previsaoEntrega, setPrevisaoEntrega] = useState("");
@@ -4767,7 +4777,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.2</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.3</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -4817,6 +4827,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
           </div>
           <Label>Marca / modelo *</Label><Input value={aparelhoMarcaModelo} onChange={e=>setAparelhoMarcaModelo(e.target.value)} placeholder="Ex: iPhone 13 Pro" className="mb-3"/>
           <Label>Número de série / IMEI</Label><Input value={aparelhoSerial} onChange={e=>setAparelhoSerial(e.target.value)} placeholder="Opcional" className="mb-3"/>
+          <Label>Cor</Label><Input value={aparelhoCor} onChange={e=>setAparelhoCor(e.target.value)} placeholder="Ex: Preto, Roxo, Titânio natural" className="mb-3"/>
           <Label>Acessórios recebidos</Label><Input value={acessoriosRecebidos} onChange={e=>setAcessoriosRecebidos(e.target.value)} placeholder="Ex: aparelho + carregador + capa"/>
         </Card>
         <Card className="!rounded-2xl">
@@ -4830,7 +4841,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
         <Button variant="ghost" className="min-w-28" onClick={onCancelar}>Cancelar</Button>
         <Button className="min-w-40" disabled={!podeCriar} onClick={()=>onCriar({
           clienteId,clienteNome,clienteTelefone,clienteCpf,clienteEndereco,
-          aparelhoTipo,aparelhoMarcaModelo,aparelhoSerial,problemaRelatado,acessoriosRecebidos,previsaoEntrega
+          aparelhoTipo,aparelhoMarcaModelo,aparelhoSerial,aparelhoCor,problemaRelatado,acessoriosRecebidos,previsaoEntrega
         })}><span className="flex items-center justify-center gap-2"><Plus size={15}/> Abrir OS vinculada</span></Button>
       </div>
     </div>
