@@ -949,7 +949,7 @@ function EnigmaSistema() {
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
-        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
+        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} estoque={estoque} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab />}
       </main>
       <BottomNav tab={tab} setTab={navigate} />
@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.9.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.0</div>
     </aside>
   );
 }
@@ -1235,7 +1235,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.9.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.0</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1970,21 +1970,39 @@ function escapeHtml(v){
 }
 
 /* ================= RELATÓRIO ================= */
-function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo, onExcluirVenda, onEditarVenda }) {
-  const [modo, setModo] = useState("dia"); // dia | periodo
+function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendasPeriodo, onExcluirVenda, onEditarVenda }) {
+  const [guia,setGuia]=useState("produtos");
+  const [modo, setModo] = useState("periodo");
   const [data, setData] = useState(todayISO());
   const [vendasDoDia, setVendasDoDia] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [cupomAberto, setCupomAberto] = useState(null);
 
-  const [dataInicio, setDataInicio] = useState(todayISO().slice(0, 8) + "01");
-  const [dataFim, setDataFim] = useState(todayISO());
+  const hoje=todayISO();
+  const dt30=new Date(); dt30.setDate(dt30.getDate()-29);
+  const iso30=dt30.toISOString().slice(0,10);
+  const [dataInicio, setDataInicio] = useState(iso30);
+  const [dataFim, setDataFim] = useState(hoje);
   const [vendasPeriodo, setVendasPeriodo] = useState([]);
   const [carregandoPeriodo, setCarregandoPeriodo] = useState(true);
   const [diaExpandido, setDiaExpandido] = useState(null);
+  const [buscaProduto,setBuscaProduto]=useState("");
+  const [filtroGiro,setFiltroGiro]=useState("todos");
+  const [ordenacao,setOrdenacao]=useState("quantidade");
+
+  function aplicarPeriodoRapido(tipo){
+    const fim=new Date();
+    const inicio=new Date();
+    if(tipo==="hoje") inicio.setDate(fim.getDate());
+    if(tipo==="7") inicio.setDate(fim.getDate()-6);
+    if(tipo==="30") inicio.setDate(fim.getDate()-29);
+    if(tipo==="mes") inicio.setDate(1);
+    setDataInicio(inicio.toISOString().slice(0,10));
+    setDataFim(fim.toISOString().slice(0,10));
+  }
 
   useEffect(() => {
-    if (modo !== "dia") return;
+    if (guia!=="vendas" || modo !== "dia") return;
     let ativo = true;
     setCarregando(true);
     onBuscarVendas(data)
@@ -1992,10 +2010,10 @@ function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo, onExc
       .catch(() => { if (ativo) setVendasDoDia([]); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [data, modo]);
+  }, [data, modo, guia]);
 
   useEffect(() => {
-    if (modo !== "periodo") return;
+    if (modo !== "periodo" && guia==="vendas") return;
     let ativo = true;
     setCarregandoPeriodo(true);
     onBuscarVendasPeriodo(dataInicio, dataFim)
@@ -2003,13 +2021,60 @@ function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo, onExc
       .catch(() => { if (ativo) setVendasPeriodo([]); })
       .finally(() => { if (ativo) setCarregandoPeriodo(false); });
     return () => { ativo = false; };
-  }, [dataInicio, dataFim, modo]);
+  }, [dataInicio, dataFim, modo, guia]);
 
   function atualizarListaLocal(vendaAtualizadaOuNull, idOriginal) {
     const id = vendaAtualizadaOuNull ? vendaAtualizadaOuNull.id : idOriginal;
     setVendasDoDia((prev) => (vendaAtualizadaOuNull ? prev.map((v) => (v.id === id ? vendaAtualizadaOuNull : v)) : prev.filter((v) => v.id !== id)));
     setVendasPeriodo((prev) => (vendaAtualizadaOuNull ? prev.map((v) => (v.id === id ? vendaAtualizadaOuNull : v)) : prev.filter((v) => v.id !== id)));
   }
+
+  const validasPeriodo=vendasPeriodo.filter(v=>v.status!=="estornada");
+  const vendasItens=new Map();
+
+  validasPeriodo.forEach(v=>{
+    (v.itens||[]).forEach(i=>{
+      if(!i.estoqueId) return;
+      const atual=vendasItens.get(i.estoqueId)||{quantidade:0,faturamento:0,ultimaVenda:null,vendas:0};
+      atual.quantidade+=Number(i.qtd)||0;
+      atual.faturamento+=(Number(i.qtd)||0)*(Number(i.valor)||0);
+      atual.vendas+=1;
+      const ts=new Date(v.timestamp);
+      if(!atual.ultimaVenda || ts>atual.ultimaVenda) atual.ultimaVenda=ts;
+      vendasItens.set(i.estoqueId,atual);
+    });
+  });
+
+  const agora=new Date();
+  const produtosAnalise=estoque.filter(p=>p.categoria==="acessorio").map(p=>{
+    const vd=vendasItens.get(p.id)||{quantidade:0,faturamento:0,ultimaVenda:null,vendas:0};
+    const diasSemVenda=vd.ultimaVenda?Math.max(0,Math.floor((agora-vd.ultimaVenda)/(1000*60*60*24))):null;
+    let giro="sem_giro";
+    if(vd.quantidade>=10) giro="alto";
+    else if(vd.quantidade>=4) giro="saudavel";
+    else if(vd.quantidade>0) giro="baixo";
+    const capital=(Number(p.custo)||0)*(Number(p.quantidade)||0);
+    return {...p,vendidoQtd:vd.quantidade,faturamento:vd.faturamento,ultimaVenda:vd.ultimaVenda,vendas:vd.vendas,diasSemVenda,giro,capital};
+  });
+
+  const filtradosProdutos=produtosAnalise
+    .filter(p=>{
+      const q=buscaProduto.toLowerCase();
+      const match=!q||[p.nome,p.sku,p.marca,p.compatibilidade].some(x=>String(x||"").toLowerCase().includes(q));
+      return match && (filtroGiro==="todos"||p.giro===filtroGiro);
+    })
+    .sort((a,b)=>{
+      if(ordenacao==="faturamento") return b.faturamento-a.faturamento;
+      if(ordenacao==="estoque") return b.vendidoQtd-a.vendidoQtd;
+      if(ordenacao==="capital") return b.capital-a.capital;
+      return b.vendidoQtd-a.vendidoQtd;
+    });
+
+  const totalQtd=produtosAnalise.reduce((a,p)=>a+p.vendidoQtd,0);
+  const faturamentoProdutos=produtosAnalise.reduce((a,p)=>a+p.faturamento,0);
+  const semGiro=produtosAnalise.filter(p=>p.giro==="sem_giro");
+  const capitalParado=semGiro.reduce((a,p)=>a+p.capital,0);
+  const topProduto=[...produtosAnalise].sort((a,b)=>b.vendidoQtd-a.vendidoQtd)[0];
 
   const totais = totaisPorForma(vendasDoDia);
   const total = totalGeral(vendasDoDia);
@@ -2023,122 +2088,127 @@ function RelatorioTab({ caixaAtual, onBuscarVendas, onBuscarVendasPeriodo, onExc
   const totalPeriodo = totalGeral(vendasPeriodo);
   const totaisPeriodo = totaisPorForma(vendasPeriodo);
 
+  function giroInfo(g){
+    if(g==="alto") return {label:"ALTO GIRO",cls:"text-green-300 border-green-500/25 bg-green-500/[.04]"};
+    if(g==="saudavel") return {label:"GIRO SAUDÁVEL",cls:"text-cyan-300 border-cyan-500/25 bg-cyan-500/[.04]"};
+    if(g==="baixo") return {label:"BAIXO GIRO",cls:"text-amber-300 border-amber-500/25 bg-amber-500/[.04]"};
+    return {label:"SEM GIRO",cls:"text-red-300 border-red-500/25 bg-red-500/[.04]"};
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        {[{ id: "dia", label: "Dia" }, { id: "periodo", label: "Período" }].map((m) => (
-          <button key={m.id} onClick={() => setModo(m.id)} className={"flex-1 py-1.5 rounded-lg text-xs tracking-wide border " + (modo === m.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
-            {m.label}
-          </button>
-        ))}
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
+        <button onClick={()=>setGuia("produtos")} className={"rounded-lg py-2.5 text-xs border "+(guia==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Giro</button>
+        <button onClick={()=>setGuia("vendas")} className={"rounded-lg py-2.5 text-xs border "+(guia==="vendas"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Vendas</button>
       </div>
 
-      {modo === "dia" && (
-        <>
-          <Card><Label>Data</Label><Input type="date" value={data} onChange={(e) => setData(e.target.value)} /></Card>
-          <Card>
-            <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do dia</span><span className="font-mono text-2xl text-white">{fmt(total)}</span></div>
-            <div className="text-xs text-[#6E6E78]">{carregando ? "Carregando..." : `${vendasDoDia.length} venda(s)`}</div>
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              {FORMAS.map((f) => (
-                <div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2">
-                  <div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div>
-                  <div className="font-mono text-sm text-[#E5E5EA]">{fmt(totais[f.id])}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <Label>Vendas <span className="normal-case text-[#5A5A64]">(toque pra ver o cupom)</span></Label>
-            {vendasDoDia.length === 0 ? <div className="text-sm text-[#5A5A64] py-6 text-center">{carregando ? "Carregando..." : "Nenhuma venda nesta data"}</div> : (
-              <div className="divide-y divide-[#22222A]">
-                {vendasDoDia.map((v) => (
-                  <button key={v.id} onClick={() => setCupomAberto(v)} className="w-full text-left py-2.5">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-[#6E6E78]">{new Date(v.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {FORMAS.find((f) => f.id === v.formaPagamento)?.label}</span>
-                      <span className="font-mono text-sm text-[#E5E5EA]">{fmt(v.total)}</span>
-                    </div>
-                    <div className="text-xs text-[#8A8A96] mt-0.5">{v.itens.map((i) => i.descricao).join(", ")}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Card>
-        </>
-      )}
+      {guia==="produtos"&&<>
+        <div className="rounded-2xl border border-purple-500/15 bg-gradient-to-br from-purple-500/[.06] via-transparent to-cyan-400/[.035] p-5">
+          <div className="text-[9px] tracking-[.28em] text-purple-300">ENIGMA // PRODUCT INTELLIGENCE</div>
+          <div className="text-xl text-white mt-2">Relatório de Produtos e Giro</div>
+          <div className="text-xs text-[#74747F] mt-1">Veja o que gira, o que está parado e onde vale investir em reposição ou marketing.</div>
+        </div>
 
-      {modo === "periodo" && (
-        <>
-          <Card>
-            <div className="grid grid-cols-2 gap-2">
-              <div><Label>De</Label><Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} /></div>
-              <div><Label>Até</Label><Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} /></div>
-            </div>
-          </Card>
-          <Card>
-            <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do período</span><span className="font-mono text-2xl text-white">{fmt(totalPeriodo)}</span></div>
-            <div className="text-xs text-[#6E6E78]">{carregandoPeriodo ? "Carregando..." : `${vendasPeriodo.length} venda(s) em ${diasOrdenados.length} dia(s)`}</div>
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              {FORMAS.map((f) => (
-                <div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2">
-                  <div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div>
-                  <div className="font-mono text-sm text-[#E5E5EA]">{fmt(totaisPeriodo[f.id])}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <Label>Por dia</Label>
-            {diasOrdenados.length === 0 ? (
-              <div className="text-sm text-[#5A5A64] py-6 text-center">{carregandoPeriodo ? "Carregando..." : "Nenhuma venda no período"}</div>
-            ) : (
-              <div className="divide-y divide-[#22222A]">
-                {diasOrdenados.map((d) => {
-                  const vendasDia = porDia[d];
-                  const totalDia = totalGeral(vendasDia);
-                  const aberto = diaExpandido === d;
-                  return (
-                    <div key={d}>
-                      <button onClick={() => setDiaExpandido(aberto ? null : d)} className="w-full flex items-center justify-between py-2.5">
-                        <div className="text-left">
-                          <div className="text-sm text-[#E5E5EA]">{fmtDate(d)}</div>
-                          <div className="text-xs text-[#6E6E78]">{vendasDia.length} venda(s)</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-[#E5E5EA]">{fmt(totalDia)}</span>
-                          {aberto ? <ChevronDown size={15} className="text-[#6E6E78]" /> : <ChevronRight size={15} className="text-[#6E6E78]" />}
-                        </div>
-                      </button>
-                      {aberto && (
-                        <div className="pb-2 pl-2 space-y-1">
-                          {vendasDia.map((v) => (
-                            <button key={v.id} onClick={() => setCupomAberto(v)} className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-[#0F0F14]">
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-[#8A8A96]">{new Date(v.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {FORMAS.find((f) => f.id === v.formaPagamento)?.label}</span>
-                                <span className="font-mono text-xs text-[#C9C9D2]">{fmt(v.total)}</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        </>
-      )}
+        <Card>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {[["hoje","Hoje"],["7","7 dias"],["30","30 dias"],["mes","Este mês"]].map(([id,label])=><button key={id} onClick={()=>aplicarPeriodoRapido(id)} className="rounded-lg border border-white/10 px-3 py-2 text-[10px] text-[#A0A0AA] hover:border-purple-500/30">{label}</button>)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label>De</Label><Input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)}/></div>
+            <div><Label>Até</Label><Input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/></div>
+          </div>
+          <div className="text-[9px] text-[#5F5F69] mt-2">Os indicadores abaixo consideram somente vendas concluídas no período. Estornos ficam fora do cálculo.</div>
+        </Card>
 
-      {cupomAberto && (
-        <CupomVenda
-          venda={cupomAberto}
-          onFechar={() => setCupomAberto(null)}
-          onExcluirVenda={onExcluirVenda}
-          onEditarVenda={onEditarVenda}
-          onAtualizado={(nova) => atualizarListaLocal(nova, cupomAberto.id)}
-        />
-      )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <MetricCyber label="UNIDADES VENDIDAS" value={String(totalQtd)} sub={`${produtosAnalise.filter(p=>p.vendidoQtd>0).length} produto(s)`}/>
+          <MetricCyber label="FATURAMENTO PRODUTOS" value={fmt(faturamentoProdutos)} sub="itens de estoque"/>
+          <MetricCyber label="SEM GIRO" value={String(semGiro.length)} sub="zero vendas no período"/>
+          <MetricCyber label="CAPITAL PARADO" value={fmt(capitalParado)} sub="custo dos sem giro"/>
+        </div>
+
+        {topProduto&&topProduto.vendidoQtd>0&&<div className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4 flex justify-between gap-4 items-center">
+          <div><div className="text-[9px] tracking-[.18em] text-green-300">CAMPEÃO DE GIRO</div><div className="text-sm text-white mt-1">{topProduto.nome}</div><div className="text-[10px] text-[#71717C] mt-1">{topProduto.vendidoQtd} unidade(s) vendida(s) · {fmt(topProduto.faturamento)}</div></div>
+          <div className="text-2xl">🔥</div>
+        </div>}
+
+        <Card>
+          <div className="grid md:grid-cols-[1fr_auto_auto] gap-2">
+            <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={buscaProduto} onChange={e=>setBuscaProduto(e.target.value)} placeholder="Buscar produto, SKU, marca ou modelo" className="pl-9"/></div>
+            <select value={filtroGiro} onChange={e=>setFiltroGiro(e.target.value)} className="rounded-lg bg-[#0F0F14] border border-[#2A2A34] px-3 py-2 text-xs">
+              <option value="todos">Todos os giros</option><option value="alto">Alto giro</option><option value="saudavel">Giro saudável</option><option value="baixo">Baixo giro</option><option value="sem_giro">Sem giro</option>
+            </select>
+            <select value={ordenacao} onChange={e=>setOrdenacao(e.target.value)} className="rounded-lg bg-[#0F0F14] border border-[#2A2A34] px-3 py-2 text-xs">
+              <option value="quantidade">Mais vendidos</option><option value="faturamento">Maior faturamento</option><option value="estoque">Maior estoque</option><option value="capital">Maior capital parado</option>
+            </select>
+          </div>
+        </Card>
+
+        {carregandoPeriodo?<Card className="text-center py-10"><div className="text-xs text-[#666672]">Calculando relatório...</div></Card>:
+        filtradosProdutos.length===0?<Card className="text-center py-10"><Package className="mx-auto mb-3 text-[#555560]" size={24}/><div className="text-xs text-[#666672]">Nenhum produto encontrado.</div></Card>:
+        <div className="space-y-2">{filtradosProdutos.map((p,idx)=>{const gi=giroInfo(p.giro);return <Card key={p.id} className="!p-0 overflow-hidden">
+          <div className="p-4 grid md:grid-cols-[40px_1.5fr_repeat(5,.72fr)] gap-3 items-center">
+            <div className="hidden md:flex w-8 h-8 rounded-lg border border-white/8 items-center justify-center font-mono text-xs text-[#777783]">#{idx+1}</div>
+            <div>
+              <div className="text-sm text-white">{p.nome}</div>
+              <div className="text-[10px] text-[#64646F] mt-1">{p.sku?`SKU ${p.sku}`:"Sem SKU"}{p.compatibilidade?` · ${p.compatibilidade}`:""}</div>
+              <span className={"inline-block mt-2 rounded-full border px-2 py-1 text-[8px] "+gi.cls}>{gi.label}</span>
+            </div>
+            <div><div className="text-[8px] text-[#5F5F69]">VENDIDO</div><div className="font-mono text-sm mt-1">{p.vendidoQtd} un</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">FATURAMENTO</div><div className="font-mono text-sm mt-1">{fmt(p.faturamento)}</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">ESTOQUE</div><div className="font-mono text-sm mt-1">{p.quantidade} un</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">ÚLTIMA VENDA</div><div className="text-xs mt-1">{p.ultimaVenda?p.diasSemVenda===0?"Hoje":`${p.diasSemVenda} dia(s)`:"Nenhuma"}</div></div>
+            <div><div className="text-[8px] text-[#5F5F69]">CAPITAL ESTOQUE</div><div className="font-mono text-sm mt-1">{fmt(p.capital)}</div></div>
+          </div>
+          {p.giro==="sem_giro"&&p.quantidade>0&&<div className="border-t border-red-500/10 bg-red-500/[.02] px-4 py-2 text-[10px] text-red-200">Sem vendas no período e com estoque disponível. Candidato a ação de marketing, exposição ou revisão de mix.</div>}
+          {p.giro==="baixo"&&p.quantidade>0&&<div className="border-t border-amber-500/10 bg-amber-500/[.02] px-4 py-2 text-[10px] text-amber-200">Baixo giro no período. Vale acompanhar antes de repor em grande volume.</div>}
+          {p.giro==="alto"&&p.quantidade<=p.estoqueMinimo&&<div className="border-t border-green-500/10 bg-green-500/[.02] px-4 py-2 text-[10px] text-green-200">Alto giro com estoque próximo do mínimo. Prioridade de reposição.</div>}
+        </Card>})}</div>}
+      </>}
+
+      {guia==="vendas"&&<>
+        <div className="flex gap-2">
+          {[{ id: "dia", label: "Dia" }, { id: "periodo", label: "Período" }].map((m) => (
+            <button key={m.id} onClick={() => setModo(m.id)} className={"flex-1 py-1.5 rounded-lg text-xs tracking-wide border " + (modo === m.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {modo === "dia" && (
+          <>
+            <Card><Label>Data</Label><Input type="date" value={data} onChange={(e) => setData(e.target.value)} /></Card>
+            <Card>
+              <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do dia</span><span className="font-mono text-2xl text-white">{fmt(total)}</span></div>
+              <div className="text-xs text-[#6E6E78]">{carregando ? "Carregando..." : `${vendasDoDia.length} venda(s)`}</div>
+              <div className="grid grid-cols-2 gap-2 mt-4">{FORMAS.map(f=><div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2"><div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div><div className="font-mono text-sm text-[#E5E5EA]">{fmt(totais[f.id])}</div></div>)}</div>
+            </Card>
+            <Card>
+              <Label>Vendas <span className="normal-case text-[#5A5A64]">(toque pra ver o cupom)</span></Label>
+              {vendasDoDia.length === 0 ? <div className="text-sm text-[#5A5A64] py-6 text-center">{carregando ? "Carregando..." : "Nenhuma venda nesta data"}</div> :
+              <div className="divide-y divide-[#22222A]">{vendasDoDia.map(v=><button key={v.id} onClick={()=>setCupomAberto(v)} className="w-full text-left py-2.5"><div className="flex justify-between items-center"><span className="text-xs text-[#6E6E78]">{new Date(v.timestamp).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} · {FORMAS.find(f=>f.id===v.formaPagamento)?.label}</span><span className="font-mono text-sm text-[#E5E5EA]">{fmt(v.total)}</span></div><div className="text-xs text-[#8A8A96] mt-0.5">{v.itens.map(i=>i.descricao).join(", ")}</div></button>)}</div>}
+            </Card>
+          </>
+        )}
+
+        {modo === "periodo" && (
+          <>
+            <Card><div className="grid grid-cols-2 gap-2"><div><Label>De</Label><Input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)}/></div><div><Label>Até</Label><Input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/></div></div></Card>
+            <Card>
+              <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do período</span><span className="font-mono text-2xl text-white">{fmt(totalPeriodo)}</span></div>
+              <div className="text-xs text-[#6E6E78]">{carregandoPeriodo ? "Carregando..." : `${vendasPeriodo.length} venda(s) em ${diasOrdenados.length} dia(s)`}</div>
+              <div className="grid grid-cols-2 gap-2 mt-4">{FORMAS.map(f=><div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2"><div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div><div className="font-mono text-sm text-[#E5E5EA]">{fmt(totaisPeriodo[f.id])}</div></div>)}</div>
+            </Card>
+            <Card>
+              <Label>Por dia</Label>
+              {diasOrdenados.length===0?<div className="text-sm text-[#5A5A64] py-6 text-center">{carregandoPeriodo?"Carregando...":"Nenhuma venda no período"}</div>:
+              <div className="divide-y divide-[#22222A]">{diasOrdenados.map(d=>{const vd=porDia[d];const td=totalGeral(vd);const aberto=diaExpandido===d;return <div key={d}><button onClick={()=>setDiaExpandido(aberto?null:d)} className="w-full flex items-center justify-between py-2.5"><div className="text-left"><div className="text-sm text-[#E5E5EA]">{fmtDate(d)}</div><div className="text-xs text-[#6E6E78]">{vd.length} venda(s)</div></div><div className="flex items-center gap-2"><span className="font-mono text-sm text-[#E5E5EA]">{fmt(td)}</span>{aberto?<ChevronDown size={15}/>:<ChevronRight size={15}/>}</div></button>{aberto&&<div className="pb-2 pl-2 space-y-1">{vd.map(v=><button key={v.id} onClick={()=>setCupomAberto(v)} className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-[#0F0F14]"><div className="flex justify-between items-center"><span className="text-xs text-[#8A8A96]">{new Date(v.timestamp).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} · {FORMAS.find(f=>f.id===v.formaPagamento)?.label}</span><span className="font-mono text-xs text-[#C9C9D2]">{fmt(v.total)}</span></div></button>)}</div>}</div>})}</div>}
+            </Card>
+          </>
+        )}
+      </>}
+
+      {cupomAberto && <CupomVenda venda={cupomAberto} onFechar={()=>setCupomAberto(null)} onExcluirVenda={onExcluirVenda} onEditarVenda={onEditarVenda} onAtualizado={(nova)=>atualizarListaLocal(nova,cupomAberto.id)}/>}
     </div>
   );
 }
