@@ -2900,6 +2900,9 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
 function TabelaPeliculasTab({ estoque=[] }) {
   const [secao,setSecao]=useState("consulta");
   const [grupos,setGrupos]=useState([]);
+  const [vinculos,setVinculos]=useState([]);
+  const [vinculando,setVinculando]=useState(false);
+  const [produtoVinculo,setProdutoVinculo]=useState("");
   const [loading,setLoading]=useState(true);
   const [busca,setBusca]=useState("");
   const [selecionado,setSelecionado]=useState(null);
@@ -2919,8 +2922,12 @@ function TabelaPeliculasTab({ estoque=[] }) {
   async function carregar(){
     setLoading(true);
     try{
-      const rows=await sb("pelicula_grupos?select=*&ativo=eq.true&order=marca.asc,nome.asc");
+      const [rows,links]=await Promise.all([
+        sb("pelicula_grupos?select=*&ativo=eq.true&order=marca.asc,nome.asc"),
+        sb("pelicula_estoque_links?select=*").catch(()=>[])
+      ]);
       setGrupos((rows||[]).map(r=>({...r,modelos:Array.isArray(r.modelos)?r.modelos:[]})));
+      setVinculos(links||[]);
     }catch(e){
       console.warn("Base de películas indisponível:",e);
       setGrupos([]);
@@ -3005,11 +3012,37 @@ function TabelaPeliculasTab({ estoque=[] }) {
   const peliculasEstoque=estoque.filter(p=>p.categoria==="acessorio"&&parecePelicula(p));
 
   function estoqueDoGrupo(g){
+    const idsManuais=new Set(vinculos.filter(v=>v.grupo_id===g.id).map(v=>String(v.estoque_id)));
     const termos=[g.nome,...(g.modelos||[])].map(normalizar).filter(Boolean);
-    return peliculasEstoque.filter(p=>{
-      const t=normalizar(`${p.nome||""} ${p.compatibilidade||""} ${p.sku||""}`);
-      return termos.some(k=>k.length>=3 && (t.includes(k)||k.includes(t)));
-    }).sort((a,b)=>(Number(b.quantidade)>0?1:0)-(Number(a.quantidade)>0?1:0)||Number(b.quantidade)-Number(a.quantidade));
+    const tokensModelo=termos.flatMap(k=>k.split(" ").filter(x=>x.length>=2));
+    return estoque.filter(p=>{
+      if(idsManuais.has(String(p.id))) return true;
+      if(p.categoria!=="acessorio"||!parecePelicula(p)) return false;
+      const t=normalizar(`${p.nome||""} ${p.compatibilidade||""} ${p.sku||""} ${p.marca||""}`);
+      if(termos.some(k=>k.length>=3 && t.includes(k))) return true;
+      return tokensModelo.some(k=>/^(?:[a-z]{0,3}\d+[a-z0-9]*|iphone|galaxy|moto|redmi|poco)$/i.test(k) && t.split(" ").includes(k));
+    }).sort((a,b)=>{
+      const am=idsManuais.has(String(a.id))?1:0,bm=idsManuais.has(String(b.id))?1:0;
+      return bm-am||(Number(b.quantidade)>0?1:0)-(Number(a.quantidade)>0?1:0)||Number(b.quantidade)-Number(a.quantidade);
+    });
+  }
+
+  async function vincularProduto(){
+    if(!selecionado||!produtoVinculo)return;
+    if(vinculos.some(v=>v.grupo_id===selecionado.id&&String(v.estoque_id)===String(produtoVinculo))){
+      setVinculando(false);setProdutoVinculo("");return;
+    }
+    try{
+      await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
+      await carregar();setVinculando(false);setProdutoVinculo("");
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V3.7 no Supabase.");}
+  }
+
+  async function removerVinculo(produtoId){
+    const link=vinculos.find(v=>v.grupo_id===selecionado?.id&&String(v.estoque_id)===String(produtoId));
+    if(!link)return;
+    try{await sb(`pelicula_estoque_links?id=eq.${link.id}`,{method:"DELETE"});await carregar();}
+    catch(e){alert("Não foi possível remover o vínculo.");}
   }
 
   const estoqueSelecionado=selecionado?estoqueDoGrupo(selecionado):[];
@@ -3205,6 +3238,16 @@ function TabelaPeliculasTab({ estoque=[] }) {
           <div className="flex justify-between gap-3"><div><div className="text-[9px] tracking-[.2em] text-purple-300">GRUPO COMPATÍVEL</div><div className="text-xl text-white mt-1">{selecionado.nome}</div><div className="text-xs text-[#666672] mt-1">{selecionado.marca||"Marca não informada"}</div></div><button onClick={()=>editarGrupo(selecionado)} className="text-xs text-cyan-300">Editar</button></div>
           <div className="flex flex-wrap gap-2 mt-4">{(selecionado.modelos||[]).map(m=><span key={m} className={"rounded-full border px-3 py-1.5 text-[10px] "+(normalizar(m)===q?"border-purple-500/35 bg-purple-500/10 text-purple-200":"border-white/8 text-[#A0A0AA]")}>{m}</span>)}</div>
           {selecionado.observacao&&<div className="mt-4 text-xs text-[#777783]">{selecionado.observacao}</div>}
+          <div className="mt-4 pt-4 border-t border-white/6">
+            {!vinculando?<button onClick={()=>setVinculando(true)} className="inline-flex items-center gap-2 text-[10px] text-cyan-300"><LinkIcon size={13}/> Vincular produto do estoque manualmente</button>:
+            <div className="flex flex-col md:flex-row gap-2">
+              <select value={produtoVinculo} onChange={e=>setProdutoVinculo(e.target.value)} className="flex-1 h-10 rounded-xl border border-white/10 bg-[#101017] px-3 text-xs text-white">
+                <option value="">Selecione um produto do estoque...</option>
+                {estoque.filter(p=>p.categoria==="acessorio").sort((a,b)=>String(a.nome).localeCompare(String(b.nome),"pt-BR")).map(p=><option key={p.id} value={p.id}>{p.nome} — {p.quantidade} un</option>)}
+              </select>
+              <Button onClick={vincularProduto}>Vincular</Button><Button variant="ghost" onClick={()=>{setVinculando(false);setProdutoVinculo("")}}>Cancelar</Button>
+            </div>}
+          </div>
         </Card>
         <div className="grid grid-cols-3 gap-2">
           <MetricCyber label="PRODUTOS" value={String(estoqueSelecionado.length)} sub="películas relacionadas"/>
@@ -3214,7 +3257,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
         <Card>
           <div className="text-[9px] tracking-[.2em] text-green-300 mb-3">DISPONÍVEL NA ENIGMA</div>
           {!estoqueDisponivel.length?<div className="rounded-xl border border-amber-500/15 bg-amber-500/[.035] p-5 text-center text-sm text-amber-200">O grupo existe, mas nenhuma película compatível foi localizada com saldo no estoque.</div>:
-          <div className="grid md:grid-cols-2 gap-3">{estoqueDisponivel.map(p=><div key={p.id} className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4"><div className="flex justify-between gap-3"><div><div className="text-sm">{p.nome}</div><div className="text-[9px] text-[#666672] mt-1">{p.compatibilidade||"Sem descrição de compatibilidade"}</div></div><span className="text-[9px] text-green-300">{p.quantidade} un</span></div><div className="flex justify-between mt-3 pt-3 border-t border-white/6"><span className="text-[9px] text-[#555560]">{p.sku||"Sem SKU"}</span><span className="font-mono text-xs">{fmt(p.preco)}</span></div></div>)}</div>}
+          <div className="grid md:grid-cols-2 gap-3">{estoqueDisponivel.map(p=>{const manual=vinculos.some(v=>v.grupo_id===selecionado.id&&String(v.estoque_id)===String(p.id));return <div key={p.id} className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4"><div className="flex justify-between gap-3"><div><div className="text-sm">{p.nome}</div><div className="text-[9px] text-[#666672] mt-1">{p.compatibilidade||"Sem descrição de compatibilidade"}</div>{manual&&<div className="text-[8px] text-cyan-300 mt-1">VÍNCULO MANUAL CONFIRMADO</div>}</div><span className="text-[9px] text-green-300">{p.quantidade} un</span></div><div className="flex justify-between items-center mt-3 pt-3 border-t border-white/6"><span className="text-[9px] text-[#555560]">{p.sku||"Sem SKU"}</span><div className="flex items-center gap-3"><span className="font-mono text-xs">{fmt(p.preco)}</span>{manual&&<button onClick={()=>removerVinculo(p.id)} className="text-[8px] text-red-300">desvincular</button>}</div></div></div>})}</div>}
         </Card>
       </div>}
     </>}
