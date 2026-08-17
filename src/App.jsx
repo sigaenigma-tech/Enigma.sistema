@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.1</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.2</div>
     </aside>
   );
 }
@@ -1235,7 +1235,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1989,6 +1989,9 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
   const [buscaProduto,setBuscaProduto]=useState("");
   const [filtroGiro,setFiltroGiro]=useState("todos");
   const [ordenacao,setOrdenacao]=useState("quantidade");
+  const [osRelatorio,setOsRelatorio]=useState([]);
+  const [loadingOSRelatorio,setLoadingOSRelatorio]=useState(false);
+  const [buscaOSRelatorio,setBuscaOSRelatorio]=useState("");
 
   function aplicarPeriodoRapido(tipo){
     const fim=new Date();
@@ -2022,6 +2025,25 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
       .finally(() => { if (ativo) setCarregandoPeriodo(false); });
     return () => { ativo = false; };
   }, [dataInicio, dataFim, modo, guia]);
+
+  useEffect(()=>{
+    if(guia!=="assistencia") return;
+    let ativo=true;
+    setLoadingOSRelatorio(true);
+    (async()=>{
+      try{
+        const inicio=`${dataInicio}T00:00:00`;
+        const fim=`${dataFim}T23:59:59.999`;
+        const rows=await sb(`ordens_servico?select=id,numero,data_entrada,cliente,aparelho,problema_relatado,status,valor_final,valor_mao_de_obra,pecas_usadas,timeline,diagnostico_tecnico,orcamento&data_entrada=gte.${inicio}&data_entrada=lte.${fim}&order=data_entrada.desc`);
+        if(ativo) setOsRelatorio(rows||[]);
+      }catch(e){
+        console.warn("Não foi possível carregar relatório da assistência:",e);
+        if(ativo) setOsRelatorio([]);
+      }
+      if(ativo) setLoadingOSRelatorio(false);
+    })();
+    return()=>{ativo=false};
+  },[guia,dataInicio,dataFim]);
 
   function atualizarListaLocal(vendaAtualizadaOuNull, idOriginal) {
     const id = vendaAtualizadaOuNull ? vendaAtualizadaOuNull.id : idOriginal;
@@ -2088,6 +2110,55 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
   const menorMargem=[...produtosAnalise].filter(p=>p.vendidoQtd>0).sort((a,b)=>a.margem-b.margem)[0];
   const rankingLucro=[...produtosAnalise].filter(p=>p.vendidoQtd>0).sort((a,b)=>b.lucroBruto-a.lucroBruto);
 
+  const osEntregues=osRelatorio.filter(o=>o.status==="entregue");
+  const osCanceladas=osRelatorio.filter(o=>o.status==="cancelado");
+  const osEmAndamento=osRelatorio.filter(o=>!["entregue","cancelado"].includes(o.status));
+  const faturamentoOS=osEntregues.reduce((a,o)=>a+Number(o.valor_final||0),0);
+  const ticketMedioOS=osEntregues.filter(o=>Number(o.valor_final||0)>0).length
+    ? faturamentoOS/osEntregues.filter(o=>Number(o.valor_final||0)>0).length : 0;
+
+  const temposConclusao=osEntregues.map(o=>{
+    const entrada=new Date(o.data_entrada);
+    const eventos=Array.isArray(o.timeline)?o.timeline:[];
+    const fimEvt=[...eventos].reverse().find(e=>["entregue","pronto"].includes(e.status));
+    if(!fimEvt?.timestamp||Number.isNaN(entrada.getTime())) return null;
+    return (new Date(fimEvt.timestamp)-entrada)/(1000*60*60*24);
+  }).filter(v=>v!==null&&v>=0);
+  const tempoMedioOS=temposConclusao.length?temposConclusao.reduce((a,b)=>a+b,0)/temposConclusao.length:null;
+
+  const mapaAparelhos={};
+  osRelatorio.forEach(o=>{
+    const nome=String(o.aparelho?.marcaModelo||"Não informado").trim()||"Não informado";
+    mapaAparelhos[nome]=(mapaAparelhos[nome]||0)+1;
+  });
+  const rankingAparelhos=Object.entries(mapaAparelhos).sort((a,b)=>b[1]-a[1]);
+
+  const mapaProblemas={};
+  osRelatorio.forEach(o=>{
+    const texto=String(o.problema_relatado||"").trim();
+    if(!texto) return;
+    const chave=texto.length>80?texto.slice(0,77)+"...":texto;
+    mapaProblemas[chave]=(mapaProblemas[chave]||0)+1;
+  });
+  const rankingProblemas=Object.entries(mapaProblemas).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  const mapaPecas={};
+  osRelatorio.forEach(o=>{
+    (o.pecas_usadas||[]).forEach(p=>{
+      const nome=String(p.nome||"Peça").trim();
+      mapaPecas[nome]=(mapaPecas[nome]||0)+(Number(p.qtd)||0);
+    });
+  });
+  const rankingPecas=Object.entries(mapaPecas).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  const osFiltradas=osRelatorio.filter(o=>{
+    const q=buscaOSRelatorio.toLowerCase();
+    return !q || [
+      o.numero,o.cliente?.nome,o.cliente?.telefone,o.aparelho?.marcaModelo,
+      o.problema_relatado,o.diagnostico_tecnico,statusInfo(o.status).label
+    ].some(v=>String(v||"").toLowerCase().includes(q));
+  });
+
   const totais = totaisPorForma(vendasDoDia);
   const total = totalGeral(vendasDoDia);
 
@@ -2109,10 +2180,11 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
-        <button onClick={()=>setGuia("produtos")} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(guia==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Giro</button>
-        <button onClick={()=>setGuia("rentabilidade")} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(guia==="rentabilidade"?"border-green-500/30 bg-green-500/[.06] text-white":"border-transparent text-[#777783]")}>Rentabilidade</button>
-        <button onClick={()=>setGuia("vendas")} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(guia==="vendas"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Vendas</button>
+      <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/10 bg-white/[.015] p-1">
+        <button onClick={()=>setGuia("produtos")} className={"rounded-lg py-2.5 text-[9px] md:text-xs border "+(guia==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Giro</button>
+        <button onClick={()=>setGuia("rentabilidade")} className={"rounded-lg py-2.5 text-[9px] md:text-xs border "+(guia==="rentabilidade"?"border-green-500/30 bg-green-500/[.06] text-white":"border-transparent text-[#777783]")}>Rentabilidade</button>
+        <button onClick={()=>setGuia("assistencia")} className={"rounded-lg py-2.5 text-[9px] md:text-xs border "+(guia==="assistencia"?"border-cyan-500/30 bg-cyan-500/[.06] text-white":"border-transparent text-[#777783]")}>Assistência</button>
+        <button onClick={()=>setGuia("vendas")} className={"rounded-lg py-2.5 text-[9px] md:text-xs border "+(guia==="vendas"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Vendas</button>
       </div>
 
       {guia==="produtos"&&<>
@@ -2250,6 +2322,92 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
         <div className="rounded-xl border border-white/8 bg-white/[.015] p-4">
           <div className="text-[9px] tracking-[.18em] text-[#777783]">COMO LER ESTE RELATÓRIO</div>
           <div className="text-xs leading-5 text-[#777783] mt-2">Lucro bruto estimado = faturamento do produto − custo cadastrado × quantidade vendida. Ele não desconta aluguel, taxas, impostos, marketing ou outras despesas operacionais. Para lucro líquido, usamos o Financeiro Geral.</div>
+        </div>
+      </>}
+
+      {guia==="assistencia"&&<>
+        <div className="rounded-2xl border border-cyan-500/15 bg-gradient-to-br from-cyan-500/[.05] via-transparent to-purple-500/[.04] p-5">
+          <div className="text-[9px] tracking-[.28em] text-cyan-300">ENIGMA // SERVICE INTELLIGENCE</div>
+          <div className="text-xl text-white mt-2">Relatório da Assistência Técnica</div>
+          <div className="text-xs text-[#74747F] mt-1">Volume de OS, desempenho operacional, aparelhos atendidos e recorrência de reparos.</div>
+        </div>
+
+        <Card>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {[["hoje","Hoje"],["7","7 dias"],["30","30 dias"],["mes","Este mês"]].map(([id,label])=><button key={id} onClick={()=>aplicarPeriodoRapido(id)} className="rounded-lg border border-white/10 px-3 py-2 text-[10px] text-[#A0A0AA] hover:border-cyan-500/30">{label}</button>)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label>De</Label><Input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)}/></div>
+            <div><Label>Até</Label><Input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/></div>
+          </div>
+          <div className="text-[9px] text-[#5F5F69] mt-2">O período considera a data de entrada da OS. Valores de faturamento consideram somente ordens marcadas como Entregue.</div>
+        </Card>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <MetricCyber label="OS RECEBIDAS" value={String(osRelatorio.length)} sub="no período"/>
+          <MetricCyber label="ENTREGUES" value={String(osEntregues.length)} sub={`${osEmAndamento.length} em andamento`}/>
+          <MetricCyber label="FATURAMENTO ENTREGUE" value={fmt(faturamentoOS)} sub="valor final das OS"/>
+          <MetricCyber label="TICKET MÉDIO" value={fmt(ticketMedioOS)} sub="OS entregues com valor"/>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.025] p-4">
+            <div className="text-[9px] tracking-[.18em] text-cyan-300">TEMPO MÉDIO ATÉ CONCLUSÃO</div>
+            <div className="font-mono text-2xl text-white mt-2">{tempoMedioOS===null?"—":`${tempoMedioOS.toFixed(1)} dia(s)`}</div>
+            <div className="text-[10px] text-[#666672] mt-1">Com base na linha do tempo das OS entregues</div>
+          </div>
+          <div className="rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-4">
+            <div className="text-[9px] tracking-[.18em] text-purple-300">EM ANDAMENTO</div>
+            <div className="font-mono text-2xl text-white mt-2">{osEmAndamento.length}</div>
+            <div className="text-[10px] text-[#666672] mt-1">Diagnóstico, aprovação, reparo ou retirada</div>
+          </div>
+          <div className="rounded-xl border border-red-500/15 bg-red-500/[.025] p-4">
+            <div className="text-[9px] tracking-[.18em] text-red-300">CANCELADAS</div>
+            <div className="font-mono text-2xl text-white mt-2">{osCanceladas.length}</div>
+            <div className="text-[10px] text-[#666672] mt-1">No período selecionado</div>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-3">
+          <Card>
+            <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">APARELHOS MAIS ATENDIDOS</div>
+            {!rankingAparelhos.length?<div className="text-xs text-[#666672] py-5">Sem dados.</div>:<div className="space-y-2">{rankingAparelhos.slice(0,8).map(([nome,qtd],idx)=><div key={nome} className="flex justify-between gap-3 border-b border-white/5 pb-2"><div className="text-xs text-[#D9D9DF]"><span className="text-[#555560] mr-2">#{idx+1}</span>{nome}</div><div className="font-mono text-xs text-cyan-300">{qtd}</div></div>)}</div>}
+          </Card>
+
+          <Card>
+            <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">PROBLEMAS RELATADOS</div>
+            {!rankingProblemas.length?<div className="text-xs text-[#666672] py-5">Sem dados.</div>:<div className="space-y-2">{rankingProblemas.map(([nome,qtd],idx)=><div key={`${nome}-${idx}`} className="flex justify-between gap-3 border-b border-white/5 pb-2"><div className="text-xs text-[#D9D9DF] line-clamp-2">{nome}</div><div className="font-mono text-xs text-purple-300">{qtd}</div></div>)}</div>}
+          </Card>
+
+          <Card>
+            <div className="text-[9px] tracking-[.2em] text-green-300 mb-3">PEÇAS MAIS UTILIZADAS</div>
+            {!rankingPecas.length?<div className="text-xs text-[#666672] py-5">Nenhuma peça vinculada às OS.</div>:<div className="space-y-2">{rankingPecas.map(([nome,qtd],idx)=><div key={nome} className="flex justify-between gap-3 border-b border-white/5 pb-2"><div className="text-xs text-[#D9D9DF]"><span className="text-[#555560] mr-2">#{idx+1}</span>{nome}</div><div className="font-mono text-xs text-green-300">{qtd} un</div></div>)}</div>}
+          </Card>
+        </div>
+
+        <Card>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div><div className="text-[9px] tracking-[.2em] text-[#8A8A96]">ORDENS DO PERÍODO</div><div className="text-[10px] text-[#5F5F69] mt-1">Visão operacional completa</div></div>
+            <div className="text-[10px] text-[#666672]">{osFiltradas.length} OS</div>
+          </div>
+          <div className="relative mb-3"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={buscaOSRelatorio} onChange={e=>setBuscaOSRelatorio(e.target.value)} placeholder="Buscar OS, cliente, aparelho, problema ou status" className="pl-9"/></div>
+          {loadingOSRelatorio?<div className="py-8 text-center text-xs text-[#666672]">Calculando assistência...</div>:!osFiltradas.length?<div className="py-8 text-center text-xs text-[#666672]">Nenhuma OS no período.</div>:
+          <div className="space-y-2">{osFiltradas.map(o=>{
+            const st=statusInfo(o.status);
+            const valor=Number(o.valor_final||0);
+            return <div key={o.id} className="rounded-xl border border-white/8 bg-white/[.012] p-3 grid md:grid-cols-[.55fr_1.4fr_1.3fr_.9fr_.7fr] gap-3 items-center">
+              <div><div className="text-[8px] text-[#5F5F69]">OS</div><div className="font-mono text-xs mt-1">#{o.numero||"—"}</div><div className="text-[9px] text-[#555560] mt-1">{fmtDate(o.data_entrada)}</div></div>
+              <div><div className="text-xs text-white">{o.cliente?.nome||"Cliente"}</div><div className="text-[10px] text-[#666672] mt-1">{o.aparelho?.marcaModelo||"Aparelho não informado"}</div></div>
+              <div><div className="text-[8px] text-[#5F5F69]">PROBLEMA</div><div className="text-[10px] text-[#A0A0AA] mt-1 line-clamp-2">{o.problema_relatado||"—"}</div></div>
+              <div><span className="text-[9px] px-2 py-1 rounded-full border" style={{color:st.color,borderColor:st.color+"55",backgroundColor:st.color+"15"}}>{st.label}</span></div>
+              <div className="md:text-right"><div className="text-[8px] text-[#5F5F69]">VALOR FINAL</div><div className="font-mono text-xs mt-1">{valor>0?fmt(valor):"—"}</div></div>
+            </div>
+          })}</div>}
+        </Card>
+
+        <div className="rounded-xl border border-white/8 bg-white/[.015] p-4">
+          <div className="text-[9px] tracking-[.18em] text-[#777783]">LEITURA GERENCIAL</div>
+          <div className="text-xs leading-5 text-[#777783] mt-2">Aparelhos e problemas recorrentes ajudam a decidir estoque de peças, conteúdo de marketing e especialização técnica. O tempo médio depende dos eventos registrados na linha do tempo de cada OS; quanto mais consistente o fluxo, mais preciso fica o indicador.</div>
         </div>
       </>}
 
