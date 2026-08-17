@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.9</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V2.9.1</div>
     </aside>
   );
 }
@@ -1235,7 +1235,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.9</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V2.9.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -1808,6 +1808,128 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
 function FechamentoCaixaModal({caixa,onFechar}){
   const t=caixa.total_por_forma||{};
   const dif=Number(caixa.diferenca||0);
+  const [vendas,setVendas]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    let ativo=true;
+    (async()=>{
+      try{
+        const rows=await sb(`vendas?select=*&caixa_id=eq.${caixa.id}&order=timestamp.asc`);
+        if(ativo) setVendas((rows||[]).map(rowToVenda));
+      }catch(e){
+        console.warn("Não foi possível carregar as vendas do fechamento:",e);
+        if(ativo) setVendas([]);
+      }
+      if(ativo) setLoading(false);
+    })();
+    return()=>{ativo=false};
+  },[caixa.id]);
+
+  function imprimirRelatorio(){
+    const validas=vendas.filter(v=>v.status!=="estornada");
+    const estornadas=vendas.filter(v=>v.status==="estornada");
+    const totaisFormas=caixa.total_por_forma||{};
+    const linhasVendas=vendas.map((v,idx)=>{
+      const itens=(v.itens||[]).map(i=>`
+        <tr>
+          <td>${escapeHtml(i.descricao||"Item")}</td>
+          <td class="center">${Number(i.qtd||0)}</td>
+          <td class="right">${fmtPrint(Number(i.valor||0))}</td>
+          <td class="right">${fmtPrint((Number(i.valor||0))*(Number(i.qtd||0)))}</td>
+        </tr>`).join("");
+      return `
+        <div class="sale ${v.status==="estornada"?"void":""}">
+          <div class="sale-head">
+            <div><strong>Venda ${String(idx+1).padStart(2,"0")}</strong> · ${formatDateTimePrint(v.timestamp)}</div>
+            <div><strong>${v.status==="estornada"?"ESTORNADA":"CONCLUÍDA"}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Item</th><th class="center">Qtd.</th><th class="right">Unit.</th><th class="right">Total</th></tr></thead>
+            <tbody>${itens || '<tr><td colspan="4">Sem itens registrados</td></tr>'}</tbody>
+          </table>
+          <div class="sale-foot">
+            <span>Pagamento: ${escapeHtml((FORMAS.find(f=>f.id===v.formaPagamento)?.label)||v.formaPagamento||"-")}</span>
+            <strong>${fmtPrint(v.total)}</strong>
+          </div>
+          ${v.status==="estornada" && v.motivoCancelamento ? `<div class="reason">Motivo do estorno: ${escapeHtml(v.motivoCancelamento)}</div>`:""}
+        </div>`;
+    }).join("");
+
+    const html=`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>ENIGMA - Relatório de Fechamento</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  *{box-sizing:border-box}
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11px}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:12px}
+  .brand{font-weight:800;font-size:20px;letter-spacing:4px}
+  .subtitle{font-size:10px;color:#555;margin-top:3px}
+  .meta{text-align:right;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+  .box{border:1px solid #bbb;border-radius:6px;padding:8px}
+  .box .l{font-size:8px;color:#666;text-transform:uppercase;letter-spacing:1px}
+  .box .v{font-size:14px;font-weight:700;margin-top:4px}
+  .section{font-weight:700;font-size:12px;margin:16px 0 7px;border-bottom:1px solid #bbb;padding-bottom:4px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:5px 4px;border-bottom:1px solid #ddd;vertical-align:top}
+  th{text-align:left;font-size:9px;text-transform:uppercase;color:#555}
+  .right{text-align:right}.center{text-align:center}
+  .payment-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dotted #ccc}
+  .sale{border:1px solid #aaa;border-radius:6px;padding:8px;margin:8px 0;break-inside:avoid}
+  .sale.void{border-style:dashed;color:#666}
+  .sale-head,.sale-foot{display:flex;justify-content:space-between;gap:12px}
+  .sale-head{padding-bottom:5px;border-bottom:1px solid #ddd}
+  .sale-foot{padding-top:6px;margin-top:2px}
+  .reason{font-size:9px;margin-top:6px;color:#666}
+  .obs{margin-top:10px;border:1px solid #bbb;padding:8px;border-radius:6px}
+  .footer{margin-top:18px;padding-top:8px;border-top:1px solid #bbb;color:#666;font-size:8px;text-align:center}
+</style>
+</head>
+<body>
+<div class="head">
+  <div><div class="brand">ENIGMA</div><div class="subtitle">RELATÓRIO DE FECHAMENTO DE CAIXA</div></div>
+  <div class="meta">
+    <div><strong>Caixa:</strong> ${escapeHtml(String(caixa.id||"").slice(0,8).toUpperCase())}</div>
+    <div><strong>Operador:</strong> ${escapeHtml(caixa.operador||"Não informado")}</div>
+    <div><strong>Abertura:</strong> ${formatDateTimePrint(caixa.data_abertura)}</div>
+    <div><strong>Fechamento:</strong> ${formatDateTimePrint(caixa.data_fechamento)}</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="box"><div class="l">Fundo inicial</div><div class="v">${fmtPrint(caixa.valor_inicial)}</div></div>
+  <div class="box"><div class="l">Total vendido</div><div class="v">${fmtPrint(caixa.total_vendas)}</div></div>
+  <div class="box"><div class="l">Vendas válidas</div><div class="v">${validas.length}</div></div>
+  <div class="box"><div class="l">Estornos</div><div class="v">${estornadas.length}</div></div>
+</div>
+
+<div class="section">Recebimentos por forma de pagamento</div>
+${FORMAS.map(f=>`<div class="payment-row"><span>${escapeHtml(f.label)}</span><strong>${fmtPrint(totaisFormas[f.id]||0)}</strong></div>`).join("")}
+
+<div class="grid">
+  <div class="box"><div class="l">Esperado na gaveta</div><div class="v">${fmtPrint(caixa.saldo_esperado_dinheiro)}</div></div>
+  <div class="box"><div class="l">Valor contado</div><div class="v">${fmtPrint(caixa.valor_contado)}</div></div>
+  <div class="box" style="grid-column:span 2"><div class="l">Resultado da conferência</div><div class="v">${dif===0?"CAIXA CONFERE":dif>0?`SOBRA ${fmtPrint(dif)}`:`FALTA ${fmtPrint(Math.abs(dif))}`}</div></div>
+</div>
+
+<div class="section">Detalhamento das vendas</div>
+${linhasVendas || "<div>Nenhuma venda registrada neste caixa.</div>"}
+
+${caixa.observacao_fechamento?`<div class="obs"><strong>Observação do fechamento:</strong><br>${escapeHtml(caixa.observacao_fechamento)}</div>`:""}
+
+<div class="footer">Relatório gerado pelo ENIGMA OS · ${new Date().toLocaleString("pt-BR")}</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),250)</script>
+</body></html>`;
+
+    const w=window.open("","_blank","width=900,height=700");
+    if(!w){alert("O navegador bloqueou a janela de impressão. Permita pop-ups para este site.");return;}
+    w.document.open();w.document.write(html);w.document.close();
+  }
+
   return <div className="fixed inset-0 z-40 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onFechar}>
     <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#131318] p-5" onClick={e=>e.stopPropagation()}>
       <div className="flex justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.2em] text-purple-300">FECHAMENTO DE CAIXA</div><div className="text-lg text-white mt-1">{fmtDateTime(caixa.data_fechamento||caixa.data_abertura)}</div><div className="text-xs text-[#666672] mt-1">{caixa.operador||"Operador não informado"}</div></div><button onClick={onFechar}><X size={18}/></button></div>
@@ -1821,9 +1943,30 @@ function FechamentoCaixaModal({caixa,onFechar}){
       <div className={"rounded-xl border p-4 "+(dif===0?"border-green-500/25 bg-green-500/[.04]":dif>0?"border-cyan-500/25 bg-cyan-500/[.04]":"border-red-500/25 bg-red-500/[.04]")}>
         <div className="flex justify-between gap-3"><div><div className="text-[9px] tracking-[.15em] text-[#777782]">RESULTADO DA CONFERÊNCIA</div><div className="text-sm text-white mt-1">{dif===0?"Caixa conferido":dif>0?"Sobra":"Falta"}</div></div><div className={"font-mono text-xl "+(dif===0?"text-green-300":dif>0?"text-cyan-300":"text-red-300")}>{fmt(Math.abs(dif))}</div></div>
       </div>
+
+      <div className="mt-4 rounded-xl border border-white/8 p-3">
+        <div className="text-[8px] tracking-[.14em] text-[#666672]">VENDAS DO TURNO</div>
+        <div className="text-xs text-[#C9C9D2] mt-1">{loading?"Carregando detalhamento...":`${vendas.filter(v=>v.status!=="estornada").length} válida(s) · ${vendas.filter(v=>v.status==="estornada").length} estornada(s)`}</div>
+      </div>
+
       {caixa.observacao_fechamento&&<div className="mt-4 rounded-xl border border-white/8 p-3"><div className="text-[8px] tracking-[.14em] text-[#666672]">OBSERVAÇÃO</div><div className="text-xs text-[#C9C9D2] mt-1">{caixa.observacao_fechamento}</div></div>}
+
+      <Button className="w-full mt-4" disabled={loading} onClick={imprimirRelatorio}>
+        <span className="flex items-center justify-center gap-2"><Printer size={15}/> Imprimir relatório detalhado</span>
+      </Button>
     </div>
   </div>;
+}
+
+function fmtPrint(v){
+  return (Number(v)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+}
+function formatDateTimePrint(iso){
+  if(!iso) return "-";
+  try{return new Date(iso).toLocaleString("pt-BR");}catch{return String(iso);}
+}
+function escapeHtml(v){
+  return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 }
 
 /* ================= RELATÓRIO ================= */
