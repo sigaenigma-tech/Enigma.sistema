@@ -347,10 +347,19 @@ function EnigmaSistema() {
   async function adicionarCliente(payload) {
     const nome=(payload?.nome||"").trim();
     if(!nome) return null;
+    const telefone=(payload.telefone||"").trim();
+    const telNorm=telefone.replace(/\D/g,"");
+    if(telNorm){
+      const existente=clientes.find(c=>String(c.telefone||"").replace(/\D/g,"")===telNorm);
+      if(existente){
+        alert(`Este telefone já pertence a ${existente.nome}. Use o cadastro existente.`);
+        return existente;
+      }
+    }
     try{
       const rows=await sb("clientes",{method:"POST",body:JSON.stringify({
         nome,
-        telefone:(payload.telefone||"").trim()||null,
+        telefone:telefone||null,
         email:(payload.email||"").trim()||null,
         documento:(payload.documento||"").trim()||null,
         observacoes:(payload.observacoes||"").trim()||null,
@@ -758,6 +767,7 @@ function EnigmaSistema() {
   }
   async function criarOS(form) {
     const novaOS = {
+      cliente_id: form.clienteId || null,
       cliente: { nome: form.clienteNome, telefone: form.clienteTelefone, cpf: form.clienteCpf, endereco: form.clienteEndereco },
       aparelho: { tipo: form.aparelhoTipo, marcaModelo: form.aparelhoMarcaModelo, serial: form.aparelhoSerial },
       problema_relatado: form.problemaRelatado,
@@ -940,7 +950,7 @@ function EnigmaSistema() {
         {tab === "os" && osView === "lista" && (
           <ListaOS index={osIndex} onAbrir={abrirDetalheOS} onNova={() => setOsView("nova")} />
         )}
-        {tab === "os" && osView === "nova" && <NovaOS onCriar={criarOS} onCancelar={() => setOsView("lista")} />}
+        {tab === "os" && osView === "nova" && <NovaOS clientes={clientes} onAddCliente={adicionarCliente} onCriar={criarOS} onCancelar={() => setOsView("lista")} />}
         {tab === "os" && osView === "detalhe" && (
           <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
@@ -1592,7 +1602,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.0</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.1</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -3235,7 +3245,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.0 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.1 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4661,7 +4671,10 @@ function ListaOS({ index, onAbrir, onNova }) {
 }
 
 /* ================= OS: NOVA ================= */
-function NovaOS({ onCriar, onCancelar }) {
+function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
+  const [clienteId,setClienteId]=useState(null);
+  const [buscaCliente,setBuscaCliente]=useState("");
+  const [mostrarNovo,setMostrarNovo]=useState(false);
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTelefone, setClienteTelefone] = useState("");
   const [clienteCpf, setClienteCpf] = useState("");
@@ -4672,51 +4685,117 @@ function NovaOS({ onCriar, onCancelar }) {
   const [problemaRelatado, setProblemaRelatado] = useState("");
   const [acessoriosRecebidos, setAcessoriosRecebidos] = useState("");
   const [previsaoEntrega, setPrevisaoEntrega] = useState("");
-  const podeCriar = clienteNome.trim() && aparelhoMarcaModelo.trim() && problemaRelatado.trim();
+  const [salvandoCliente,setSalvandoCliente]=useState(false);
+
+  const norm=v=>String(v||"").replace(/\D/g,"");
+  const q=buscaCliente.trim().toLowerCase();
+  const clientesEncontrados=q.length<2?[]:clientes.filter(c=>
+    `${c.nome||""} ${c.telefone||""} ${c.email||""} ${c.documento||""}`.toLowerCase().includes(q)
+  ).slice(0,8);
+
+  function selecionarCliente(c){
+    setClienteId(c.id);
+    setClienteNome(c.nome||"");
+    setClienteTelefone(c.telefone||"");
+    setClienteCpf(c.documento||"");
+    setClienteEndereco(c.endereco||"");
+    setBuscaCliente("");
+    setMostrarNovo(false);
+  }
+
+  function limparCliente(){
+    setClienteId(null);setClienteNome("");setClienteTelefone("");setClienteCpf("");setClienteEndereco("");
+  }
+
+  async function cadastrarESelecionar(){
+    if(!clienteNome.trim())return;
+    setSalvandoCliente(true);
+    const tel=norm(clienteTelefone);
+    const duplicado=tel?clientes.find(c=>norm(c.telefone)===tel):null;
+    if(duplicado){
+      selecionarCliente(duplicado);
+      alert(`Telefone já cadastrado. Cliente ${duplicado.nome} selecionado automaticamente.`);
+      setSalvandoCliente(false);
+      return;
+    }
+    const criado=await onAddCliente({
+      nome:clienteNome,telefone:clienteTelefone,documento:clienteCpf,
+      observacoes:clienteEndereco?`Endereço: ${clienteEndereco}`:""
+    });
+    if(criado) selecionarCliente(criado);
+    setSalvandoCliente(false);
+  }
+
+  const podeCriar = !!clienteId && aparelhoMarcaModelo.trim() && problemaRelatado.trim();
 
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Entrada de assistência</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.1</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
-        <div className="text-xs text-[#777782] mt-1">Registre o essencial agora. Diagnóstico, orçamento e aprovação entram no fluxo depois.</div>
+        <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
-      <div className="grid lg:grid-cols-2 gap-4">
-        <Card className="!rounded-2xl">
-          <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><User size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Cliente</span></div>
-          <Label>Nome *</Label>
-          <Input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} placeholder="Nome completo" className="mb-3" />
-          <div className="grid sm:grid-cols-2 gap-2 mb-3">
-            <div><Label>WhatsApp</Label><Input value={clienteTelefone} onChange={(e) => setClienteTelefone(e.target.value)} placeholder="(00) 00000-0000" /></div>
-            <div><Label>CPF</Label><Input value={clienteCpf} onChange={(e) => setClienteCpf(e.target.value)} placeholder="000.000.000-00" /></div>
-          </div>
-          <Label>Endereço</Label>
-          <Input value={clienteEndereco} onChange={(e) => setClienteEndereco(e.target.value)} placeholder="Rua, número, bairro" />
-        </Card>
-        <Card className="!rounded-2xl">
-          <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><Smartphone size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Aparelho</span></div>
-          <div className="flex gap-2 mb-3">
-            {[{id:"smartphone",label:"Celular"},{id:"tablet",label:"Tablet"},{id:"notebook",label:"Notebook"},{id:"outro",label:"Outro"}].map((t) => (
-              <button key={t.id} onClick={() => setAparelhoTipo(t.id)} className={"flex-1 py-2 rounded-lg text-[11px] uppercase tracking-wide border " + (aparelhoTipo === t.id ? "border-purple-500 text-purple-300 bg-purple-500/10" : "border-[#2A2A34] text-[#8A8A96]")}>{t.label}</button>
-            ))}
-          </div>
-          <Label>Marca / modelo *</Label>
-          <Input value={aparelhoMarcaModelo} onChange={(e) => setAparelhoMarcaModelo(e.target.value)} placeholder="Ex: iPhone 13 Pro" className="mb-3" />
-          <Label>Número de série / IMEI</Label>
-          <Input value={aparelhoSerial} onChange={(e) => setAparelhoSerial(e.target.value)} placeholder="Opcional" className="mb-3" />
-          <Label>Acessórios recebidos</Label>
-          <Input value={acessoriosRecebidos} onChange={(e) => setAcessoriosRecebidos(e.target.value)} placeholder="Ex: aparelho + carregador + capa" />
-        </Card>
-      </div>
+
       <Card className="!rounded-2xl">
-        <div className="grid lg:grid-cols-[1fr_220px] gap-4">
-          <div><Label>Problema relatado pelo cliente *</Label><Textarea rows={4} value={problemaRelatado} onChange={(e) => setProblemaRelatado(e.target.value)} placeholder="Descreva com as palavras do cliente o que está acontecendo." /></div>
-          <div><Label>Previsão inicial</Label><Input type="date" value={previsaoEntrega} onChange={(e) => setPrevisaoEntrega(e.target.value)} /><div className="text-[11px] text-[#62626D] mt-2">Opcional. Pode ser alterada durante o diagnóstico.</div></div>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2 text-[#C9C9D2]"><User size={16} className="text-purple-400"/><span className="text-sm tracking-wide">1. Cliente</span></div>
+          {clienteId&&<span className="text-[9px] rounded-full border border-green-500/20 bg-green-500/[.05] px-2.5 py-1 text-green-300">CLIENTE VINCULADO</span>}
         </div>
+
+        {!clienteId&&<>
+          <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-300"/><Input autoFocus value={buscaCliente} onChange={e=>setBuscaCliente(e.target.value)} placeholder="Buscar por nome, telefone, CPF ou e-mail" className="pl-9"/></div>
+          {clientesEncontrados.length>0&&<div className="mt-2 rounded-xl border border-white/8 overflow-hidden">
+            {clientesEncontrados.map(c=><button key={c.id} onClick={()=>selecionarCliente(c)} className="w-full text-left p-3 border-b last:border-0 border-white/5 hover:bg-purple-500/[.05] flex justify-between gap-3">
+              <div><div className="text-xs text-white">{c.nome}</div><div className="text-[10px] text-[#6F6F79]">{c.telefone||"Sem telefone"}{c.documento?` · ${c.documento}`:""}</div></div><ChevronRight size={15} className="text-purple-300"/>
+            </button>)}
+          </div>}
+          <div className="flex justify-between items-center mt-3">
+            <div className="text-[9px] text-[#5F5F69]">{q.length>=2&&!clientesEncontrados.length?"Nenhum cliente encontrado.":"Selecione um cadastro existente para evitar duplicidade."}</div>
+            <button onClick={()=>{limparCliente();setMostrarNovo(!mostrarNovo)}} className="text-xs text-purple-300">+ Cadastrar cliente</button>
+          </div>
+        </>}
+
+        {clienteId&&<div className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4 flex justify-between gap-3">
+          <div><div className="text-sm text-white">{clienteNome}</div><div className="text-xs text-[#777782] mt-1">{clienteTelefone||"Sem telefone"}{clienteCpf?` · ${clienteCpf}`:""}</div></div>
+          <button onClick={limparCliente} className="text-[10px] text-cyan-300">Trocar cliente</button>
+        </div>}
+
+        {!clienteId&&mostrarNovo&&<div className="mt-4 pt-4 border-t border-white/8">
+          <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">CADASTRO RÁPIDO</div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div><Label>Nome *</Label><Input value={clienteNome} onChange={e=>setClienteNome(e.target.value)} /></div>
+            <div><Label>WhatsApp</Label><Input value={clienteTelefone} onChange={e=>setClienteTelefone(e.target.value)} placeholder="(00) 00000-0000"/></div>
+            <div><Label>CPF</Label><Input value={clienteCpf} onChange={e=>setClienteCpf(e.target.value)}/></div>
+            <div><Label>Endereço</Label><Input value={clienteEndereco} onChange={e=>setClienteEndereco(e.target.value)}/></div>
+          </div>
+          {clienteTelefone&&clientes.some(c=>norm(c.telefone)===norm(clienteTelefone))&&<div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/[.04] p-2 text-[10px] text-amber-200">Este telefone já existe na base. Ao salvar, o sistema selecionará o cliente existente em vez de duplicá-lo.</div>}
+          <Button className="mt-3" disabled={!clienteNome.trim()||salvandoCliente} onClick={cadastrarESelecionar}>{salvandoCliente?"Salvando...":"Salvar e vincular cliente"}</Button>
+        </div>}
       </Card>
+
+      <div className={"grid lg:grid-cols-2 gap-4 transition "+(!clienteId?"opacity-40 pointer-events-none":"")}>
+        <Card className="!rounded-2xl">
+          <div className="flex items-center gap-2 mb-4 text-[#C9C9D2]"><Smartphone size={16} className="text-purple-400"/><span className="text-sm tracking-wide">2. Aparelho</span></div>
+          <div className="flex gap-2 mb-3">
+            {[{id:"smartphone",label:"Celular"},{id:"tablet",label:"Tablet"},{id:"notebook",label:"Notebook"},{id:"outro",label:"Outro"}].map(t=><button key={t.id} onClick={()=>setAparelhoTipo(t.id)} className={"flex-1 py-2 rounded-lg text-[11px] uppercase tracking-wide border "+(aparelhoTipo===t.id?"border-purple-500 text-purple-300 bg-purple-500/10":"border-[#2A2A34] text-[#8A8A96]")}>{t.label}</button>)}
+          </div>
+          <Label>Marca / modelo *</Label><Input value={aparelhoMarcaModelo} onChange={e=>setAparelhoMarcaModelo(e.target.value)} placeholder="Ex: iPhone 13 Pro" className="mb-3"/>
+          <Label>Número de série / IMEI</Label><Input value={aparelhoSerial} onChange={e=>setAparelhoSerial(e.target.value)} placeholder="Opcional" className="mb-3"/>
+          <Label>Acessórios recebidos</Label><Input value={acessoriosRecebidos} onChange={e=>setAcessoriosRecebidos(e.target.value)} placeholder="Ex: aparelho + carregador + capa"/>
+        </Card>
+        <Card className="!rounded-2xl">
+          <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">3. MOTIVO DO ATENDIMENTO</div>
+          <Label>Problema relatado *</Label><Textarea rows={5} value={problemaRelatado} onChange={e=>setProblemaRelatado(e.target.value)} placeholder="Descreva com as palavras do cliente."/>
+          <div className="mt-3"><Label>Previsão inicial</Label><Input type="date" value={previsaoEntrega} onChange={e=>setPrevisaoEntrega(e.target.value)}/></div>
+        </Card>
+      </div>
+
       <div className="flex gap-2 justify-end">
         <Button variant="ghost" className="min-w-28" onClick={onCancelar}>Cancelar</Button>
-        <Button className="min-w-40" disabled={!podeCriar} onClick={() => onCriar({ clienteNome, clienteTelefone, clienteCpf, clienteEndereco, aparelhoTipo, aparelhoMarcaModelo, aparelhoSerial, problemaRelatado, acessoriosRecebidos, previsaoEntrega })}><span className="flex items-center justify-center gap-2"><Plus size={15}/> Abrir OS</span></Button>
+        <Button className="min-w-40" disabled={!podeCriar} onClick={()=>onCriar({
+          clienteId,clienteNome,clienteTelefone,clienteCpf,clienteEndereco,
+          aparelhoTipo,aparelhoMarcaModelo,aparelhoSerial,problemaRelatado,acessoriosRecebidos,previsaoEntrega
+        })}><span className="flex items-center justify-center gap-2"><Plus size={15}/> Abrir OS vinculada</span></Button>
       </div>
     </div>
   );
