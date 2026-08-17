@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.0</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.1</div>
     </aside>
   );
 }
@@ -1235,7 +1235,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.0</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -2054,7 +2054,10 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
     else if(vd.quantidade>=4) giro="saudavel";
     else if(vd.quantidade>0) giro="baixo";
     const capital=(Number(p.custo)||0)*(Number(p.quantidade)||0);
-    return {...p,vendidoQtd:vd.quantidade,faturamento:vd.faturamento,ultimaVenda:vd.ultimaVenda,vendas:vd.vendas,diasSemVenda,giro,capital};
+    const custoVendido=(Number(p.custo)||0)*(Number(vd.quantidade)||0);
+    const lucroBruto=Number(vd.faturamento||0)-custoVendido;
+    const margem=Number(vd.faturamento||0)>0?(lucroBruto/Number(vd.faturamento))*100:0;
+    return {...p,vendidoQtd:vd.quantidade,faturamento:vd.faturamento,ultimaVenda:vd.ultimaVenda,vendas:vd.vendas,diasSemVenda,giro,capital,custoVendido,lucroBruto,margem};
   });
 
   const filtradosProdutos=produtosAnalise
@@ -2075,6 +2078,15 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
   const semGiro=produtosAnalise.filter(p=>p.giro==="sem_giro");
   const capitalParado=semGiro.reduce((a,p)=>a+p.capital,0);
   const topProduto=[...produtosAnalise].sort((a,b)=>b.vendidoQtd-a.vendidoQtd)[0];
+
+  const custoProdutosVendidos=produtosAnalise.reduce((a,p)=>a+p.custoVendido,0);
+  const lucroProdutos=produtosAnalise.reduce((a,p)=>a+p.lucroBruto,0);
+  const margemProdutos=faturamentoProdutos>0?(lucroProdutos/faturamentoProdutos)*100:0;
+  const vendasValidasPeriodo=validasPeriodo.length;
+  const ticketMedio=vendasValidasPeriodo>0?(totalGeral(validasPeriodo)/vendasValidasPeriodo):0;
+  const topLucro=[...produtosAnalise].filter(p=>p.vendidoQtd>0).sort((a,b)=>b.lucroBruto-a.lucroBruto)[0];
+  const menorMargem=[...produtosAnalise].filter(p=>p.vendidoQtd>0).sort((a,b)=>a.margem-b.margem)[0];
+  const rankingLucro=[...produtosAnalise].filter(p=>p.vendidoQtd>0).sort((a,b)=>b.lucroBruto-a.lucroBruto);
 
   const totais = totaisPorForma(vendasDoDia);
   const total = totalGeral(vendasDoDia);
@@ -2097,9 +2109,10 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
-        <button onClick={()=>setGuia("produtos")} className={"rounded-lg py-2.5 text-xs border "+(guia==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Giro</button>
-        <button onClick={()=>setGuia("vendas")} className={"rounded-lg py-2.5 text-xs border "+(guia==="vendas"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Vendas</button>
+      <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-white/[.015] p-1">
+        <button onClick={()=>setGuia("produtos")} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(guia==="produtos"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Produtos / Giro</button>
+        <button onClick={()=>setGuia("rentabilidade")} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(guia==="rentabilidade"?"border-green-500/30 bg-green-500/[.06] text-white":"border-transparent text-[#777783]")}>Rentabilidade</button>
+        <button onClick={()=>setGuia("vendas")} className={"rounded-lg py-2.5 text-[10px] md:text-xs border "+(guia==="vendas"?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>Vendas</button>
       </div>
 
       {guia==="produtos"&&<>
@@ -2164,6 +2177,80 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
           {p.giro==="baixo"&&p.quantidade>0&&<div className="border-t border-amber-500/10 bg-amber-500/[.02] px-4 py-2 text-[10px] text-amber-200">Baixo giro no período. Vale acompanhar antes de repor em grande volume.</div>}
           {p.giro==="alto"&&p.quantidade<=p.estoqueMinimo&&<div className="border-t border-green-500/10 bg-green-500/[.02] px-4 py-2 text-[10px] text-green-200">Alto giro com estoque próximo do mínimo. Prioridade de reposição.</div>}
         </Card>})}</div>}
+      </>}
+
+      {guia==="rentabilidade"&&<>
+        <div className="rounded-2xl border border-green-500/15 bg-gradient-to-br from-green-500/[.05] via-transparent to-purple-500/[.04] p-5">
+          <div className="text-[9px] tracking-[.28em] text-green-300">ENIGMA // PROFITABILITY</div>
+          <div className="text-xl text-white mt-2">Rentabilidade e Desempenho</div>
+          <div className="text-xs text-[#74747F] mt-1">Cruza vendas com o custo cadastrado dos produtos para estimar lucro bruto e margem.</div>
+        </div>
+
+        <Card>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {[["hoje","Hoje"],["7","7 dias"],["30","30 dias"],["mes","Este mês"]].map(([id,label])=><button key={id} onClick={()=>aplicarPeriodoRapido(id)} className="rounded-lg border border-white/10 px-3 py-2 text-[10px] text-[#A0A0AA] hover:border-green-500/30">{label}</button>)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label>De</Label><Input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)}/></div>
+            <div><Label>Até</Label><Input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/></div>
+          </div>
+          <div className="text-[9px] text-amber-300/80 mt-2">Lucro e margem são estimativas com base no custo atual cadastrado no estoque. Vendas estornadas não entram nos cálculos.</div>
+        </Card>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <MetricCyber label="FATURAMENTO PRODUTOS" value={fmt(faturamentoProdutos)} sub={`${totalQtd} unidade(s)`}/>
+          <MetricCyber label="CUSTO ESTIMADO" value={fmt(custoProdutosVendidos)} sub="custo cadastrado"/>
+          <MetricCyber label="LUCRO BRUTO EST." value={fmt(lucroProdutos)} sub="antes de despesas"/>
+          <MetricCyber label="MARGEM BRUTA EST." value={`${margemProdutos.toFixed(2)}%`} sub="sobre produtos"/>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-4">
+            <div className="text-[9px] tracking-[.18em] text-purple-300">TICKET MÉDIO GERAL</div>
+            <div className="font-mono text-2xl text-white mt-2">{fmt(ticketMedio)}</div>
+            <div className="text-[10px] text-[#666672] mt-1">{vendasValidasPeriodo} venda(s) concluída(s)</div>
+          </div>
+          <div className="rounded-xl border border-green-500/15 bg-green-500/[.025] p-4">
+            <div className="text-[9px] tracking-[.18em] text-green-300">MAIOR LUCRO BRUTO</div>
+            <div className="text-sm text-white mt-2">{topLucro?.nome||"Sem vendas"}</div>
+            <div className="font-mono text-lg text-green-300 mt-1">{fmt(topLucro?.lucroBruto||0)}</div>
+          </div>
+          <div className="rounded-xl border border-amber-500/15 bg-amber-500/[.025] p-4">
+            <div className="text-[9px] tracking-[.18em] text-amber-300">MENOR MARGEM VENDIDA</div>
+            <div className="text-sm text-white mt-2">{menorMargem?.nome||"Sem vendas"}</div>
+            <div className="font-mono text-lg text-amber-300 mt-1">{menorMargem?`${menorMargem.margem.toFixed(2)}%`:"0,00%"}</div>
+          </div>
+        </div>
+
+        <Card>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div><div className="text-[9px] tracking-[.2em] text-green-300">RANKING DE RENTABILIDADE</div><div className="text-[10px] text-[#666672] mt-1">Ordenado pelo lucro bruto estimado no período.</div></div>
+            <div className="text-[10px] text-[#666672]">{rankingLucro.length} produto(s)</div>
+          </div>
+          {carregandoPeriodo?<div className="py-8 text-center text-xs text-[#666672]">Calculando rentabilidade...</div>:
+          !rankingLucro.length?<div className="py-8 text-center text-xs text-[#666672]">Nenhum produto vendido no período.</div>:
+          <div className="space-y-2">{rankingLucro.map((p,idx)=>{
+            const lucroUnit=p.vendidoQtd>0?p.lucroBruto/p.vendidoQtd:0;
+            return <div key={p.id} className="rounded-xl border border-white/8 bg-white/[.012] p-4">
+              <div className="grid md:grid-cols-[40px_1.5fr_repeat(5,.75fr)] gap-3 items-center">
+                <div className="hidden md:flex w-8 h-8 rounded-lg border border-white/8 items-center justify-center font-mono text-xs text-[#777783]">#{idx+1}</div>
+                <div><div className="text-sm text-white">{p.nome}</div><div className="text-[10px] text-[#666672] mt-1">{p.vendidoQtd} un · custo atual {fmt(p.custo)} · venda atual {fmt(p.preco)}</div></div>
+                <div><div className="text-[8px] text-[#5F5F69]">FATURAMENTO</div><div className="font-mono text-xs mt-1">{fmt(p.faturamento)}</div></div>
+                <div><div className="text-[8px] text-[#5F5F69]">CUSTO EST.</div><div className="font-mono text-xs mt-1">{fmt(p.custoVendido)}</div></div>
+                <div><div className="text-[8px] text-[#5F5F69]">LUCRO</div><div className={"font-mono text-xs mt-1 "+(p.lucroBruto>=0?"text-green-300":"text-red-300")}>{fmt(p.lucroBruto)}</div></div>
+                <div><div className="text-[8px] text-[#5F5F69]">MARGEM</div><div className={"font-mono text-xs mt-1 "+(p.margem>=40?"text-green-300":p.margem>=20?"text-amber-300":"text-red-300")}>{p.margem.toFixed(2)}%</div></div>
+                <div><div className="text-[8px] text-[#5F5F69]">LUCRO / UN</div><div className="font-mono text-xs mt-1">{fmt(lucroUnit)}</div></div>
+              </div>
+              {p.vendidoQtd>=4 && p.margem<20&&<div className="mt-3 border-t border-red-500/10 pt-2 text-[10px] text-red-200">Vende com frequência, mas a margem está baixa. Vale revisar preço, custo ou fornecedor.</div>}
+              {p.margem>=50&&p.vendidoQtd>0&&<div className="mt-3 border-t border-green-500/10 pt-2 text-[10px] text-green-200">Boa margem no período. Produto interessante para manter visibilidade e disponibilidade.</div>}
+            </div>
+          })}</div>}
+        </Card>
+
+        <div className="rounded-xl border border-white/8 bg-white/[.015] p-4">
+          <div className="text-[9px] tracking-[.18em] text-[#777783]">COMO LER ESTE RELATÓRIO</div>
+          <div className="text-xs leading-5 text-[#777783] mt-2">Lucro bruto estimado = faturamento do produto − custo cadastrado × quantidade vendida. Ele não desconta aluguel, taxas, impostos, marketing ou outras despesas operacionais. Para lucro líquido, usamos o Financeiro Geral.</div>
+        </div>
       </>}
 
       {guia==="vendas"&&<>
