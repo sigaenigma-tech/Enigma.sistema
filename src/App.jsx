@@ -1602,7 +1602,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.1</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1643,15 +1643,44 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   });
 
   async function abrirHistoricoAparelho(a){
-    setAparelhoHistorico(a); setCarregandoHistorico(true);
+    setAparelhoHistorico(a);
+    setCarregandoHistorico(true);
     try{
-      const rows=await sb(`ordens_servico?select=*&cliente_id=eq.${selecionado.id}&order=data_entrada.desc`);
-      setOrdensHistorico((rows||[]).map(rowToOSDetail).filter(d=>{
-        const serial=String(d.aparelho?.serial||"").trim().toLowerCase();
-        const nome=String(d.aparelho?.marcaModelo||"").trim().toLowerCase();
-        return a.serial ? serial===String(a.serial).trim().toLowerCase() : nome===String(a.nome).trim().toLowerCase();
-      }));
-    }catch(e){setOrdensHistorico([]);}
+      // Busca ampla para preservar compatibilidade com OS antigas que ainda não possuem cliente_id.
+      // Depois o vínculo é resolvido localmente pelo mesmo fallback usado no Cliente 360°.
+      const rows=await sb("ordens_servico?select=*&order=data_entrada.desc");
+      const telSelecionado=String(selecionado?.telefone||"").replace(/\D/g,"");
+      const nomeSelecionado=String(selecionado?.nome||"").trim().toLowerCase();
+      const serialAlvo=String(a?.serial||"").trim().toLowerCase();
+      const nomeAlvo=String(a?.nome||"").trim().toLowerCase();
+
+      const detalhes=(rows||[]).map(rowToOSDetail).filter(d=>{
+        const telOS=String(d.cliente?.telefone||"").replace(/\D/g,"");
+        const nomeOS=String(d.cliente?.nome||"").trim().toLowerCase();
+
+        const mesmoCliente=
+          (d.clienteId && selecionado?.id && d.clienteId===selecionado.id) ||
+          (telSelecionado && telOS && telSelecionado===telOS) ||
+          (!telSelecionado && nomeSelecionado && nomeOS===nomeSelecionado);
+
+        if(!mesmoCliente) return false;
+
+        const serialOS=String(d.aparelho?.serial||"").trim().toLowerCase();
+        const nomeOSAp=String(d.aparelho?.marcaModelo||"").trim().toLowerCase();
+
+        // Se o aparelho tem IMEI/serial, ele é a chave principal.
+        // Para registros antigos sem serial, usamos o modelo como fallback.
+        if(serialAlvo){
+          return serialOS===serialAlvo || (!serialOS && nomeOSAp===nomeAlvo);
+        }
+        return nomeOSAp===nomeAlvo;
+      });
+
+      setOrdensHistorico(detalhes);
+    }catch(e){
+      console.error("Falha ao carregar histórico técnico:",e);
+      setOrdensHistorico([]);
+    }
     setCarregandoHistorico(false);
   }
 
@@ -1755,7 +1784,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -3315,7 +3344,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.1 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4802,7 +4831,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.1</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
