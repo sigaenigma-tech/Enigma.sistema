@@ -992,7 +992,7 @@ function SideNav({ tab, setTab }) {
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.3</div>
+      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.3.1</div>
     </aside>
   );
 }
@@ -1173,7 +1173,7 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
           <div className="divide-y divide-white/[.06]">{alertas.map((a,idx)=>{
             const cls=a.nivel==="red"?"text-red-300 bg-red-500/10 border-red-500/20":a.nivel==="amber"?"text-amber-300 bg-amber-500/10 border-amber-500/20":"text-green-300 bg-green-500/10 border-green-500/20";
             return <button key={idx} disabled={!a.acao} onClick={()=>a.acao&&onNavigate(a.acao)} className="w-full text-left p-4 flex items-center justify-between gap-4 hover:bg-white/[.02]">
-              <div className="flex gap-3"><div className={"w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center "+cls}><AlertTriangle size={15}/></div><div><div className="text-sm text-white">{a.titulo}</div><div className="text-[10px] text-[#71717C] mt-1">{a.texto}</div></div></div>
+              <div className="flex gap-3"><div className={"w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center "+cls}><AlertCircle size={15}/></div><div><div className="text-sm text-white">{a.titulo}</div><div className="text-[10px] text-[#71717C] mt-1">{a.texto}</div></div></div>
               {a.acao&&<ChevronRight size={16} className="text-[#555560]"/>}
             </button>
           })}</div>
@@ -1215,7 +1215,7 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
         <Card className="!rounded-2xl">
           <div className="flex items-center justify-between mb-4"><div><div className="font-medium text-white">Mais vendidos hoje</div><div className="text-[10px] text-[#666672]">Ranking rápido do PDV</div></div><TrendingUp size={17} className="text-green-300"/></div>
           {!rankingHoje.length?<div className="text-xs text-[#666672] py-5">Ainda não há vendas hoje.</div>:<div className="space-y-2">{rankingHoje.map(([nome,qtd],idx)=><div key={nome} className="flex justify-between gap-3 border-b border-white/5 pb-2"><div className="text-xs text-[#C9C9D2] truncate"><span className="text-[#555560] mr-2">#{idx+1}</span>{nome}</div><div className="font-mono text-xs text-green-300">{qtd} un</div></div>)}</div>}
-          <button onClick={()=>onNavigate("relatorios")} className="mt-4 text-xs text-purple-300">Ver relatórios →</button>
+          <button onClick={()=>onNavigate("relatorio")} className="mt-4 text-xs text-purple-300">Ver relatórios →</button>
         </Card>
       </section>
 
@@ -1234,7 +1234,7 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
         <Card className="!rounded-2xl">
           <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">ATALHOS</div>
           <div className="space-y-2">
-            {[["pdv","Nova venda"],["os","Ordens de serviço"],["estoque","Estoque"],["relatorios","Relatórios"],["financeiro","Financeiro"]].map(([id,label])=><button key={id} onClick={()=>onNavigate(id)} className="w-full rounded-xl border border-white/8 px-3 py-2.5 flex justify-between items-center text-xs text-[#BDBDC6] hover:border-purple-500/25"><span>{label}</span><ChevronRight size={14}/></button>)}
+            {[["pdv","Nova venda"],["os","Ordens de serviço"],["estoque","Estoque"],["relatorio","Relatórios"],["financeiro","Financeiro"]].map(([id,label])=><button key={id} onClick={()=>onNavigate(id)} className="w-full rounded-xl border border-white/8 px-3 py-2.5 flex justify-between items-center text-xs text-[#BDBDC6] hover:border-purple-500/25"><span>{label}</span><ChevronRight size={14}/></button>)}
           </div>
         </Card>
       </section>
@@ -1336,7 +1336,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V3.3.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
