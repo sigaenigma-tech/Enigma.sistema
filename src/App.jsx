@@ -949,6 +949,7 @@ function EnigmaSistema() {
         {tab === "estoque" && (
           <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
+        {tab === "compras" && <ComprasTab estoque={estoque} onMovimentar={movimentarEstoque} />}
         {tab === "peliculas" && <TabelaPeliculasTab estoque={estoque} />}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} estoque={estoque} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab />}
@@ -966,6 +967,7 @@ const NAV_ITEMS = [
   { id: "clientes", label: "Clientes", icon: Users },
   { id: "avaliacao", label: "Avaliação de Usados", short: "Usados", icon: Smartphone },
   { id: "estoque", label: "Estoque", icon: Package },
+  { id: "compras", label: "Compras & Reposição", short: "Compras", icon: ClipboardList },
   { id: "peliculas", label: "Tabela de Películas", short: "Películas", icon: Layers },
   { id: "financeiro", label: "Financeiro", icon: Wallet },
   { id: "relatorio", label: "Relatórios", icon: BarChart3 },
@@ -3192,7 +3194,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V3.8 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V3.9 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -3484,6 +3486,201 @@ function TabelaPeliculasTab({ estoque=[] }) {
         </>}
       </Card>}
     </>}
+  </div>;
+}
+
+function ComprasTab({ estoque=[], onMovimentar }) {
+  const [periodo,setPeriodo]=useState(30);
+  const [vendas,setVendas]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [busca,setBusca]=useState("");
+  const [fornecedor,setFornecedor]=useState("todos");
+  const [selecionados,setSelecionados]=useState({});
+  const [quantidades,setQuantidades]=useState({});
+  const [recebendo,setRecebendo]=useState(false);
+
+  async function carregar(){
+    setLoading(true);
+    const fim=new Date(); fim.setHours(23,59,59,999);
+    const ini=new Date(); ini.setDate(ini.getDate()-(periodo-1)); ini.setHours(0,0,0,0);
+    try{
+      const rows=await sb(`vendas?select=*&timestamp=gte.${ini.toISOString()}&timestamp=lte.${fim.toISOString()}&order=timestamp.desc`);
+      setVendas((rows||[]).map(rowToVenda).filter(v=>v.status!=="estornada"));
+    }catch(e){
+      console.warn("Compras e reposição:",e);
+      setVendas([]);
+    }
+    setLoading(false);
+  }
+
+  useEffect(()=>{carregar();},[periodo]);
+
+  const vendido={};
+  vendas.forEach(v=>(v.itens||[]).forEach(i=>{
+    if(!i.estoqueId)return;
+    vendido[i.estoqueId]=(vendido[i.estoqueId]||0)+(Number(i.qtd)||0);
+  }));
+
+  const analise=estoque.map(p=>{
+    const vendasPeriodo=Number(vendido[p.id]||0);
+    const mensal=vendasPeriodo*(30/periodo);
+    const minimo=Number(p.estoqueMinimo||0);
+    const atual=Number(p.quantidade||0);
+    const alvo=Math.max(minimo*2,Math.ceil(mensal*1.25),minimo);
+    const sugerido=Math.max(0,Math.ceil(alvo-atual));
+    let prioridade="normal";
+    if(atual<=0) prioridade="urgente";
+    else if(atual<=minimo) prioridade="alta";
+    else if(sugerido>0&&vendasPeriodo>0) prioridade="media";
+    return {...p,vendasPeriodo,mensal,alvo,sugerido,prioridade,investimento:sugerido*Number(p.custo||0)};
+  }).filter(p=>p.sugerido>0)
+    .sort((a,b)=>{
+      const peso={urgente:4,alta:3,media:2,normal:1};
+      return peso[b.prioridade]-peso[a.prioridade]||b.vendasPeriodo-a.vendasPeriodo||b.sugerido-a.sugerido;
+    });
+
+  const fornecedores=[...new Set(estoque.map(p=>String(p.fornecedor||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  const q=busca.toLowerCase();
+  const lista=analise.filter(p=>{
+    const matchBusca=!q||[p.nome,p.sku,p.marca,p.compatibilidade,p.fornecedor].some(v=>String(v||"").toLowerCase().includes(q));
+    const matchForn=fornecedor==="todos"||(fornecedor==="sem"?!p.fornecedor:p.fornecedor===fornecedor);
+    return matchBusca&&matchForn;
+  });
+
+  const qtdEscolhida=(p)=>Math.max(0,Number(quantidades[p.id]??p.sugerido)||0);
+  const marcados=lista.filter(p=>selecionados[p.id]);
+  const totalUn=marcados.reduce((a,p)=>a+qtdEscolhida(p),0);
+  const totalCompra=marcados.reduce((a,p)=>a+qtdEscolhida(p)*Number(p.custo||0),0);
+
+  function toggleTodos(){
+    const todosMarcados=lista.length&&lista.every(p=>selecionados[p.id]);
+    const prox={...selecionados};
+    lista.forEach(p=>prox[p.id]=!todosMarcados);
+    setSelecionados(prox);
+  }
+
+  function exportarCSV(){
+    const itens=marcados.length?marcados:lista;
+    if(!itens.length){alert("Não há itens para exportar.");return;}
+    const esc=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+    const linhas=["produto;sku;fornecedor;estoque_atual;estoque_minimo;vendido_periodo;quantidade_compra;custo_unitario;total_estimado"];
+    itens.forEach(p=>{
+      const qtd=marcados.length?qtdEscolhida(p):p.sugerido;
+      linhas.push([
+        p.nome,p.sku||"",p.fornecedor||"",p.quantidade,p.estoqueMinimo,p.vendasPeriodo,qtd,
+        Number(p.custo||0).toFixed(2),(qtd*Number(p.custo||0)).toFixed(2)
+      ].map(esc).join(";"));
+    });
+    const blob=new Blob(["\ufeff"+linhas.join("\n")],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`enigma-lista-compras-${todayISO()}.csv`;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
+  async function darEntrada(){
+    if(!marcados.length){alert("Selecione pelo menos um produto.");return;}
+    if(!confirm(`Registrar entrada de ${totalUn} unidade(s) no estoque?`))return;
+    setRecebendo(true);
+    let ok=0;
+    for(const p of marcados){
+      const qtd=qtdEscolhida(p);
+      if(!qtd)continue;
+      const feito=await onMovimentar(p.id,{
+        tipo:"entrada",
+        quantidade:qtd,
+        origem:"compra_reposicao",
+        observacao:`Reposição registrada pela lista de compras · fornecedor: ${p.fornecedor||"não informado"}`
+      });
+      if(feito)ok++;
+    }
+    setRecebendo(false);
+    setSelecionados({});
+    setQuantidades({});
+    alert(`Entrada concluída para ${ok} produto(s).`);
+  }
+
+  const urgentes=analise.filter(p=>p.prioridade==="urgente").length;
+  const baixos=analise.filter(p=>p.prioridade==="alta").length;
+  const investimentoTotal=analise.reduce((a,p)=>a+p.investimento,0);
+
+  return <div className="space-y-5">
+    <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_85%_12%,rgba(139,92,246,.17),transparent_30%),radial-gradient(circle_at_10%_100%,rgba(34,211,238,.06),transparent_32%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+        <div>
+          <div className="inline-flex items-center gap-2 text-[9px] tracking-[.22em] text-purple-300 border border-purple-500/20 bg-purple-500/10 rounded-full px-3 py-1"><Package size={12}/> ENIGMA // SUPPLY CONTROL</div>
+          <h1 className="text-2xl md:text-3xl font-semibold text-white mt-3">Compras & Reposição</h1>
+          <p className="text-sm text-[#858590] mt-2 max-w-2xl">Transforme giro e estoque mínimo em uma lista objetiva do que comprar, quanto comprar e quanto capital será necessário.</p>
+        </div>
+        <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
+          {[7,30,90].map(n=><button key={n} onClick={()=>setPeriodo(n)} className={"rounded-lg px-3 py-2 text-[10px] "+(periodo===n?"bg-purple-500/20 text-purple-200 border border-purple-500/25":"text-[#70707B] border border-transparent")}>{n} dias</button>)}
+        </div>
+      </div>
+    </section>
+
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      <MetricCyber label="PARA REPOR" value={String(analise.length)} sub="produtos sugeridos"/>
+      <MetricCyber label="ZERADOS" value={String(urgentes)} sub="prioridade urgente"/>
+      <MetricCyber label="ABAIXO DO MÍNIMO" value={String(baixos)} sub="prioridade alta"/>
+      <MetricCyber label="INVESTIMENTO EST." value={fmt(investimentoTotal)} sub="sugestão completa"/>
+    </div>
+
+    <Card>
+      <div className="grid md:grid-cols-[1fr_220px_auto] gap-2">
+        <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]"/><Input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar produto, SKU, marca ou fornecedor" className="pl-9"/></div>
+        <select value={fornecedor} onChange={e=>setFornecedor(e.target.value)} className="rounded-lg bg-[#0F0F14] border border-[#2A2A34] px-3 py-2 text-xs">
+          <option value="todos">Todos os fornecedores</option>
+          <option value="sem">Sem fornecedor</option>
+          {fornecedores.map(f=><option key={f} value={f}>{f}</option>)}
+        </select>
+        <Button variant="ghost" onClick={exportarCSV}>Exportar CSV</Button>
+      </div>
+    </Card>
+
+    {loading?<Card className="text-center py-12"><div className="text-xs text-[#666672]">Analisando giro e estoque...</div></Card>:
+    !lista.length?<Card className="text-center py-12"><CheckCircle2 size={28} className="mx-auto text-green-300"/><div className="text-sm text-white mt-3">Nenhuma reposição sugerida.</div><div className="text-xs text-[#666672] mt-1">O estoque atual cobre a demanda calculada para este período.</div></Card>:
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <button onClick={toggleTodos} className="text-xs text-purple-300">{lista.every(p=>selecionados[p.id])?"Desmarcar todos":"Selecionar todos"}</button>
+        <div className="text-[10px] text-[#666672]">{lista.length} produto(s) exibido(s)</div>
+      </div>
+
+      <div className="space-y-2">{lista.map(p=>{
+        const marcado=!!selecionados[p.id];
+        const cor=p.prioridade==="urgente"?"text-red-300 border-red-500/20 bg-red-500/[.025]":p.prioridade==="alta"?"text-amber-300 border-amber-500/20 bg-amber-500/[.025]":"text-cyan-300 border-cyan-500/15 bg-cyan-500/[.02]";
+        return <Card key={p.id} className={"!p-0 overflow-hidden "+(marcado?"ring-1 ring-purple-500/30":"")}>
+          <div className="p-4 grid md:grid-cols-[34px_1.45fr_repeat(5,.72fr)] gap-3 items-center">
+            <button onClick={()=>setSelecionados({...selecionados,[p.id]:!marcado})} className={"w-6 h-6 rounded-md border flex items-center justify-center "+(marcado?"border-purple-400 bg-purple-500/20 text-purple-200":"border-white/15 text-transparent")}>{marcado&&<Check size={14}/>}</button>
+            <div>
+              <div className="text-sm text-white">{p.nome}</div>
+              <div className="text-[10px] text-[#666672] mt-1">{p.fornecedor||"Fornecedor não informado"}{p.sku?` · SKU ${p.sku}`:""}</div>
+              <span className={"inline-block mt-2 rounded-full border px-2 py-1 text-[8px] "+cor}>{p.prioridade==="urgente"?"URGENTE":p.prioridade==="alta"?"ALTA PRIORIDADE":"REPOSIÇÃO"}</span>
+            </div>
+            <div><div className="text-[8px] text-[#555560]">ESTOQUE</div><div className="font-mono text-sm mt-1">{p.quantidade}</div></div>
+            <div><div className="text-[8px] text-[#555560]">MÍNIMO</div><div className="font-mono text-sm mt-1">{p.estoqueMinimo}</div></div>
+            <div><div className="text-[8px] text-[#555560]">VENDIDO</div><div className="font-mono text-sm mt-1">{p.vendasPeriodo} un</div><div className="text-[8px] text-[#555560]">{periodo} dias</div></div>
+            <div><div className="text-[8px] text-[#555560]">COMPRAR</div><Input inputMode="numeric" value={quantidades[p.id]??p.sugerido} onChange={e=>setQuantidades({...quantidades,[p.id]:e.target.value.replace(/\D/g,"")})} className="mt-1 !h-8 !py-1 font-mono"/></div>
+            <div><div className="text-[8px] text-[#555560]">CUSTO EST.</div><div className="font-mono text-xs mt-1">{fmt(qtdEscolhida(p)*Number(p.custo||0))}</div><div className="text-[8px] text-[#555560]">{fmt(p.custo)}/un</div></div>
+          </div>
+        </Card>
+      })}</div>
+
+      <div className="sticky bottom-20 md:bottom-4 z-10 rounded-2xl border border-purple-500/25 bg-[#121218]/95 backdrop-blur-xl p-4 shadow-[0_10px_40px_rgba(0,0,0,.45)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex gap-6">
+            <div><div className="text-[8px] tracking-[.15em] text-[#666672]">SELECIONADOS</div><div className="font-mono text-lg text-white">{marcados.length}</div></div>
+            <div><div className="text-[8px] tracking-[.15em] text-[#666672]">UNIDADES</div><div className="font-mono text-lg text-white">{totalUn}</div></div>
+            <div><div className="text-[8px] tracking-[.15em] text-[#666672]">TOTAL ESTIMADO</div><div className="font-mono text-lg text-green-300">{fmt(totalCompra)}</div></div>
+          </div>
+          <div className="flex gap-2"><Button variant="ghost" onClick={exportarCSV}>Gerar lista</Button><Button disabled={!marcados.length||recebendo} onClick={darEntrada}>{recebendo?"Registrando...":"Mercadoria recebida"}</Button></div>
+        </div>
+        <div className="text-[9px] text-[#5F5F69] mt-2">“Mercadoria recebida” dá entrada real no estoque usando as quantidades selecionadas.</div>
+      </div>
+    </>}
+
+    <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">COMO A SUGESTÃO É CALCULADA</div>
+      <div className="text-xs leading-5 text-[#777783] mt-2">O sistema converte as vendas do período em demanda mensal, adiciona uma margem de segurança de 25% e respeita pelo menos duas vezes o estoque mínimo. A quantidade sugerida é a diferença entre esse alvo e o saldo atual. Você pode alterar manualmente antes de comprar.</div>
+    </div>
   </div>;
 }
 
