@@ -1602,7 +1602,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.3</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1615,6 +1615,9 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   const [selecionado,setSelecionado]=useState(null);
   const [compras,setCompras]=useState([]);
   const [carregando,setCarregando]=useState(false);
+  const [aparelhoHistorico,setAparelhoHistorico]=useState(null);
+  const [ordensHistorico,setOrdensHistorico]=useState([]);
+  const [carregandoHistorico,setCarregandoHistorico]=useState(false);
 
   const filtrados=clientes.filter(c=>`${c.nome||""} ${c.telefone||""} ${c.email||""} ${c.documento||""}`.toLowerCase().includes(busca.toLowerCase()));
 
@@ -1638,6 +1641,19 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
     const osTel=String(os.clienteTelefone||"").replace(/\D/g,"");
     return (tel&&osTel&&tel===osTel) || (!tel && String(os.clienteNome||"").toLowerCase()===String(c.nome||"").toLowerCase());
   });
+
+  async function abrirHistoricoAparelho(a){
+    setAparelhoHistorico(a); setCarregandoHistorico(true);
+    try{
+      const rows=await sb(`ordens_servico?select=*&cliente_id=eq.${selecionado.id}&order=data_entrada.desc`);
+      setOrdensHistorico((rows||[]).map(rowToOSDetail).filter(d=>{
+        const serial=String(d.aparelho?.serial||"").trim().toLowerCase();
+        const nome=String(d.aparelho?.marcaModelo||"").trim().toLowerCase();
+        return a.serial ? serial===String(a.serial).trim().toLowerCase() : nome===String(a.nome).trim().toLowerCase();
+      }));
+    }catch(e){setOrdensHistorico([]);}
+    setCarregandoHistorico(false);
+  }
 
   const comprasValidas=compras.filter(v=>v.status!=="estornada");
   const ordensSelecionado=selecionado?ordensDo(selecionado):[];
@@ -1703,7 +1719,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
           <div className="flex items-end justify-between gap-3 mb-2"><div><div className="text-[9px] tracking-[.2em] text-cyan-300">APARELHOS DO CLIENTE</div><div className="text-[10px] text-[#60606B] mt-1">Histórico técnico agrupado por aparelho / IMEI.</div></div><div className="text-[9px] text-[#6B6B76]">{aparelhos.length} cadastrado(s)</div></div>
           <div className="grid sm:grid-cols-2 gap-2">{aparelhos.map(a=><div key={a.chave} className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.025] p-3">
             <div className="flex items-start gap-3"><div className="w-9 h-9 rounded-lg bg-cyan-500/[.06] border border-cyan-500/15 flex items-center justify-center text-cyan-300"><Smartphone size={15}/></div><div className="min-w-0 flex-1"><div className="text-xs text-white font-medium">{a.nome}</div><div className="text-[9px] text-[#73737E] mt-1">{a.serial?`IMEI / Serial: ${a.serial}`:"IMEI / Serial não informado"}{a.cor?` · ${a.cor}`:""}</div></div><div className="font-mono text-[10px] text-cyan-300">{a.ordens.length} OS</div></div>
-            <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between gap-3"><div className="text-[9px] text-[#666672]">Última entrada: {a.ultima?.dataEntrada?new Date(a.ultima.dataEntrada).toLocaleDateString("pt-BR"):"—"}</div>{a.ultima&&<button onClick={()=>onAbrirOS(a.ultima.id)} className="text-[9px] text-purple-300">Ver histórico →</button>}</div>
+            <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between gap-3"><div className="text-[9px] text-[#666672]">Última entrada: {a.ultima?.dataEntrada?new Date(a.ultima.dataEntrada).toLocaleDateString("pt-BR"):"—"}</div>{a.ultima&&<button onClick={()=>abrirHistoricoAparelho(a)} className="text-[9px] text-purple-300">Ver histórico →</button>}</div>
           </div>)}</div>
         </div>}
 
@@ -1723,6 +1739,15 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
           {!interacoes.length?<div className="text-xs text-[#666672]">Ainda não há interações registradas.</div>:<div className="space-y-2">{interacoes.slice(0,10).map((x,i)=><div key={`${x.tipo}-${x.id}-${i}`} className="flex gap-3 items-center"><div className={"w-2 h-2 rounded-full "+(x.tipo==="os"?"bg-purple-400":"bg-cyan-400")}/><div className="min-w-0 flex-1"><div className="text-xs text-[#CFCFD6]">{x.titulo}</div><div className="text-[9px] text-[#5F5F69]">{fmtDateTime(x.data)}</div></div>{x.tipo==="os"&&x.status==="cancelado"?<div className="text-[9px] text-red-300">Cancelada · não contabilizada</div>:Number(x.valor)>0&&<div className="font-mono text-[10px]">{fmt(x.valor)}</div>}</div>)}</div>}
         </div>
       </div>
+      {aparelhoHistorico&&<div className="fixed inset-0 bg-black/85 z-40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={()=>setAparelhoHistorico(null)}>
+        <div className="bg-[#0E0E14] border border-cyan-500/20 rounded-t-2xl sm:rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5" onClick={e=>e.stopPropagation()}>
+          <div className="flex justify-between gap-4 mb-5"><div><div className="text-[9px] tracking-[.22em] text-cyan-300">ENIGMA // DEVICE HISTORY</div><div className="text-2xl text-white mt-1">{aparelhoHistorico.nome}</div><div className="text-xs text-[#74747F] mt-1">{aparelhoHistorico.serial?`IMEI / Serial: ${aparelhoHistorico.serial}`:"IMEI / Serial não informado"}{aparelhoHistorico.cor?` · ${aparelhoHistorico.cor}`:""} · {selecionado.nome}</div></div><button onClick={()=>setAparelhoHistorico(null)}><X size={18}/></button></div>
+          {(()=>{const validas=ordensHistorico.filter(o=>o.status!=="cancelado");const total=validas.reduce((a,o)=>a+Number(o.valorFinal||0),0);const pecas=ordensHistorico.flatMap(o=>o.pecasUsadas||[]);return <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-5"><MetricCyber label="ENTRADAS" value={String(ordensHistorico.length)} sub="histórico completo"/><MetricCyber label="REPAROS VÁLIDOS" value={String(validas.length)} sub={`${ordensHistorico.length-validas.length} cancelada(s)`}/><MetricCyber label="PEÇAS UTILIZADAS" value={String(pecas.reduce((a,p)=>a+Number(p.qtd||1),0))} sub="registradas nas OS"/><MetricCyber label="VALOR HISTÓRICO" value={fmt(total)} sub="serviços válidos"/></div>})()}
+          <div className="rounded-xl border border-amber-500/15 bg-amber-500/[.025] p-3 mb-5 flex gap-3"><AlertCircle size={16} className="text-amber-300 shrink-0"/><div><div className="text-[10px] text-amber-200">Leitura técnica antes de um novo atendimento</div><div className="text-[10px] text-[#777782] mt-1">Compare defeitos, diagnósticos e reparos anteriores para identificar retorno ou possível reincidência.</div></div></div>
+          <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">LINHA DO TEMPO TÉCNICA</div>
+          {carregandoHistorico?<div className="py-10 text-center text-xs text-[#666672]">Carregando histórico técnico...</div>:!ordensHistorico.length?<div className="rounded-xl border border-white/8 p-6 text-xs text-[#666672]">Nenhuma OS localizada para este aparelho.</div>:<div className="space-y-3">{ordensHistorico.map((o,i)=><div key={o.id} className={"rounded-2xl border p-4 "+(o.status==="cancelado"?"border-red-500/15 bg-red-500/[.02]":"border-white/8 bg-white/[.012]")}><div className="flex flex-wrap justify-between gap-3 mb-3"><div><div className="text-xs text-white font-medium">OS #{o.numero} · {o.dataEntrada?fmtDateTime(o.dataEntrada):"—"}</div><div className="text-[9px] text-[#62626D] mt-1">Atendimento #{ordensHistorico.length-i} deste aparelho</div></div><div className="text-right"><StatusBadge status={o.status}/>{o.status==="cancelado"?<div className="text-[9px] text-red-300 mt-1">não contabilizada</div>:Number(o.valorFinal)>0&&<div className="font-mono text-xs mt-1">{fmt(o.valorFinal)}</div>}</div></div><div className="grid md:grid-cols-2 gap-3"><div className="rounded-xl border border-white/6 p-3"><div className="text-[8px] tracking-[.16em] text-[#777782]">DEFEITO RELATADO</div><div className="text-xs text-[#D0D0D6] mt-1 leading-5">{o.problemaRelatado||"Não informado"}</div></div><div className="rounded-xl border border-white/6 p-3"><div className="text-[8px] tracking-[.16em] text-[#777782]">DIAGNÓSTICO TÉCNICO</div><div className="text-xs text-[#D0D0D6] mt-1 leading-5">{o.diagnosticoTecnico||"Ainda não registrado"}</div></div></div><div className="grid sm:grid-cols-2 gap-2 mt-3"><div className="rounded-lg bg-white/[.018] p-2.5"><div className="text-[8px] text-[#686873]">PEÇAS / REPAROS</div><div className="text-[10px] text-white mt-1">{(o.pecasUsadas||[]).length?o.pecasUsadas.map(p=>`${p.nome||p.descricao||"Peça"}${p.qtd?` ×${p.qtd}`:""}`).join(", "):"Nenhuma peça registrada"}</div></div><div className="rounded-lg bg-white/[.018] p-2.5"><div className="text-[8px] text-[#686873]">GARANTIA</div><div className="text-[10px] text-white mt-1">{o.entrega?.garantiaDias?`${o.entrega.garantiaDias} dias`:"Não informada"}</div></div></div><div className="flex justify-end mt-3"><button onClick={()=>onAbrirOS(o.id)} className="text-[10px] text-purple-300">Abrir OS completa →</button></div></div>)}</div>}
+        </div>
+      </div>}
     </div>}
   </div>;
 }
@@ -1730,7 +1755,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.3</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -3290,7 +3315,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.3 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4777,7 +4802,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.3</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
