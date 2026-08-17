@@ -13,12 +13,21 @@ import {
 const SUPABASE_URL = "https://rvyjzlgvwpvgvjdqexne.supabase.co";
 const SUPABASE_KEY = "sb_publishable_jMQ-tBzmSo2LuxT9vsM9rg_OT2oAyIH";
 
+function getEnigmaSession(){
+  try{return JSON.parse(localStorage.getItem("enigma_session")||"null");}catch{return null;}
+}
+function setEnigmaSession(session){
+  if(session) localStorage.setItem("enigma_session",JSON.stringify(session));
+  else localStorage.removeItem("enigma_session");
+}
+function authToken(){ return getEnigmaSession()?.access_token || SUPABASE_KEY; }
+
 async function sb(path, options = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
     headers: {
       apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
+      Authorization: `Bearer ${authToken()}`,
       "Content-Type": "application/json",
       Prefer: options.prefer || "return=representation",
       ...(options.headers || {}),
@@ -38,7 +47,7 @@ async function rpc(name, body = {}) {
     method: "POST",
     headers: {
       apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
+      Authorization: `Bearer ${authToken()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -51,6 +60,113 @@ async function rpc(name, body = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+
+
+async function enigmaLogin(email,password){
+  const res=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{
+    method:"POST",
+    headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},
+    body:JSON.stringify({email,password})
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data?.error_description||data?.msg||"E-mail ou senha inválidos.");
+  setEnigmaSession(data);
+  return data;
+}
+async function enigmaRefresh(){
+  const atual=getEnigmaSession();
+  if(!atual?.refresh_token) return null;
+  const res=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,{
+    method:"POST",
+    headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},
+    body:JSON.stringify({refresh_token:atual.refresh_token})
+  });
+  if(!res.ok){setEnigmaSession(null);return null;}
+  const data=await res.json();
+  setEnigmaSession(data);
+  return data;
+}
+async function enigmaLogout(){
+  const token=getEnigmaSession()?.access_token;
+  if(token){
+    try{await fetch(`${SUPABASE_URL}/auth/v1/logout`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${token}`}});}catch{}
+  }
+  setEnigmaSession(null);
+}
+async function carregarPerfilAtual(){
+  const session=getEnigmaSession();
+  if(!session?.user?.id) return null;
+  const rows=await sb(`enigma_usuarios?select=*&auth_user_id=eq.${session.user.id}&limit=1`);
+  return rows?.[0]||null;
+}
+const ROLE_LABELS={admin:"Administrador",gerente:"Gerente",vendedor:"Vendedor",tecnico:"Técnico"};
+const ROLE_TABS={
+  admin:["dashboard","atendimento","os","pdv","clientes","avaliacao","estoque","compras","peliculas","financeiro","relatorio","config"],
+  gerente:["dashboard","atendimento","os","pdv","clientes","avaliacao","estoque","compras","peliculas","financeiro","relatorio"],
+  vendedor:["dashboard","atendimento","os","pdv","clientes","estoque","peliculas"],
+  tecnico:["dashboard","atendimento","os","clientes","estoque","peliculas"]
+};
+function tabPermitida(role,tab){return (ROLE_TABS[role]||[]).includes(tab);}
+function podeAcao(role,acao){
+  if(role==="admin") return true;
+  const mapa={
+    "gerente":["estornar_venda","editar_venda","fechar_caixa","abrir_caixa","movimentar_estoque","editar_estoque","compras","financeiro","relatorios","avaliacao_usados","editar_os","criar_os"],
+    "vendedor":["abrir_caixa","fechar_caixa","criar_venda","criar_cliente","criar_os","editar_os"],
+    "tecnico":["editar_os","movimentar_estoque"]
+  };
+  return (mapa[role]||[]).includes(acao);
+}
+
+function EnigmaLogin({onAuthenticated}){
+  const [email,setEmail]=useState("");
+  const [senha,setSenha]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [erro,setErro]=useState("");
+  async function entrar(e){
+    e?.preventDefault();setErro("");setLoading(true);
+    try{
+      await enigmaLogin(email.trim(),senha);
+      const perfil=await carregarPerfilAtual();
+      if(!perfil?.ativo){await enigmaLogout();throw new Error("Usuário sem acesso ativo ao ENIGMA OS.");}
+      onAuthenticated(perfil);
+    }catch(err){setErro(err?.message||"Não foi possível entrar.");}
+    setLoading(false);
+  }
+  return <div className="min-h-screen bg-[#08080D] text-white flex items-center justify-center p-4">
+    <div className="w-full max-w-sm rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.16),transparent_32%),#101016] p-6 shadow-2xl">
+      <div className="w-12 h-12 rounded-2xl border border-purple-400/30 bg-purple-500/10 flex items-center justify-center mb-5"><Lock size={20} className="text-purple-300"/></div>
+      <div className="text-[9px] tracking-[.26em] text-purple-300">ENIGMA // SECURE ACCESS</div>
+      <h1 className="text-2xl font-semibold mt-2">Acesso ao sistema</h1>
+      <p className="text-xs text-[#74747F] mt-2">Entre com seu usuário autorizado. As ações ficam vinculadas à sua conta.</p>
+      <form onSubmit={entrar} className="space-y-3 mt-6">
+        <div><Label>E-mail</Label><Input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" placeholder="usuario@enigma"/></div>
+        <div><Label>Senha</Label><Input type="password" value={senha} onChange={e=>setSenha(e.target.value)} autoComplete="current-password" placeholder="••••••••"/></div>
+        {erro&&<div className="rounded-xl border border-red-500/20 bg-red-500/[.04] p-3 text-xs text-red-200">{erro}</div>}
+        <Button className="w-full !h-11" disabled={loading||!email||!senha}>{loading?"Entrando...":"Entrar no ENIGMA OS"}</Button>
+      </form>
+      <div className="mt-5 pt-4 border-t border-white/8 text-[9px] text-[#555560]">Acesso protegido por autenticação Supabase e permissões por função.</div>
+    </div>
+  </div>;
+}
+
+function EnigmaProtegido(){
+  const [authLoading,setAuthLoading]=useState(true);
+  const [perfil,setPerfil]=useState(null);
+  useEffect(()=>{(async()=>{
+    try{
+      let session=getEnigmaSession();
+      if(session?.refresh_token) session=await enigmaRefresh();
+      if(session?.access_token){
+        const p=await carregarPerfilAtual();
+        if(p?.ativo) setPerfil(p);
+      }
+    }catch{}
+    setAuthLoading(false);
+  })();},[]);
+  if(authLoading) return <div className="min-h-screen bg-[#09090D] flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin"/></div>;
+  if(!perfil) return <EnigmaLogin onAuthenticated={setPerfil}/>;
+  return <EnigmaSistema usuario={perfil} onLogout={async()=>{await enigmaLogout();setPerfil(null);}}/>;
+}
 
 /* ---- mapeadores linha do banco <-> objeto usado nos componentes ---- */
 function rowToEstoque(r) {
@@ -284,11 +400,11 @@ export default function AppRouter() {
   const orcamentoToken = params.get("orcamento");
   if (orcamentoToken) return <OrcamentoPublico token={orcamentoToken} />;
   if (token) return <AssinaturaPublica token={token} />;
-  return <EnigmaSistema />;
+  return <EnigmaProtegido />;
 }
 
 /* ============================================================ */
-function EnigmaSistema() {
+function EnigmaSistema({ usuario, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [saveError, setSaveError] = useState(false);
@@ -304,6 +420,9 @@ function EnigmaSistema() {
   const [seminovos, setSeminovos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const patchTimer = useRef(null);
+  const role=usuario?.role||"vendedor";
+  const allowedTabs=ROLE_TABS[role]||[];
+
 
   useEffect(() => {
     (async () => {
@@ -311,7 +430,7 @@ function EnigmaSistema() {
         const [estoqueRows, caixaRows, osRows, clienteRows] = await Promise.all([
           sb("estoque?select=*&order=created_at.desc"),
           sb("caixa_sessoes?select=*&status=eq.aberto&order=data_abertura.desc&limit=1"),
-          sb("ordens_servico?select=id,numero,cliente,aparelho,status,data_entrada&order=numero.desc"),
+          sb("ordens_servico?select=id,numero,cliente_id,cliente,aparelho,status,data_entrada,valor_final&order=numero.desc"),
           sb("clientes?select=*&order=nome.asc"),
         ]);
         setEstoque((estoqueRows || []).map(rowToEstoque));
@@ -927,15 +1046,16 @@ function EnigmaSistema() {
   const caixaAberto = !!caixaAtual;
 
   const navigate = (t) => {
+    if(!tabPermitida(role,t)){alert("Seu nível de acesso não permite abrir este módulo.");return;}
     setTab(t);
     if (t === "os") setOsView("lista");
   };
 
   return (
     <div className="min-h-screen bg-[#09090D] text-[#F2F2F5] font-sans md:pl-64 pb-20 md:pb-0">
-      <SideNav tab={tab} setTab={navigate} />
-      <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} />
-      <MobileSectionNav tab={tab} setTab={navigate} />
+      <SideNav tab={tab} setTab={navigate} role={role} usuario={usuario} onLogout={onLogout} />
+      <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} usuario={usuario} />
+      <MobileSectionNav tab={tab} setTab={navigate} role={role} />
       <main className="max-w-6xl mx-auto px-4 md:px-8 pt-6 pb-10">
         {tab === "dashboard" && (
           <DashboardTab caixaAtual={caixaAtual} osIndex={osIndex} estoque={estoque} onNavigate={navigate} onNovaOS={() => { setTab("os"); setOsView("nova"); }} />
@@ -962,9 +1082,9 @@ function EnigmaSistema() {
         {tab === "compras" && <ComprasTab estoque={estoque} onMovimentar={movimentarEstoque} />}
         {tab === "peliculas" && <TabelaPeliculasTab estoque={estoque} />}
         {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} estoque={estoque} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
-        {tab === "config" && <ConfiguracoesTab />}
+        {tab === "config" && <ConfiguracoesTab usuario={usuario} />}
       </main>
-      <BottomNav tab={tab} setTab={navigate} />
+      <BottomNav tab={tab} setTab={navigate} role={role} />
     </div>
   );
 }
@@ -984,7 +1104,7 @@ const NAV_ITEMS = [
   { id: "config", label: "Configurações", icon: Settings },
 ];
 
-function SideNav({ tab, setTab }) {
+function SideNav({ tab, setTab, role, usuario, onLogout }) {
   return (
     <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 border-r border-white/10 bg-[#0C0C12] z-20 flex-col">
       <div className="px-6 py-6 border-b border-white/10">
@@ -999,19 +1119,26 @@ function SideNav({ tab, setTab }) {
         </div>
       </div>
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
-        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+        {NAV_ITEMS.filter(item=>tabPermitida(role,item.id)).map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)} className={"w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition border " + (tab === id ? "bg-purple-500/10 border-purple-500/25 text-white shadow-[inset_3px_0_0_#8B5CF6]" : "border-transparent text-[#8A8A96] hover:text-white hover:bg-white/[.035]") }>
             <Icon size={17} className={tab === id ? "text-purple-300" : ""} />
             <span>{label}</span>
           </button>
         ))}
       </nav>
-      <div className="p-4 text-[10px] text-[#50505A] border-t border-white/10">ENIGMA OS · V3.6</div>
+      <div className="p-3 border-t border-white/10">
+        <div className="rounded-xl border border-white/8 bg-white/[.02] p-3 mb-2">
+          <div className="text-xs text-white truncate">{usuario?.nome||usuario?.email||"Usuário"}</div>
+          <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
+        </div>
+        <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.1</div>
+      </div>
     </aside>
   );
 }
 
-function Header({ caixaAberto, saveError, tab, osView, onVoltarOS }) {
+function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario }) {
   const current = NAV_ITEMS.find((item) => item.id === tab);
   return (
     <header className="border-b border-white/10 bg-[#09090D]/90 backdrop-blur-xl sticky top-0 z-10">
@@ -1027,6 +1154,7 @@ function Header({ caixaAberto, saveError, tab, osView, onVoltarOS }) {
           </div>
         )}
         <div className="flex items-center gap-2">
+          <span className="hidden lg:inline text-[9px] text-[#5F5F69]">{usuario?.nome||""} · {ROLE_LABELS[usuario?.role]||usuario?.role||""}</span>
           {saveError && <span className="hidden sm:flex items-center gap-1 text-[11px] text-red-400"><AlertCircle size={13} /> conexão</span>}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/[.03]">
             <span className={"w-2 h-2 rounded-full " + (caixaAberto ? "bg-emerald-400 shadow-[0_0_9px_rgba(52,211,153,.7)]" : "bg-[#4A4A54]")} />
@@ -1038,11 +1166,11 @@ function Header({ caixaAberto, saveError, tab, osView, onVoltarOS }) {
   );
 }
 
-function MobileSectionNav({ tab, setTab }) {
+function MobileSectionNav({ tab, setTab, role }) {
   return (
     <div className="md:hidden sticky top-[65px] z-[9] bg-[#09090D]/95 backdrop-blur-xl border-b border-white/[.06] overflow-x-auto no-scrollbar">
       <div className="flex gap-1 px-3 py-2 min-w-max">
-        {NAV_ITEMS.map(({ id, short, label }) => (
+        {NAV_ITEMS.filter(item=>tabPermitida(role,item.id)).map(({ id, short, label }) => (
           <button key={id} onClick={() => setTab(id)} className={"px-3 py-1.5 rounded-lg text-[10px] border transition " + (tab === id ? "border-purple-500/30 bg-purple-500/10 text-purple-200" : "border-transparent text-[#666672]")}>{short || label}</button>
         ))}
       </div>
@@ -1050,11 +1178,11 @@ function MobileSectionNav({ tab, setTab }) {
   );
 }
 
-function BottomNav({ tab, setTab }) {
-  const core = NAV_ITEMS.filter((item) => ["dashboard", "os", "pdv", "estoque", "financeiro"].includes(item.id));
+function BottomNav({ tab, setTab, role }) {
+  const core = NAV_ITEMS.filter((item) => ["dashboard", "os", "pdv", "estoque", "financeiro"].includes(item.id) && tabPermitida(role,item.id));
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0C0C12]/95 backdrop-blur-xl border-t border-white/10 z-20">
-      <div className="grid grid-cols-5">
+      <div className="flex justify-around">
         {core.map(({ id, short, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)} className={"flex flex-col items-center gap-1 py-3 text-[9px] tracking-wide transition-colors " + (tab === id ? "text-purple-300" : "text-[#62626D]")}>
             <Icon size={17} />
@@ -1602,7 +1730,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.3.2</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.1</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1727,15 +1855,31 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   </div>;
 }
 
-function ConfiguracoesTab() {
+function ConfiguracoesTab({usuario}) {
+  const role=usuario?.role||"";
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.3.2</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
-      <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
+      <Card className="!rounded-2xl">
+        <div className="flex items-center gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Segurança & Configurações</div><div className="text-xs text-[#74747F]">Identidade, sessão e nível de acesso atual.</div></div></div>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.email||"Conta autenticada"}</div></div>
+          <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div><div className="text-xs text-[#666672] mt-1">Permissões aplicadas no sistema e banco.</div></div>
+          <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.1</div><div className="text-xs text-[#666672] mt-1">Secure Access</div></div>
+        </div>
+      </Card>
+      <Card className="!rounded-2xl border-cyan-500/15 bg-cyan-500/[.02]">
+        <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">MATRIZ DE ACESSO</div>
+        <div className="grid md:grid-cols-2 gap-2 text-xs">
+          <div className="rounded-xl border border-white/8 p-3"><strong>Administrador</strong><div className="text-[#777782] mt-1">Acesso total, usuários, financeiro, exclusões e configurações.</div></div>
+          <div className="rounded-xl border border-white/8 p-3"><strong>Gerente</strong><div className="text-[#777782] mt-1">Operação, financeiro, relatórios, caixa, estoque e estornos.</div></div>
+          <div className="rounded-xl border border-white/8 p-3"><strong>Vendedor</strong><div className="text-[#777782] mt-1">PDV, caixa, atendimento, clientes e abertura de OS.</div></div>
+          <div className="rounded-xl border border-white/8 p-3"><strong>Técnico</strong><div className="text-[#777782] mt-1">Assistência, OS, clientes e movimentação técnica de estoque.</div></div>
+        </div>
+      </Card>
+      <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Rastreamento de movimentações</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">A V4.4.1 cria auditoria no banco para registrar usuário, data, tabela, operação e registro alterado nas ações críticas.</div></div></div></Card>
     </div>
   );
 }
-
 /* ================= PDV ================= */
 function PDVTab({ caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
@@ -3326,7 +3470,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.3.2 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.1 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4815,7 +4959,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.3.2</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.1</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
