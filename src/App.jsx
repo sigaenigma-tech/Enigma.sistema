@@ -1602,7 +1602,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.1</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.3.1</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1615,9 +1615,6 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   const [selecionado,setSelecionado]=useState(null);
   const [compras,setCompras]=useState([]);
   const [carregando,setCarregando]=useState(false);
-  const [aparelhoHistorico,setAparelhoHistorico]=useState(null);
-  const [ordensHistorico,setOrdensHistorico]=useState([]);
-  const [carregandoHistorico,setCarregandoHistorico]=useState(false);
 
   const filtrados=clientes.filter(c=>`${c.nome||""} ${c.telefone||""} ${c.email||""} ${c.documento||""}`.toLowerCase().includes(busca.toLowerCase()));
 
@@ -1641,48 +1638,6 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
     const osTel=String(os.clienteTelefone||"").replace(/\D/g,"");
     return (tel&&osTel&&tel===osTel) || (!tel && String(os.clienteNome||"").toLowerCase()===String(c.nome||"").toLowerCase());
   });
-
-  async function abrirHistoricoAparelho(a){
-    setAparelhoHistorico(a);
-    setCarregandoHistorico(true);
-    try{
-      // Busca ampla para preservar compatibilidade com OS antigas que ainda não possuem cliente_id.
-      // Depois o vínculo é resolvido localmente pelo mesmo fallback usado no Cliente 360°.
-      const rows=await sb("ordens_servico?select=*&order=data_entrada.desc");
-      const telSelecionado=String(selecionado?.telefone||"").replace(/\D/g,"");
-      const nomeSelecionado=String(selecionado?.nome||"").trim().toLowerCase();
-      const serialAlvo=String(a?.serial||"").trim().toLowerCase();
-      const nomeAlvo=String(a?.nome||"").trim().toLowerCase();
-
-      const detalhes=(rows||[]).map(rowToOSDetail).filter(d=>{
-        const telOS=String(d.cliente?.telefone||"").replace(/\D/g,"");
-        const nomeOS=String(d.cliente?.nome||"").trim().toLowerCase();
-
-        const mesmoCliente=
-          (d.clienteId && selecionado?.id && d.clienteId===selecionado.id) ||
-          (telSelecionado && telOS && telSelecionado===telOS) ||
-          (!telSelecionado && nomeSelecionado && nomeOS===nomeSelecionado);
-
-        if(!mesmoCliente) return false;
-
-        const serialOS=String(d.aparelho?.serial||"").trim().toLowerCase();
-        const nomeOSAp=String(d.aparelho?.marcaModelo||"").trim().toLowerCase();
-
-        // Se o aparelho tem IMEI/serial, ele é a chave principal.
-        // Para registros antigos sem serial, usamos o modelo como fallback.
-        if(serialAlvo){
-          return serialOS===serialAlvo || (!serialOS && nomeOSAp===nomeAlvo);
-        }
-        return nomeOSAp===nomeAlvo;
-      });
-
-      setOrdensHistorico(detalhes);
-    }catch(e){
-      console.error("Falha ao carregar histórico técnico:",e);
-      setOrdensHistorico([]);
-    }
-    setCarregandoHistorico(false);
-  }
 
   const comprasValidas=compras.filter(v=>v.status!=="estornada");
   const ordensSelecionado=selecionado?ordensDo(selecionado):[];
@@ -1748,7 +1703,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
           <div className="flex items-end justify-between gap-3 mb-2"><div><div className="text-[9px] tracking-[.2em] text-cyan-300">APARELHOS DO CLIENTE</div><div className="text-[10px] text-[#60606B] mt-1">Histórico técnico agrupado por aparelho / IMEI.</div></div><div className="text-[9px] text-[#6B6B76]">{aparelhos.length} cadastrado(s)</div></div>
           <div className="grid sm:grid-cols-2 gap-2">{aparelhos.map(a=><div key={a.chave} className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.025] p-3">
             <div className="flex items-start gap-3"><div className="w-9 h-9 rounded-lg bg-cyan-500/[.06] border border-cyan-500/15 flex items-center justify-center text-cyan-300"><Smartphone size={15}/></div><div className="min-w-0 flex-1"><div className="text-xs text-white font-medium">{a.nome}</div><div className="text-[9px] text-[#73737E] mt-1">{a.serial?`IMEI / Serial: ${a.serial}`:"IMEI / Serial não informado"}{a.cor?` · ${a.cor}`:""}</div></div><div className="font-mono text-[10px] text-cyan-300">{a.ordens.length} OS</div></div>
-            <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between gap-3"><div className="text-[9px] text-[#666672]">Última entrada: {a.ultima?.dataEntrada?new Date(a.ultima.dataEntrada).toLocaleDateString("pt-BR"):"—"}</div>{a.ultima&&<button onClick={()=>abrirHistoricoAparelho(a)} className="text-[9px] text-purple-300">Ver histórico →</button>}</div>
+            <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between gap-3"><div className="text-[9px] text-[#666672]">Última entrada: {a.ultima?.dataEntrada?new Date(a.ultima.dataEntrada).toLocaleDateString("pt-BR"):"—"}</div>{a.ultima&&<button onClick={()=>onAbrirOS(a.ultima.id)} className="text-[9px] text-purple-300">Ver histórico →</button>}</div>
           </div>)}</div>
         </div>}
 
@@ -1768,15 +1723,6 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
           {!interacoes.length?<div className="text-xs text-[#666672]">Ainda não há interações registradas.</div>:<div className="space-y-2">{interacoes.slice(0,10).map((x,i)=><div key={`${x.tipo}-${x.id}-${i}`} className="flex gap-3 items-center"><div className={"w-2 h-2 rounded-full "+(x.tipo==="os"?"bg-purple-400":"bg-cyan-400")}/><div className="min-w-0 flex-1"><div className="text-xs text-[#CFCFD6]">{x.titulo}</div><div className="text-[9px] text-[#5F5F69]">{fmtDateTime(x.data)}</div></div>{x.tipo==="os"&&x.status==="cancelado"?<div className="text-[9px] text-red-300">Cancelada · não contabilizada</div>:Number(x.valor)>0&&<div className="font-mono text-[10px]">{fmt(x.valor)}</div>}</div>)}</div>}
         </div>
       </div>
-      {aparelhoHistorico&&<div className="fixed inset-0 bg-black/85 z-40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={()=>setAparelhoHistorico(null)}>
-        <div className="bg-[#0E0E14] border border-cyan-500/20 rounded-t-2xl sm:rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5" onClick={e=>e.stopPropagation()}>
-          <div className="flex justify-between gap-4 mb-5"><div><div className="text-[9px] tracking-[.22em] text-cyan-300">ENIGMA // DEVICE HISTORY</div><div className="text-2xl text-white mt-1">{aparelhoHistorico.nome}</div><div className="text-xs text-[#74747F] mt-1">{aparelhoHistorico.serial?`IMEI / Serial: ${aparelhoHistorico.serial}`:"IMEI / Serial não informado"}{aparelhoHistorico.cor?` · ${aparelhoHistorico.cor}`:""} · {selecionado.nome}</div></div><button onClick={()=>setAparelhoHistorico(null)}><X size={18}/></button></div>
-          {(()=>{const validas=ordensHistorico.filter(o=>o.status!=="cancelado");const total=validas.reduce((a,o)=>a+Number(o.valorFinal||0),0);const pecas=ordensHistorico.flatMap(o=>o.pecasUsadas||[]);return <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-5"><MetricCyber label="ENTRADAS" value={String(ordensHistorico.length)} sub="histórico completo"/><MetricCyber label="REPAROS VÁLIDOS" value={String(validas.length)} sub={`${ordensHistorico.length-validas.length} cancelada(s)`}/><MetricCyber label="PEÇAS UTILIZADAS" value={String(pecas.reduce((a,p)=>a+Number(p.qtd||1),0))} sub="registradas nas OS"/><MetricCyber label="VALOR HISTÓRICO" value={fmt(total)} sub="serviços válidos"/></div>})()}
-          <div className="rounded-xl border border-amber-500/15 bg-amber-500/[.025] p-3 mb-5 flex gap-3"><AlertCircle size={16} className="text-amber-300 shrink-0"/><div><div className="text-[10px] text-amber-200">Leitura técnica antes de um novo atendimento</div><div className="text-[10px] text-[#777782] mt-1">Compare defeitos, diagnósticos e reparos anteriores para identificar retorno ou possível reincidência.</div></div></div>
-          <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">LINHA DO TEMPO TÉCNICA</div>
-          {carregandoHistorico?<div className="py-10 text-center text-xs text-[#666672]">Carregando histórico técnico...</div>:!ordensHistorico.length?<div className="rounded-xl border border-white/8 p-6 text-xs text-[#666672]">Nenhuma OS localizada para este aparelho.</div>:<div className="space-y-3">{ordensHistorico.map((o,i)=><div key={o.id} className={"rounded-2xl border p-4 "+(o.status==="cancelado"?"border-red-500/15 bg-red-500/[.02]":"border-white/8 bg-white/[.012]")}><div className="flex flex-wrap justify-between gap-3 mb-3"><div><div className="text-xs text-white font-medium">OS #{o.numero} · {o.dataEntrada?fmtDateTime(o.dataEntrada):"—"}</div><div className="text-[9px] text-[#62626D] mt-1">Atendimento #{ordensHistorico.length-i} deste aparelho</div></div><div className="text-right"><StatusBadge status={o.status}/>{o.status==="cancelado"?<div className="text-[9px] text-red-300 mt-1">não contabilizada</div>:Number(o.valorFinal)>0&&<div className="font-mono text-xs mt-1">{fmt(o.valorFinal)}</div>}</div></div><div className="grid md:grid-cols-2 gap-3"><div className="rounded-xl border border-white/6 p-3"><div className="text-[8px] tracking-[.16em] text-[#777782]">DEFEITO RELATADO</div><div className="text-xs text-[#D0D0D6] mt-1 leading-5">{o.problemaRelatado||"Não informado"}</div></div><div className="rounded-xl border border-white/6 p-3"><div className="text-[8px] tracking-[.16em] text-[#777782]">DIAGNÓSTICO TÉCNICO</div><div className="text-xs text-[#D0D0D6] mt-1 leading-5">{o.diagnosticoTecnico||"Ainda não registrado"}</div></div></div><div className="grid sm:grid-cols-2 gap-2 mt-3"><div className="rounded-lg bg-white/[.018] p-2.5"><div className="text-[8px] text-[#686873]">PEÇAS / REPAROS</div><div className="text-[10px] text-white mt-1">{(o.pecasUsadas||[]).length?o.pecasUsadas.map(p=>`${p.nome||p.descricao||"Peça"}${p.qtd?` ×${p.qtd}`:""}`).join(", "):"Nenhuma peça registrada"}</div></div><div className="rounded-lg bg-white/[.018] p-2.5"><div className="text-[8px] text-[#686873]">GARANTIA</div><div className="text-[10px] text-white mt-1">{o.entrega?.garantiaDias?`${o.entrega.garantiaDias} dias`:"Não informada"}</div></div></div><div className="flex justify-end mt-3"><button onClick={()=>onAbrirOS(o.id)} className="text-[10px] text-purple-300">Abrir OS completa →</button></div></div>)}</div>}
-        </div>
-      </div>}
     </div>}
   </div>;
 }
@@ -1784,7 +1730,7 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
 function ConfiguracoesTab() {
   return (
     <div className="space-y-4">
-      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
+      <Card className="!rounded-2xl"><div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Configurações da ENIGMA</div><div className="text-xs text-[#74747F]">Base preparada para identidade, usuários, permissões e integrações.</div></div></div><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Empresa</Label><div className="text-sm text-white">ENIGMA</div><div className="text-xs text-[#666672] mt-1">Assistência técnica e acessórios</div></div><div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.3.1</div><div className="text-xs text-[#666672] mt-1">Estrutura de gestão em evolução</div></div></div></Card>
       <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Próxima etapa técnica</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">Migrar autenticação, permissões, cadastro independente de clientes e configurações da empresa para tabelas próprias no Supabase. A V2 mantém compatibilidade com a base atual para não interromper a operação.</div></div></div></Card>
     </div>
   );
@@ -2414,9 +2360,7 @@ function FechamentoCaixaModal({caixa,onFechar}){
   @page { size: A4; margin: 12mm; }
   *{box-sizing:border-box}
   body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11px}
-  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:12px}
-  .brand{font-weight:800;font-size:20px;letter-spacing:4px}
-  .subtitle{font-size:10px;color:#555;margin-top:3px}
+  ${enigmaPrintCss()}
   .meta{text-align:right;line-height:1.5}
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
   .box{border:1px solid #bbb;border-radius:6px;padding:8px}
@@ -2439,14 +2383,11 @@ function FechamentoCaixaModal({caixa,onFechar}){
 </style>
 </head>
 <body>
-<div class="head">
-  <div><div class="brand">ENIGMA</div><div class="subtitle">RELATÓRIO DE FECHAMENTO DE CAIXA</div></div>
-  <div class="meta">
-    <div><strong>Caixa:</strong> ${escapeHtml(String(caixa.id||"").slice(0,8).toUpperCase())}</div>
-    <div><strong>Operador:</strong> ${escapeHtml(caixa.operador||"Não informado")}</div>
-    <div><strong>Abertura:</strong> ${formatDateTimePrint(caixa.data_abertura)}</div>
-    <div><strong>Fechamento:</strong> ${formatDateTimePrint(caixa.data_fechamento)}</div>
-  </div>
+${enigmaPrintHeader("Relatório de fechamento de caixa",`Caixa ${escapeHtml(String(caixa.id||"").slice(0,8).toUpperCase())}`)}
+<div class="meta" style="margin-bottom:10px">
+  <strong>Operador:</strong> ${escapeHtml(caixa.operador||"Não informado")} &nbsp; | &nbsp;
+  <strong>Abertura:</strong> ${formatDateTimePrint(caixa.data_abertura)} &nbsp; | &nbsp;
+  <strong>Fechamento:</strong> ${formatDateTimePrint(caixa.data_fechamento)}
 </div>
 
 <div class="grid">
@@ -2470,7 +2411,7 @@ ${linhasVendas || "<div>Nenhuma venda registrada neste caixa.</div>"}
 
 ${caixa.observacao_fechamento?`<div class="obs"><strong>Observação do fechamento:</strong><br>${escapeHtml(caixa.observacao_fechamento)}</div>`:""}
 
-<div class="footer">Relatório gerado pelo ENIGMA OS · ${new Date().toLocaleString("pt-BR")}</div>
+${enigmaPrintFooter()}<div class="footer">Relatório gerado em ${new Date().toLocaleString("pt-BR")}</div>
 <script>window.onload=()=>setTimeout(()=>window.print(),250)</script>
 </body></html>`;
 
@@ -2505,6 +2446,41 @@ ${caixa.observacao_fechamento?`<div class="obs"><strong>Observação do fechamen
       </Button>
     </div>
   </div>;
+}
+
+
+const ENIGMA_PRINT = {
+  nome:"ENIGMA",
+  subtitulo:"Assistência técnica e acessórios",
+  whatsapp:"(22) 99262-9718",
+  endereco:"Rua Samuel Bessa, 20, Loja 1",
+  instagram:"@enigma"
+};
+function enigmaPrintHeader(titulo, meta=""){
+  return `<div class="enigma-head">
+    <div class="enigma-brand">
+      <div class="enigma-logo">E</div>
+      <div><div class="enigma-name">${ENIGMA_PRINT.nome}</div><div class="enigma-sub">${ENIGMA_PRINT.subtitulo}</div></div>
+    </div>
+    <div class="enigma-doc"><strong>${escapeHtml(titulo)}</strong>${meta?`<div>${meta}</div>`:""}</div>
+  </div>
+  <div class="enigma-contact">${escapeHtml(ENIGMA_PRINT.endereco)} &nbsp;•&nbsp; WhatsApp ${escapeHtml(ENIGMA_PRINT.whatsapp)} &nbsp;•&nbsp; Instagram ${escapeHtml(ENIGMA_PRINT.instagram)}</div>`;
+}
+function enigmaPrintCss(){
+  return `.enigma-head{display:flex;justify-content:space-between;align-items:center;gap:18px;border-bottom:2px solid #111;padding-bottom:9px}
+  .enigma-brand{display:flex;align-items:center;gap:10px}.enigma-logo{width:34px;height:34px;border:2px solid #111;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px}.enigma-logo::first-letter{transform:rotate(-45deg)}
+  .enigma-name{font-weight:900;font-size:19px;letter-spacing:4px}.enigma-sub{font-size:8px;text-transform:uppercase;letter-spacing:1.1px;color:#555;margin-top:2px}
+  .enigma-doc{text-align:right;font-size:10px;line-height:1.45}.enigma-doc strong{font-size:11px;text-transform:uppercase}
+  .enigma-contact{text-align:center;font-size:8px;padding:6px 2px;border-bottom:1px solid #bbb;color:#444;margin-bottom:12px}
+  .enigma-footer{margin-top:18px;padding-top:7px;border-top:1px solid #bbb;text-align:center;font-size:8px;color:#555}`;
+}
+function enigmaPrintFooter(){
+  return `<div class="enigma-footer">${escapeHtml(ENIGMA_PRINT.nome)} · ${escapeHtml(ENIGMA_PRINT.endereco)} · ${escapeHtml(ENIGMA_PRINT.whatsapp)} · ${escapeHtml(ENIGMA_PRINT.instagram)}</div>`;
+}
+function openPrintHtml(html){
+  const w=window.open("","_blank","width=900,height=750");
+  if(!w){alert("O navegador bloqueou a janela de impressão. Permita pop-ups para este site.");return;}
+  w.document.open();w.document.write(html);w.document.close();
 }
 
 function fmtPrint(v){
@@ -3344,7 +3320,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.1 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.3.1 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4158,10 +4134,11 @@ function imprimirTermoAquisicao(draft, calc) {
   h1{font-size:20px;margin:0 0 4px} h2{font-size:14px;margin:22px 0 8px;border-bottom:1px solid #bbb;padding-bottom:4px}
   .muted{color:#666}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.box{border:1px solid #bbb;border-radius:8px;padding:12px;margin-top:10px}
   .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:60px}.line{border-top:1px solid #111;padding-top:6px;text-align:center}
+  ${enigmaPrintCss()}
   @media print{body{margin:16mm}}
   </style></head><body>
-  <h1>ENIGMA — TERMO DE AQUISIÇÃO DE APARELHO USADO</h1>
-  <div class="muted">Registro ${numero} • emitido em ${new Date().toLocaleString("pt-BR")}</div>
+  ${enigmaPrintHeader("Termo de aquisição de aparelho usado",`Registro ${numero}`)}
+  <div class="muted">Emitido em ${new Date().toLocaleString("pt-BR")}</div>
 
   <h2>1. Identificação do vendedor</h2>
   <div class="grid">
@@ -4213,6 +4190,7 @@ function imprimirTermoAquisicao(draft, calc) {
   </div>
 
   <p style="margin-top:45px;font-size:10px;color:#666">Modelo operacional gerado pelo ENIGMA OS. Recomenda-se validação jurídica profissional antes da adoção definitiva em operação comercial.</p>
+  ${enigmaPrintFooter()}
   <script>window.onload=()=>window.print()</script>
   </body></html>`;
   const w = window.open("", "_blank");
@@ -4831,7 +4809,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.1</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.3.1</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5265,6 +5243,44 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
     }
   }
 
+  function imprimirComprovanteEntrada(){
+    const c=detail.cliente||{}, a=detail.aparelho||{};
+    const aceite=detail.assinaturaCliente;
+    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante de Entrada OS ${escapeHtml(detail.numero)}</title><style>
+      @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11px;line-height:1.4}
+      ${enigmaPrintCss()}
+      .title{font-size:15px;font-weight:800;margin:12px 0 3px}.muted{color:#666;font-size:9px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 16px}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.label{font-size:8px;color:#666;text-transform:uppercase;letter-spacing:.8px}.value{font-size:11px;margin-top:2px}.full{grid-column:1/-1}.sign{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:48px}.line{border-top:1px solid #111;padding-top:5px;text-align:center;font-size:9px}.notice{font-size:9px;color:#555;margin-top:14px}
+    </style></head><body>
+      ${enigmaPrintHeader("Comprovante de entrada / recebimento",`OS #${escapeHtml(detail.numero)}`)}
+      <div class="title">Comprovante de recebimento do aparelho</div>
+      <div class="muted">Entrada registrada em ${formatDateTimePrint(detail.dataEntrada)} · Guarde este comprovante para acompanhamento e retirada.</div>
+
+      <div class="box"><div class="grid">
+        <div><div class="label">Cliente</div><div class="value"><strong>${escapeHtml(c.nome||"Não informado")}</strong></div></div>
+        <div><div class="label">Telefone / WhatsApp</div><div class="value">${escapeHtml(c.telefone||"Não informado")}</div></div>
+        <div><div class="label">CPF / Documento</div><div class="value">${escapeHtml(c.cpf||c.documento||"Não informado")}</div></div>
+        <div><div class="label">Endereço</div><div class="value">${escapeHtml(c.endereco||"Não informado")}</div></div>
+      </div></div>
+
+      <div class="box"><div class="grid">
+        <div><div class="label">Aparelho</div><div class="value"><strong>${escapeHtml(a.marcaModelo||"Não informado")}</strong></div></div>
+        <div><div class="label">IMEI / Serial</div><div class="value">${escapeHtml(a.serial||"Não informado")}</div></div>
+        <div><div class="label">Cor</div><div class="value">${escapeHtml(a.cor||"Não informada")}</div></div>
+        <div><div class="label">Acessórios recebidos</div><div class="value">${escapeHtml(a.acessoriosRecebidos||detail.acessoriosRecebidos||"Nenhum informado")}</div></div>
+        <div class="full"><div class="label">Defeito / problema relatado pelo cliente</div><div class="value">${escapeHtml(detail.problemaRelatado||"Não informado")}</div></div>
+        <div class="full"><div class="label">Estado / observações de entrada</div><div class="value">${escapeHtml(detail.observacoesEntrada||detail.observacoes||"Sem observações adicionais registradas.")}</div></div>
+        <div><div class="label">Previsão inicial</div><div class="value">${detail.previsaoEntrega?new Date(detail.previsaoEntrega+"T12:00:00").toLocaleDateString("pt-BR"):"A confirmar após diagnóstico"}</div></div>
+        <div><div class="label">Status</div><div class="value">${escapeHtml(STATUS[detail.status]?.label||detail.status||"Recebido")}</div></div>
+      </div></div>
+
+      <div class="notice">O aparelho foi recebido para avaliação/serviço conforme as informações acima. Diagnóstico, orçamento, prazo definitivo e condições de reparo poderão ser informados após análise técnica. Este comprovante identifica a entrada do equipamento na ENIGMA.</div>
+      <div class="sign"><div class="line">CLIENTE<br/>${escapeHtml(aceite?.nome||c.nome||"Assinatura")}</div><div class="line">ENIGMA<br/>Responsável pelo recebimento</div></div>
+      ${enigmaPrintFooter()}
+      <script>window.onload=()=>setTimeout(()=>window.print(),250)</script>
+    </body></html>`;
+    openPrintHtml(html);
+  }
+
   const tabs = [
     { id: "entrada", label: "Entrada", min: "recebido" },
     { id: "checklist", label: "Diagnóstico", min: "diagnostico" },
@@ -5291,7 +5307,7 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
             <StatusBadge status={detail.status} />
             <div className="flex gap-2">
               {detail.cliente.telefone && <button onClick={abrirWhatsApp} className="flex items-center gap-1 text-[11px] text-green-300 border border-green-500/20 bg-green-500/[.06] rounded-full px-2.5 py-1"><Phone size={12}/> WhatsApp</button>}
-              <button onClick={() => window.print()} className="flex items-center gap-1 text-[11px] text-[#8A8A96] border border-[#2A2A34] rounded-full px-2.5 py-1"><Printer size={12}/> Imprimir</button>
+              <button onClick={imprimirComprovanteEntrada} className="flex items-center gap-1 text-[11px] text-purple-200 border border-purple-500/25 bg-purple-500/[.07] rounded-full px-2.5 py-1"><Printer size={12}/> Comprovante de entrada</button>
             </div>
           </div>
         </div>
