@@ -207,6 +207,8 @@ function rowToVenda(r) {
     clienteId: r.cliente_id || null,
     clienteNome: r.cliente_nome || "",
     clienteTelefone: r.cliente_telefone || "",
+    vendedorId: r.vendedor_id || null,
+    vendedorNome: r.vendedor_nome || "",
     status: r.status || "concluida",
     canceladoEm: r.cancelado_em || r.estornado_em || null,
     motivoCancelamento: r.motivo_cancelamento || r.motivo_estorno || ""
@@ -690,7 +692,9 @@ function EnigmaSistema({ usuario, onLogout }) {
           subtotal: total,
           desconto: 0,
           desconto_tipo: "valor",
-          total
+          total,
+          vendedor_id: usuario?.auth_user_id || null,
+          vendedor_nome: usuario?.nome || usuario?.username || usuario?.email || "Usuário"
         }),
       });
       let venda = rowToVenda(rows[0]);
@@ -1065,7 +1069,7 @@ function EnigmaSistema({ usuario, onLogout }) {
       <MobileSectionNav tab={tab} setTab={navigate} role={role} />
       <main className="max-w-6xl mx-auto px-4 md:px-8 pt-6 pb-10">
         {tab === "dashboard" && (
-          <DashboardTab caixaAtual={caixaAtual} osIndex={osIndex} estoque={estoque} onNavigate={navigate} onNovaOS={() => { setTab("os"); setOsView("nova"); }} />
+          <DashboardTab role={role} usuario={usuario} caixaAtual={caixaAtual} osIndex={osIndex} estoque={estoque} onNavigate={navigate} onNovaOS={() => { setTab("os"); setOsView("nova"); }} />
         )}
         {tab === "atendimento" && (
           <AtendimentoTab osIndex={osIndex} clientes={clientes} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} onAbrirCliente={() => setTab("clientes")} />
@@ -1139,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.3</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.4</div>
       </div>
     </aside>
   );
@@ -1223,7 +1227,7 @@ function MetricCard({ label, value, helper, icon: Icon, accent = "purple" }) {
   );
 }
 
-function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
+function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
   const [periodo,setPeriodo]=useState(7);
   const [dados,setDados]=useState({vendas:[],movs:[],vendasAnteriores:[]});
   const [loading,setLoading]=useState(true);
@@ -1254,24 +1258,37 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
     const fimAnteriorISO=fimAnterior.toISOString();
 
     try{
-      const [vendasRows,movsRows,vendasAnterioresRows]=await Promise.all([
-        sb(`vendas?select=*&timestamp=gte.${inicioISO}&timestamp=lte.${fimISO}&order=timestamp.asc`),
-        sb(`financeiro_movimentacoes?select=*&data_competencia=gte.${inicioDia}&data_competencia=lte.${fimDia}&order=data_competencia.asc`),
-        sb(`vendas?select=*&timestamp=gte.${inicioAnteriorISO}&timestamp=lte.${fimAnteriorISO}&order=timestamp.asc`)
-      ]);
-      setDados({
-        vendas:(vendasRows||[]).map(rowToVenda),
-        movs:movsRows||[],
-        vendasAnteriores:(vendasAnterioresRows||[]).map(rowToVenda)
-      });
+      if(role==="tecnico"){
+        setDados({vendas:[],movs:[],vendasAnteriores:[]});
+      }else if(role==="vendedor"){
+        const uid=usuario?.auth_user_id;
+        const filtroVendedor=uid?`&vendedor_id=eq.${uid}`:"";
+        const [vendasRows,vendasAnterioresRows]=await Promise.all([
+          sb(`vendas?select=*&timestamp=gte.${inicioISO}&timestamp=lte.${fimISO}${filtroVendedor}&order=timestamp.asc`),
+          sb(`vendas?select=*&timestamp=gte.${inicioAnteriorISO}&timestamp=lte.${fimAnteriorISO}${filtroVendedor}&order=timestamp.asc`)
+        ]);
+        setDados({vendas:(vendasRows||[]).map(rowToVenda),movs:[],vendasAnteriores:(vendasAnterioresRows||[]).map(rowToVenda)});
+      }else{
+        const [vendasRows,movsRows,vendasAnterioresRows]=await Promise.all([
+          sb(`vendas?select=*&timestamp=gte.${inicioISO}&timestamp=lte.${fimISO}&order=timestamp.asc`),
+          sb(`financeiro_movimentacoes?select=*&data_competencia=gte.${inicioDia}&data_competencia=lte.${fimDia}&order=data_competencia.asc`),
+          sb(`vendas?select=*&timestamp=gte.${inicioAnteriorISO}&timestamp=lte.${fimAnteriorISO}&order=timestamp.asc`)
+        ]);
+        setDados({
+          vendas:(vendasRows||[]).map(rowToVenda),
+          movs:movsRows||[],
+          vendasAnteriores:(vendasAnterioresRows||[]).map(rowToVenda)
+        });
+      }
     }catch(e){
       console.warn("Dashboard visual:",e);
-      setDados({vendas:caixaAtual?.vendas||[],movs:[],vendasAnteriores:[]});
+      const locais=(caixaAtual?.vendas||[]).filter(v=>role!=="vendedor"||!usuario?.auth_user_id||v.vendedorId===usuario.auth_user_id);
+      setDados({vendas:locais,movs:[],vendasAnteriores:[]});
     }
     setLoading(false);
   }
 
-  useEffect(()=>{carregarDashboard();},[periodo,caixaAtual?.id]);
+  useEffect(()=>{carregarDashboard();},[periodo,caixaAtual?.id,role,usuario?.auth_user_id]);
 
   const vendasValidas=dados.vendas.filter(v=>v.status!=="estornada");
   const faturamento=totalGeral(vendasValidas);
@@ -1327,6 +1344,16 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
   }));
   const ranking=Object.entries(topMap).map(([nome,d])=>({nome,...d})).sort((a,b)=>b.qtd-a.qtd).slice(0,6);
   const maxQtd=Math.max(1,...ranking.map(x=>x.qtd));
+  const rankingVendedores=Object.values(vendasValidas.reduce((acc,v)=>{
+    const chave=v.vendedorId||v.vendedorNome||"sem-vendedor";
+    const nome=v.vendedorNome||"Sem vendedor identificado";
+    if(!acc[chave]) acc[chave]={id:chave,nome,vendas:0,faturamento:0,itens:0};
+    acc[chave].vendas+=1;
+    acc[chave].faturamento+=Number(v.total||0);
+    acc[chave].itens+=(v.itens||[]).reduce((a,i)=>a+(Number(i.qtd)||0),0);
+    return acc;
+  },{})).map(x=>({...x,ticket:x.vendas?x.faturamento/x.vendas:0})).sort((a,b)=>b.faturamento-a.faturamento);
+
 
   const estoqueAcessorios=estoque.filter(p=>p.categoria==="acessorio");
   const zerados=estoqueAcessorios.filter(p=>Number(p.quantidade)<=0);
@@ -1470,6 +1497,44 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
 
   const recentes=osIndex.slice(0,4);
 
+  if(role==="vendedor"){
+    const hoje=new Date().toISOString().slice(0,10);
+    const vendasHoje=vendasValidas.filter(v=>String(v.timestamp||"").slice(0,10)===hoje);
+    const fatHoje=totalGeral(vendasHoje);
+    const ticketHoje=vendasHoje.length?fatHoje/vendasHoje.length:0;
+    const itensHoje=vendasHoje.reduce((a,v)=>a+(v.itens||[]).reduce((b,i)=>b+(Number(i.qtd)||0),0),0);
+    return <div className="space-y-5">
+      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_88%_10%,rgba(139,92,246,.20),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div><div className="text-[9px] tracking-[.24em] text-purple-300">ENIGMA // MEU DESEMPENHO</div><h1 className="text-2xl text-white mt-2">Olá, {usuario?.nome||"vendedor"}.</h1><p className="text-sm text-[#858590] mt-1">Aqui aparecem somente os seus resultados de venda.</p></div>
+          <div className="flex gap-2"><Button onClick={()=>onNavigate("pdv")}><ShoppingBag size={15}/> Nova venda</Button><button onClick={carregarDashboard} className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center text-cyan-300"><RefreshCw size={15} className={loading?"animate-spin":""}/></button></div>
+        </div>
+      </section>
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <MetricCard label="Vendido hoje" value={fmt(fatHoje)} helper={`${vendasHoje.length} venda(s)`} icon={TrendingUp} accent="green"/>
+        <MetricCard label="Ticket médio hoje" value={fmt(ticketHoje)} helper="suas vendas" icon={ShoppingBag} accent="blue"/>
+        <MetricCard label="Itens hoje" value={String(itensHoje)} helper="unidades vendidas" icon={Package} accent="purple"/>
+        <MetricCard label={`${periodo} dias`} value={fmt(faturamento)} helper={`${vendasValidas.length} venda(s) no período`} icon={BarChart3} accent="amber"/>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
+        <div className="flex items-center justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.2em] text-purple-300">MINHAS VENDAS</div><div className="text-xs text-[#666672] mt-1">Evolução individual</div></div><div className="flex rounded-xl border border-white/10 bg-black/20 p-1">{[7,30,90].map(n=><button key={n} onClick={()=>setPeriodo(n)} className={"rounded-lg px-3 py-2 text-[10px] "+(periodo===n?"bg-purple-500/20 text-purple-200":"text-[#70707B]")}>{n}d</button>)}</div></div>
+        <DashboardLineChart dados={dias}/>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[.012] p-5">
+        <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">MEUS PRODUTOS MAIS VENDIDOS</div>
+        {!ranking.length?<div className="text-xs text-[#666672]">Ainda não há vendas suas neste período.</div>:<div className="space-y-2">{ranking.slice(0,5).map((x,i)=><div key={x.nome} className="rounded-xl border border-white/8 p-3 flex justify-between gap-3"><div><span className="text-[10px] text-purple-300 mr-2">#{i+1}</span><span className="text-xs text-white">{x.nome}</span></div><div className="text-right"><div className="font-mono text-xs">{fmt(x.faturamento)}</div><div className="text-[9px] text-[#666672]">{x.qtd} un.</div></div></div>)}</div>}
+      </section>
+    </div>;
+  }
+
+  if(role==="tecnico"){
+    return <div className="space-y-5">
+      <section className="rounded-3xl border border-cyan-500/15 bg-[radial-gradient(circle_at_88%_10%,rgba(34,211,238,.12),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7"><div className="text-[9px] tracking-[.24em] text-cyan-300">ENIGMA // BANCADA TÉCNICA</div><h1 className="text-2xl text-white mt-2">Painel de assistência</h1><p className="text-sm text-[#858590] mt-1">Somente informações necessárias para a operação técnica.</p></section>
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3"><MetricCard label="Recebidas" value={recebidas.length} helper="aguardando análise" icon={ClipboardList} accent="blue"/><MetricCard label="Diagnóstico" value={diagnostico.length} helper="em avaliação" icon={Search} accent="purple"/><MetricCard label="Em reparo" value={emReparo.length} helper="na bancada" icon={Wrench} accent="amber"/><MetricCard label="Prontas" value={prontas.length} helper="para retirada" icon={CheckCircle2} accent="green"/></section>
+      <Card><div className="flex items-center justify-between gap-3 mb-3"><div className="text-sm text-white">Ordens em andamento</div><Button onClick={()=>onNavigate("os")}>Abrir OS</Button></div><div className="space-y-2">{abertas.slice(0,10).map(os=><button key={os.id} onClick={()=>onNavigate("os")} className="w-full rounded-xl border border-white/8 p-3 text-left flex justify-between gap-3"><div><div className="text-xs text-white">#{os.numero} · {os.aparelho}</div><div className="text-[10px] text-[#666672] mt-1">{os.clienteNome}</div></div><StatusBadge status={os.status}/></button>)}</div></Card>
+    </div>;
+  }
+
   return (
     <div className="space-y-5">
       <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_88%_10%,rgba(139,92,246,.20),transparent_30%),radial-gradient(circle_at_12%_100%,rgba(34,211,238,.08),transparent_32%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
@@ -1496,6 +1561,11 @@ function DashboardTab({ caixaAtual, osIndex, estoque, onNavigate, onNovaOS }) {
         <MetricCard label="Lucro bruto est." value={fmt(lucroEstimado)} helper={`${margem.toFixed(1)}% de margem`} icon={BarChart3} accent="purple"/>
         <MetricCard label="Ticket médio" value={fmt(ticketMedio)} helper={`${itensVendidos} item(ns) vendidos`} icon={ShoppingBag} accent="blue"/>
         <MetricCard label="OS em andamento" value={abertas.length} helper={`${prontas.length} pronta(s) para retirada`} icon={Wrench} accent="amber"/>
+      </section>
+
+      <section className="rounded-2xl border border-purple-500/15 bg-[linear-gradient(145deg,rgba(139,92,246,.045),rgba(255,255,255,.005))] p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.22em] text-purple-300">RANKING DE VENDAS</div><div className="text-xs text-[#666672] mt-1">Desempenho por vendedor · últimos {periodo} dias · estornos excluídos</div></div><div className="flex rounded-xl border border-white/10 bg-black/20 p-1">{[7,30,90].map(n=><button key={n} onClick={()=>setPeriodo(n)} className={"rounded-lg px-3 py-2 text-[10px] "+(periodo===n?"bg-purple-500/20 text-purple-200":"text-[#70707B]")}>{n} dias</button>)}</div></div>
+        {!rankingVendedores.length?<div className="text-xs text-[#666672] py-4">Ainda não há vendas identificadas no período.</div>:<div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="text-[9px] uppercase tracking-[.12em] text-[#666672] border-b border-white/8"><th className="py-2 pr-3">#</th><th className="py-2 pr-3">Vendedor</th><th className="py-2 pr-3 text-right">Vendas</th><th className="py-2 pr-3 text-right">Faturamento</th><th className="py-2 text-right">Ticket médio</th></tr></thead><tbody>{rankingVendedores.map((v,i)=><tr key={v.id} className="border-b border-white/[.05]"><td className="py-3 pr-3 text-purple-300 font-mono">{i+1}</td><td className="py-3 pr-3 text-xs text-white">{v.nome}</td><td className="py-3 pr-3 text-right font-mono text-xs">{v.vendas}</td><td className="py-3 pr-3 text-right font-mono text-xs">{fmt(v.faturamento)}</td><td className="py-3 text-right font-mono text-xs">{fmt(v.ticket)}</td></tr>)}</tbody></table></div>}
       </section>
 
       <section className="grid xl:grid-cols-[1.6fr_.8fr] gap-4">
@@ -1737,7 +1807,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.3</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.4</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1913,7 +1983,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.3</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.4</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3536,7 +3606,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.3 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.4 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5025,7 +5095,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.3</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.4</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
