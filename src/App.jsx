@@ -104,7 +104,7 @@ const ROLE_LABELS={admin:"Administrador",gerente:"Gerente",vendedor:"Vendedor",t
 const ROLE_TABS={
   admin:["dashboard","atendimento","os","pdv","clientes","avaliacao","estoque","compras","peliculas","financeiro","relatorio","config"],
   gerente:["dashboard","atendimento","os","pdv","clientes","avaliacao","estoque","compras","peliculas","financeiro","relatorio"],
-  vendedor:["dashboard","atendimento","os","pdv","clientes","estoque","peliculas","financeiro"],
+  vendedor:["dashboard","atendimento","os","pdv","clientes","estoque","peliculas"],
   tecnico:["dashboard","atendimento","os","clientes","estoque","peliculas"]
 };
 function tabPermitida(role,tab){return (ROLE_TABS[role]||[]).includes(tab);}
@@ -112,7 +112,7 @@ function podeAcao(role,acao){
   if(role==="admin") return true;
   const mapa={
     "gerente":["estornar_venda","editar_venda","fechar_caixa","abrir_caixa","movimentar_estoque","editar_estoque","compras","financeiro","relatorios","avaliacao_usados","editar_os","criar_os"],
-    "vendedor":["abrir_caixa","fechar_caixa","criar_venda","criar_cliente","criar_os","editar_os"],
+    "vendedor":["criar_venda","criar_cliente","criar_os","editar_os"],
     "tecnico":["editar_os","movimentar_estoque"]
   };
   return (mapa[role]||[]).includes(acao);
@@ -1075,9 +1075,9 @@ function EnigmaSistema({ usuario, onLogout }) {
           <AtendimentoTab osIndex={osIndex} clientes={clientes} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} onAbrirCliente={() => setTab("clientes")} />
         )}
         {tab === "pdv" && (
-          <PDVTab role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+          <PDVTab role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => navigate("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
-        {tab === "financeiro" && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
+        {tab === "financeiro" && tabPermitida(role,"financeiro") && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
           <ListaOS index={osIndex} onAbrir={abrirDetalheOS} onNova={() => setOsView("nova")} />
         )}
@@ -1143,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.4</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.5</div>
       </div>
     </aside>
   );
@@ -1807,7 +1807,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.4</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.5</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1983,7 +1983,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.4</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.5</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2013,7 +2013,7 @@ function ConfiguracoesTab({usuario}) {
     <Card className="!rounded-2xl border-cyan-500/15 bg-cyan-500/[.02]"><div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">MATRIZ DE ACESSO</div><div className="grid md:grid-cols-2 gap-2 text-xs">
       <div className="rounded-xl border border-white/8 p-3"><strong>Administrador</strong><div className="text-[#777782] mt-1">Acesso total, usuários, financeiro, exclusões e configurações.</div></div>
       <div className="rounded-xl border border-white/8 p-3"><strong>Gerente</strong><div className="text-[#777782] mt-1">Operação, financeiro, relatórios, caixa, estoque e estornos.</div></div>
-      <div className="rounded-xl border border-white/8 p-3"><strong>Vendedor</strong><div className="text-[#777782] mt-1">PDV, caixa, atendimento, clientes e abertura de OS.</div></div>
+      <div className="rounded-xl border border-white/8 p-3"><strong>Vendedor</strong><div className="text-[#777782] mt-1">PDV, atendimento, clientes, abertura de OS e consultas operacionais. Sem acesso ao Financeiro.</div></div>
       <div className="rounded-xl border border-white/8 p-3"><strong>Técnico</strong><div className="text-[#777782] mt-1">Assistência, OS, clientes e movimentação técnica de estoque.</div></div>
     </div></Card>
   </div>;
@@ -3606,7 +3606,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.4 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.5 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5095,7 +5095,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.4</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.5</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
