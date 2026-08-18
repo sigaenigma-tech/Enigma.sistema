@@ -104,7 +104,7 @@ const ROLE_LABELS={admin:"Administrador",gerente:"Gerente",vendedor:"Vendedor",t
 const ROLE_TABS={
   admin:["dashboard","atendimento","os","pdv","clientes","avaliacao","estoque","compras","peliculas","financeiro","relatorio","config"],
   gerente:["dashboard","atendimento","os","pdv","clientes","avaliacao","estoque","compras","peliculas","financeiro","relatorio"],
-  vendedor:["dashboard","atendimento","os","pdv","clientes","estoque","peliculas"],
+  vendedor:["dashboard","atendimento","os","pdv","clientes","estoque","peliculas","financeiro"],
   tecnico:["dashboard","atendimento","os","clientes","estoque","peliculas"]
 };
 function tabPermitida(role,tab){return (ROLE_TABS[role]||[]).includes(tab);}
@@ -568,6 +568,8 @@ function EnigmaSistema({ usuario, onLogout }) {
   }
 
   async function movimentarEstoque(id,{tipo,quantidade,origem="manual",origemId=null,observacao=""}) {
+    const origemSistema=["pdv","estorno_pdv","os","os_estorno","compra_reposicao","cadastro_inicial"].includes(origem);
+    if(!origemSistema && !podeAcao(role,"movimentar_estoque")){alert("Seu nível de acesso não permite movimentar estoque manualmente.");return false;}
     const atual=estoque.find(p=>p.id===id);
     if(!atual) return false;
     const q=Math.abs(Number(quantidade)||0);
@@ -652,6 +654,7 @@ function EnigmaSistema({ usuario, onLogout }) {
 
   /* ---------- PDV / caixa ---------- */
   async function abrirCaixa({ valorInicial, operador, observacao }) {
+    if(!podeAcao(role,"abrir_caixa")){alert("Seu nível de acesso não permite abrir o caixa.");return;}
     try {
       const rows = await sb("caixa_sessoes", {
         method: "POST",
@@ -738,6 +741,7 @@ function EnigmaSistema({ usuario, onLogout }) {
     }
   }
   async function fecharCaixa({ valorContado, observacao }) {
+    if(!podeAcao(role,"fechar_caixa")){alert("Seu nível de acesso não permite fechar o caixa.");return;}
     if (!caixaAtual) return;
     const vendas = caixaAtual.vendas;
     const totais = totaisPorForma(vendas);
@@ -765,6 +769,7 @@ function EnigmaSistema({ usuario, onLogout }) {
   }
 
   async function excluirVenda(venda, motivo="Estorno solicitado no PDV") {
+    if(!podeAcao(role,"estornar_venda")){alert("Somente gerente ou administrador pode estornar vendas.");return false;}
     if (!venda || venda.status === "estornada") return false;
     try {
       const agora=new Date().toISOString();
@@ -827,6 +832,7 @@ function EnigmaSistema({ usuario, onLogout }) {
   }
 
   async function editarVenda(venda, novosItens, novaForma) {
+    if(!podeAcao(role,"editar_venda")){alert("Somente gerente ou administrador pode editar uma venda concluída.");return null;}
     const novoTotal = novosItens.reduce((s, i) => s + i.valor * i.qtd, 0);
     try {
       await sb(`vendas?id=eq.${venda.id}`, {
@@ -1065,15 +1071,15 @@ function EnigmaSistema({ usuario, onLogout }) {
           <AtendimentoTab osIndex={osIndex} clientes={clientes} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} onAbrirCliente={() => setTab("clientes")} />
         )}
         {tab === "pdv" && (
-          <PDVTab caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+          <PDVTab role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => setTab("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
-        {tab === "financeiro" && <FinanceiroTab caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
+        {tab === "financeiro" && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
           <ListaOS index={osIndex} onAbrir={abrirDetalheOS} onNova={() => setOsView("nova")} />
         )}
         {tab === "os" && osView === "nova" && <NovaOS clientes={clientes} onAddCliente={adicionarCliente} onCriar={criarOS} onCancelar={() => setOsView("lista")} />}
         {tab === "os" && osView === "detalhe" && (
-          <DetalheOS detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
+          <DetalheOS role={role} detail={osDetail} estoque={estoque} onSalvar={salvarDetalheOS} onAddPeca={adicionarPecaNaOS} onRemovePeca={removerPecaDaOS} />
         )}
         {tab === "clientes" && <ClientesTab clientes={clientes} osIndex={osIndex} onAdd={adicionarCliente} onEdit={atualizarCliente} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
@@ -1082,7 +1088,7 @@ function EnigmaSistema({ usuario, onLogout }) {
         )}
         {tab === "compras" && <ComprasTab estoque={estoque} onMovimentar={movimentarEstoque} />}
         {tab === "peliculas" && <TabelaPeliculasTab estoque={estoque} />}
-        {tab === "relatorio" && <RelatorioTab caixaAtual={caixaAtual} estoque={estoque} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
+        {tab === "relatorio" && <RelatorioTab role={role} caixaAtual={caixaAtual} estoque={estoque} onBuscarVendas={buscarVendasPorData} onBuscarVendasPeriodo={buscarVendasPorPeriodo} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />}
         {tab === "config" && <ConfiguracoesTab usuario={usuario} />}
       </main>
       <BottomNav tab={tab} setTab={navigate} role={role} />
@@ -1133,7 +1139,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.2</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.3</div>
       </div>
     </aside>
   );
@@ -1731,7 +1737,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.2</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.3</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1873,12 +1879,19 @@ function ConfiguracoesTab({usuario}) {
   const [usuarios,setUsuarios]=useState([]),[loadingUsers,setLoadingUsers]=useState(false);
   const [form,setForm]=useState({nome:"",username:"",senha:"",role:"vendedor"});
   const [erro,setErro]=useState(""),[ok,setOk]=useState("");
+  const [auditoria,setAuditoria]=useState([]);
+  const [loadingAudit,setLoadingAudit]=useState(false);
   async function carregarUsuarios(){
     if(role!=="admin")return;setLoadingUsers(true);
     try{setUsuarios(await sb("enigma_usuarios?select=id,auth_user_id,nome,email,username,role,ativo,created_at&order=nome.asc")||[]);}catch(e){setErro(e.message);}
     setLoadingUsers(false);
   }
-  useEffect(()=>{carregarUsuarios();},[role]);
+  async function carregarAuditoria(){
+    if(role!=="admin")return;setLoadingAudit(true);
+    try{setAuditoria(await sb("enigma_auditoria?select=id,usuario_nome,usuario_role,tabela,operacao,registro_id,created_at&order=created_at.desc&limit=30")||[]);}catch(e){console.warn("Auditoria:",e);}
+    setLoadingAudit(false);
+  }
+  useEffect(()=>{carregarUsuarios();carregarAuditoria();},[role]);
   async function criarUsuario(e){
     e.preventDefault();setErro("");setOk("");
     if(!form.nome.trim()||!form.username.trim()||form.senha.length<6){setErro("Informe nome, usuário e senha com pelo menos 6 caracteres.");return;}
@@ -1900,7 +1913,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.2</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.3</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -1923,6 +1936,10 @@ function ConfiguracoesTab({usuario}) {
         </div>)}
       </div>
     </Card>}
+    {role==="admin"&&<Card className="!rounded-2xl">
+      <div className="flex items-center justify-between gap-3 mb-4"><div><div className="text-[9px] tracking-[.2em] text-purple-300">AUDITORIA DO SISTEMA</div><div className="text-xs text-[#777782] mt-1">Últimas movimentações registradas por usuário.</div></div><button onClick={carregarAuditoria} className="text-[10px] text-purple-300"><RefreshCw size={12} className="inline mr-1"/>Atualizar</button></div>
+      {loadingAudit?<div className="text-xs text-[#666672]">Carregando...</div>:<div className="space-y-1.5">{auditoria.map(a=><div key={a.id} className="rounded-lg border border-white/8 px-3 py-2 grid md:grid-cols-[1.2fr_.8fr_.8fr_auto] gap-2 text-[10px]"><div className="text-white">{a.usuario_nome||"Usuário"} <span className="text-[#555560]">· {ROLE_LABELS[a.usuario_role]||a.usuario_role||""}</span></div><div className="text-[#858590]">{a.operacao} · {a.tabela}</div><div className="text-[#666672] truncate">{a.registro_id||"—"}</div><div className="text-[#666672]">{a.created_at?fmtDateTime(a.created_at):""}</div></div>)}{!auditoria.length&&<div className="text-xs text-[#666672]">Nenhuma movimentação registrada ainda.</div>}</div>}
+    </Card>}
     <Card className="!rounded-2xl border-cyan-500/15 bg-cyan-500/[.02]"><div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">MATRIZ DE ACESSO</div><div className="grid md:grid-cols-2 gap-2 text-xs">
       <div className="rounded-xl border border-white/8 p-3"><strong>Administrador</strong><div className="text-[#777782] mt-1">Acesso total, usuários, financeiro, exclusões e configurações.</div></div>
       <div className="rounded-xl border border-white/8 p-3"><strong>Gerente</strong><div className="text-[#777782] mt-1">Operação, financeiro, relatórios, caixa, estoque e estornos.</div></div>
@@ -1932,7 +1949,7 @@ function ConfiguracoesTab({usuario}) {
   </div>;
 }
 /* ================= PDV ================= */
-function PDVTab({ caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
+function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
   const [modo, setModo] = useState("estoque"); // estoque | seminovo | manual
   const [busca, setBusca] = useState("");
@@ -2177,6 +2194,7 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], clientes = [], onAddClien
       {cupomAberto && (
         <CupomVenda
           venda={cupomAberto}
+          role={role}
           onFechar={() => setCupomAberto(null)}
           onExcluirVenda={onExcluirVenda}
           onEditarVenda={onEditarVenda}
@@ -2189,8 +2207,9 @@ function PDVTab({ caixaAtual, estoque, seminovos = [], clientes = [], onAddClien
 
 
 /* ================= FINANCEIRO ================= */
-function FinanceiroTab({ caixaAtual, seminovos = [], onAbrir, onFechar }) {
-  const [secao,setSecao]=useState("visao");
+function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar }) {
+  const limitadoCaixa=role==="vendedor";
+  const [secao,setSecao]=useState(limitadoCaixa?"caixa":"visao");
   const [movs,setMovs]=useState([]);
   const [cats,setCats]=useState([]);
   const [loadingFin,setLoadingFin]=useState(true);
@@ -2251,8 +2270,8 @@ function FinanceiroTab({ caixaAtual, seminovos = [], onAbrir, onFechar }) {
   const lista=filtro==="todos"?movs:movs.filter(x=>x.tipo===filtro);
 
   return <div className="space-y-4">
-    <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/10 bg-white/[.015] p-1">
-      {[["visao","Visão geral"],["caixa","Caixa"],["seminovos","Seminovos"],["lancamentos","Lançamentos"]].map(([id,label])=>
+    <div className={(limitadoCaixa?"grid grid-cols-1":"grid grid-cols-4")+" gap-1 rounded-xl border border-white/10 bg-white/[.015] p-1"}>
+      {(limitadoCaixa?[["caixa","Caixa"]]:[["visao","Visão geral"],["caixa","Caixa"],["seminovos","Seminovos"],["lancamentos","Lançamentos"]]).map(([id,label])=>
         <button key={id} onClick={()=>setSecao(id)} className={"rounded-lg py-2.5 text-[10px] md:text-xs border transition "+(secao===id?"border-purple-500/30 bg-purple-500/10 text-white":"border-transparent text-[#777783]")}>{label}</button>
       )}
     </div>
@@ -2691,7 +2710,7 @@ function escapeHtml(v){
 }
 
 /* ================= RELATÓRIO ================= */
-function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendasPeriodo, onExcluirVenda, onEditarVenda }) {
+function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscarVendasPeriodo, onExcluirVenda, onEditarVenda }) {
   const [guia,setGuia]=useState("produtos");
   const [modo, setModo] = useState("periodo");
   const [data, setData] = useState(todayISO());
@@ -3179,7 +3198,7 @@ function RelatorioTab({ caixaAtual, estoque = [], onBuscarVendas, onBuscarVendas
   );
 }
 
-function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualizado }) {
+function CupomVenda({ venda, role, onFechar, onExcluirVenda, onEditarVenda, onAtualizado }) {
   const [modo, setModo] = useState("ver"); // ver | pin | editar | excluir-confirmar
   const [acaoPendente, setAcaoPendente] = useState(null);
   const [pin, setPin] = useState("");
@@ -3190,21 +3209,17 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
   const [motivoEstorno,setMotivoEstorno]=useState("");
 
   function pedirAcao(acao) {
+    if(!["admin","gerente"].includes(role)){alert("Somente gerente ou administrador pode alterar uma venda concluída.");return;}
     setAcaoPendente(acao);
-    setModo("pin");
-    setPin("");
-    setErroPin(false);
-  }
-  function confirmarPin() {
-    if (pin !== PIN_EDICAO) { setErroPin(true); return; }
-    if (acaoPendente === "editar") {
-      setItensEdit(venda.itens.map((i) => ({ ...i })));
+    if(acao==="editar"){
+      setItensEdit(venda.itens.map((i)=>({...i})));
       setFormaEdit(venda.formaPagamento);
       setModo("editar");
-    } else if (acaoPendente === "excluir") {
+    }else{
       setModo("excluir-confirmar");
     }
   }
+  function confirmarPin(){}
   function removerItemEdit(id) { setItensEdit(itensEdit.filter((i) => i.id !== id)); }
   function mudarQtdEdit(id, qtd) { setItensEdit(itensEdit.map((i) => (i.id === id ? { ...i, qtd } : i))); }
   function mudarValorEdit(id, valor) { setItensEdit(itensEdit.map((i) => (i.id === id ? { ...i, valor } : i))); }
@@ -3300,7 +3315,7 @@ function CupomVenda({ venda, onFechar, onExcluirVenda, onEditarVenda, onAtualiza
               <Button className="w-full mt-4" onClick={imprimirCupomVenda}>
                 <span className="flex items-center justify-center gap-2"><Printer size={15} /> Imprimir cupom</span>
               </Button>
-              {venda.status!=="estornada" && (onEditarVenda || onExcluirVenda) && (
+              {venda.status!=="estornada" && ["admin","gerente"].includes(role) && (onEditarVenda || onExcluirVenda) && (
                 <div className="flex gap-2 mt-2">
                   <Button variant="ghost" className="flex-1" onClick={() => pedirAcao("editar")}>Editar</Button>
                   <Button variant="danger" className="flex-1" onClick={() => pedirAcao("excluir")}>Estornar</Button>
@@ -3521,7 +3536,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.2 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.3 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5010,7 +5025,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.2</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.3</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5082,7 +5097,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
 }
 
 /* ================= OS: DETALHE ================= */
-function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
+function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
   const [sub, setSub] = useState("entrada");
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -5482,6 +5497,35 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
     openPrintHtml(html);
   }
 
+  function imprimirOrcamento(){
+    const c=detail.cliente||{},a=detail.aparelho||{};
+    const linhas=(detail.pecasUsadas||[]).map(p=>`<tr><td>${escapeHtml(p.nome||"Peça")}</td><td class="c">${Number(p.qtd)||1}</td><td class="r">${fmtPrint(p.preco)}</td><td class="r">${fmtPrint((Number(p.preco)||0)*(Number(p.qtd)||1))}</td></tr>`).join("");
+    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Orçamento OS ${escapeHtml(detail.numero)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial;color:#111;font-size:11px;margin:0}${enigmaPrintCss()}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{padding:6px;border-bottom:1px solid #ddd;text-align:left}.r{text-align:right}.c{text-align:center}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.total{font-size:17px;font-weight:800;text-align:right;margin-top:12px}</style></head><body>
+    ${enigmaPrintHeader("Orçamento de assistência técnica",`OS #${escapeHtml(detail.numero)}`)}
+    <div class="box"><strong>Cliente:</strong> ${escapeHtml(c.nome||"—")} · ${escapeHtml(c.telefone||"")}<br><strong>Aparelho:</strong> ${escapeHtml(a.marcaModelo||"—")} ${a.serial?`· IMEI/Serial ${escapeHtml(a.serial)}`:""}<br><strong>Defeito relatado:</strong> ${escapeHtml(detail.problemaRelatado||"—")}<br><strong>Diagnóstico:</strong> ${escapeHtml(detail.diagnosticoTecnico||"Não informado")}</div>
+    <table><thead><tr><th>Peça / serviço</th><th class="c">Qtd.</th><th class="r">Unit.</th><th class="r">Total</th></tr></thead><tbody>${linhas}<tr><td>Mão de obra</td><td class="c">1</td><td class="r">${fmtPrint(detail.valorMaoDeObra)}</td><td class="r">${fmtPrint(detail.valorMaoDeObra)}</td></tr></tbody></table>
+    ${Number(detail.orcamento?.desconto||0)>0?`<div class="r">Desconto: -${fmtPrint(detail.orcamento.desconto)}</div>`:""}
+    <div class="total">TOTAL PROPOSTO: ${fmtPrint(valorEstimado)}</div>
+    ${detail.orcamento?.observacao?`<div class="box"><strong>Observações:</strong><br>${escapeHtml(detail.orcamento.observacao)}</div>`:""}
+    <div class="box">Este orçamento está sujeito à aprovação do cliente antes da execução do serviço.</div>
+    ${enigmaPrintFooter()}<script>window.onload=()=>setTimeout(()=>window.print(),250)</script></body></html>`;
+    openPrintHtml(html);
+  }
+
+  function imprimirComprovanteEntrega(){
+    const c=detail.cliente||{},a=detail.aparelho||{},e=detail.entrega||{};
+    const valor=Number(detail.valorFinal||valorEstimado||0);
+    const forma=({pix:"Pix",dinheiro:"Dinheiro",debito:"Débito",credito:"Crédito",outro:"Outro"})[e.formaPagamento]||e.formaPagamento||"Não informada";
+    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Entrega OS ${escapeHtml(detail.numero)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial;color:#111;font-size:11px;margin:0;line-height:1.45}${enigmaPrintCss()}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 15px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:50px}.line{border-top:1px solid #111;padding-top:5px;text-align:center;font-size:9px}.total{font-size:17px;font-weight:800;margin-top:12px}</style></head><body>
+    ${enigmaPrintHeader("Comprovante de entrega / garantia",`OS #${escapeHtml(detail.numero)}`)}
+    <div class="box grid"><div><strong>Cliente:</strong><br>${escapeHtml(c.nome||"—")}</div><div><strong>Contato:</strong><br>${escapeHtml(c.telefone||"—")}</div><div><strong>Aparelho:</strong><br>${escapeHtml(a.marcaModelo||"—")}</div><div><strong>IMEI / Serial:</strong><br>${escapeHtml(a.serial||"—")}</div><div><strong>Garantia:</strong><br>${Number(e.garantiaDias||0)} dias</div><div><strong>Entrega:</strong><br>${formatDateTimePrint(e.entregueEm||new Date().toISOString())}</div></div>
+    <div class="box"><strong>Serviço / diagnóstico:</strong><br>${escapeHtml(detail.diagnosticoTecnico||detail.problemaRelatado||"Serviço conforme OS.")}<br><br><strong>Peças utilizadas:</strong><br>${escapeHtml((detail.pecasUsadas||[]).map(p=>`${p.nome} x${p.qtd||1}`).join(", ")||"Nenhuma peça registrada.")}</div>
+    <div class="box"><strong>Pagamento:</strong> ${escapeHtml(forma)} · ${e.pagamentoStatus==="pago"?"PAGO":"PENDENTE"}<div class="total">${fmtPrint(valor)}</div>${e.observacoes?`<br><strong>Observações / garantia:</strong><br>${escapeHtml(e.observacoes)}`:""}</div>
+    <div class="sign"><div class="line">CLIENTE<br>${escapeHtml(c.nome||"Assinatura")}</div><div class="line">ENIGMA<br>Responsável pela entrega</div></div>
+    ${enigmaPrintFooter()}<script>window.onload=()=>setTimeout(()=>window.print(),250)</script></body></html>`;
+    openPrintHtml(html);
+  }
+
   const tabs = [
     { id: "entrada", label: "Entrada", min: "recebido" },
     { id: "checklist", label: "Diagnóstico", min: "diagnostico" },
@@ -5649,7 +5693,7 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
         <div className="space-y-4">
           <Card>
             <div className="flex items-start justify-between gap-3 mb-4">
-              <div><div className="text-sm font-medium text-white">Orçamento</div><div className="text-xs text-[#73737E] mt-1">Peças entram automaticamente a partir da aba Peças.</div></div>
+              <div><div className="text-sm font-medium text-white">Orçamento</div><div className="text-xs text-[#73737E] mt-1">Peças entram automaticamente a partir da aba Peças.</div><button onClick={imprimirOrcamento} className="mt-2 text-[10px] text-purple-300 flex items-center gap-1"><Printer size={12}/> Imprimir orçamento</button></div>
               <span className={"text-[10px] uppercase tracking-[.14em] px-2.5 py-1.5 rounded-full border " + (aprovacao === "aprovado" ? "text-green-300 border-green-500/30 bg-green-500/10" : aprovacao === "recusado" ? "text-red-300 border-red-500/30 bg-red-500/10" : "text-amber-300 border-amber-500/30 bg-amber-500/10")}>{aprovacao === "aprovado" ? "Aprovado" : aprovacao === "recusado" ? "Recusado" : detail.status === "aguardando_aprovacao" ? "Aguardando cliente" : "Rascunho"}</span>
             </div>
             <div className="grid md:grid-cols-3 gap-3">
@@ -5785,7 +5829,7 @@ function DetalheOS({ detail, estoque, onSalvar, onAddPeca, onRemovePeca }) {
           </Card>
 
           <Card>
-            <div className="text-sm font-medium text-white mb-4">Entrega e garantia</div>
+            <div className="flex items-center justify-between gap-3 mb-4"><div className="text-sm font-medium text-white">Entrega e garantia</div><button onClick={imprimirComprovanteEntrega} className="text-[10px] text-purple-300 flex items-center gap-1"><Printer size={12}/> Imprimir entrega</button></div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div><Label>Garantia (dias)</Label><Input type="number" min="0" value={detail.entrega?.garantiaDias ?? 90} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), garantiaDias: Number(e.target.value) } })}/></div>
               <div><Label>Valor final</Label><Input inputMode="decimal" value={detail.valorFinal ?? ""} placeholder={fmt(valorEstimado)} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })}/></div>
