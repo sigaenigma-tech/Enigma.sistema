@@ -62,7 +62,8 @@ async function rpc(name, body = {}) {
 
 
 
-async function enigmaLogin(email,password){
+async function enigmaLogin(login,password){
+  const email=String(login||"").includes("@")?String(login).trim().toLowerCase():`${String(login||"").trim().toLowerCase()}@login.enigma.local`;
   const res=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{
     method:"POST",
     headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},
@@ -139,7 +140,7 @@ function EnigmaLogin({onAuthenticated}){
       <h1 className="text-2xl font-semibold mt-2">Acesso ao sistema</h1>
       <p className="text-xs text-[#74747F] mt-2">Entre com seu usuário autorizado. As ações ficam vinculadas à sua conta.</p>
       <form onSubmit={entrar} className="space-y-3 mt-6">
-        <div><Label>E-mail</Label><Input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" placeholder="usuario@enigma"/></div>
+        <div><Label>Usuário</Label><Input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" placeholder="seu usuário"/></div>
         <div><Label>Senha</Label><Input type="password" value={senha} onChange={e=>setSenha(e.target.value)} autoComplete="current-password" placeholder="••••••••"/></div>
         {erro&&<div className="rounded-xl border border-red-500/20 bg-red-500/[.04] p-3 text-xs text-red-200">{erro}</div>}
         <Button className="w-full !h-11" disabled={loading||!email||!senha}>{loading?"Entrando...":"Entrar no ENIGMA OS"}</Button>
@@ -1132,7 +1133,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.1</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.2</div>
       </div>
     </aside>
   );
@@ -1730,7 +1731,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.1</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.2</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1855,30 +1856,80 @@ function ClientesTab({ clientes = [], osIndex = [], onAdd, onEdit, onAbrirOS }) 
   </div>;
 }
 
+
+async function enigmaAdminUsers(payload){
+  const token=getEnigmaSession()?.access_token;
+  const res=await fetch(`${SUPABASE_URL}/functions/v1/enigma-admin-users`,{
+    method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data?.error||"Falha na gestão de usuários.");
+  return data;
+}
+
 function ConfiguracoesTab({usuario}) {
   const role=usuario?.role||"";
-  return (
-    <div className="space-y-4">
-      <Card className="!rounded-2xl">
-        <div className="flex items-center gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Segurança & Configurações</div><div className="text-xs text-[#74747F]">Identidade, sessão e nível de acesso atual.</div></div></div>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.email||"Conta autenticada"}</div></div>
-          <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div><div className="text-xs text-[#666672] mt-1">Permissões aplicadas no sistema e banco.</div></div>
-          <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.1</div><div className="text-xs text-[#666672] mt-1">Secure Access</div></div>
-        </div>
-      </Card>
-      <Card className="!rounded-2xl border-cyan-500/15 bg-cyan-500/[.02]">
-        <div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">MATRIZ DE ACESSO</div>
-        <div className="grid md:grid-cols-2 gap-2 text-xs">
-          <div className="rounded-xl border border-white/8 p-3"><strong>Administrador</strong><div className="text-[#777782] mt-1">Acesso total, usuários, financeiro, exclusões e configurações.</div></div>
-          <div className="rounded-xl border border-white/8 p-3"><strong>Gerente</strong><div className="text-[#777782] mt-1">Operação, financeiro, relatórios, caixa, estoque e estornos.</div></div>
-          <div className="rounded-xl border border-white/8 p-3"><strong>Vendedor</strong><div className="text-[#777782] mt-1">PDV, caixa, atendimento, clientes e abertura de OS.</div></div>
-          <div className="rounded-xl border border-white/8 p-3"><strong>Técnico</strong><div className="text-[#777782] mt-1">Assistência, OS, clientes e movimentação técnica de estoque.</div></div>
-        </div>
-      </Card>
-      <Card className="!rounded-2xl border-amber-500/20 bg-amber-500/[.025]"><div className="flex gap-3"><AlertCircle size={18} className="text-amber-300 shrink-0"/><div><div className="text-sm text-white">Rastreamento de movimentações</div><div className="text-xs leading-5 text-[#8C8C96] mt-1">A V4.4.1 cria auditoria no banco para registrar usuário, data, tabela, operação e registro alterado nas ações críticas.</div></div></div></Card>
-    </div>
-  );
+  const [usuarios,setUsuarios]=useState([]),[loadingUsers,setLoadingUsers]=useState(false);
+  const [form,setForm]=useState({nome:"",username:"",senha:"",role:"vendedor"});
+  const [erro,setErro]=useState(""),[ok,setOk]=useState("");
+  async function carregarUsuarios(){
+    if(role!=="admin")return;setLoadingUsers(true);
+    try{setUsuarios(await sb("enigma_usuarios?select=id,auth_user_id,nome,email,username,role,ativo,created_at&order=nome.asc")||[]);}catch(e){setErro(e.message);}
+    setLoadingUsers(false);
+  }
+  useEffect(()=>{carregarUsuarios();},[role]);
+  async function criarUsuario(e){
+    e.preventDefault();setErro("");setOk("");
+    if(!form.nome.trim()||!form.username.trim()||form.senha.length<6){setErro("Informe nome, usuário e senha com pelo menos 6 caracteres.");return;}
+    setLoadingUsers(true);
+    try{await enigmaAdminUsers({action:"create",...form,username:form.username.trim().toLowerCase()});setForm({nome:"",username:"",senha:"",role:"vendedor"});setOk("Usuário criado e liberado.");await carregarUsuarios();}catch(e){setErro(e.message);}
+    setLoadingUsers(false);
+  }
+  async function alterar(u,patch){
+    setErro("");setOk("");
+    try{if(patch.senha)await enigmaAdminUsers({action:"password",auth_user_id:u.auth_user_id,password:patch.senha});else await enigmaAdminUsers({action:"profile",auth_user_id:u.auth_user_id,...patch});setOk("Acesso atualizado.");await carregarUsuarios();}catch(e){setErro(e.message);}
+  }
+  async function redefinirSenha(u){
+    const senha=window.prompt(`Nova senha para ${u.nome} (mínimo 6 caracteres):`);
+    if(!senha)return;if(senha.length<6){setErro("A senha precisa ter pelo menos 6 caracteres.");return;}await alterar(u,{senha});
+  }
+  return <div className="space-y-4">
+    <Card className="!rounded-2xl">
+      <div className="flex items-center gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300"><Settings size={18}/></div><div><div className="font-medium text-white">Segurança & Configurações</div><div className="text-xs text-[#74747F]">Identidade, sessão e nível de acesso atual.</div></div></div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
+        <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.2</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+      </div>
+    </Card>
+    {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
+      <div className="flex items-center justify-between gap-3 mb-5"><div><div className="text-[9px] tracking-[.2em] text-purple-300">USUÁRIOS & ACESSOS</div><div className="text-sm text-white mt-1">Crie contas e defina o nível de cada pessoa.</div></div><UserCheck size={20} className="text-purple-300"/></div>
+      <form onSubmit={criarUsuario} className="grid md:grid-cols-4 gap-3">
+        <div><Label>Nome</Label><Input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome da pessoa"/></div>
+        <div><Label>Usuário</Label><Input value={form.username} onChange={e=>setForm({...form,username:e.target.value.replace(/\s/g,"").toLowerCase()})} placeholder="ex.: paolla"/></div>
+        <div><Label>Senha inicial</Label><Input type="password" value={form.senha} onChange={e=>setForm({...form,senha:e.target.value})} placeholder="mín. 6 caracteres"/></div>
+        <div><Label>Nível</Label><select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className="w-full h-10 rounded-xl border border-white/10 bg-[#111118] px-3 text-sm text-white"><option value="admin">Administrador</option><option value="gerente">Gerente</option><option value="vendedor">Vendedor</option><option value="tecnico">Técnico</option></select></div>
+        <div className="md:col-span-4"><Button disabled={loadingUsers}><Plus size={14}/> Criar usuário</Button></div>
+      </form>
+      {erro&&<div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/[.04] p-3 text-xs text-red-200">{erro}</div>}
+      {ok&&<div className="mt-3 rounded-xl border border-green-500/20 bg-green-500/[.04] p-3 text-xs text-green-200">{ok}</div>}
+      <div className="mt-6 border-t border-white/8 pt-4 space-y-2">
+        {loadingUsers&&!usuarios.length?<div className="text-xs text-[#666672]">Carregando usuários...</div>:usuarios.map(u=><div key={u.id} className="rounded-xl border border-white/8 bg-white/[.015] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+          <div className="min-w-0 flex-1"><div className="text-sm text-white">{u.nome}</div><div className="text-[10px] text-[#666672] mt-1">{u.username||u.email} · {u.ativo?"ATIVO":"BLOQUEADO"}</div></div>
+          <select value={u.role} onChange={e=>alterar(u,{role:e.target.value})} className="h-9 rounded-lg border border-white/10 bg-[#111118] px-2 text-xs text-white"><option value="admin">Administrador</option><option value="gerente">Gerente</option><option value="vendedor">Vendedor</option><option value="tecnico">Técnico</option></select>
+          <button onClick={()=>redefinirSenha(u)} className="h-9 rounded-lg border border-white/10 px-3 text-xs text-[#B9B9C3]">Redefinir senha</button>
+          <button onClick={()=>alterar(u,{ativo:!u.ativo})} className={"h-9 rounded-lg border px-3 text-xs "+(u.ativo?"border-red-500/20 text-red-300":"border-green-500/20 text-green-300")}>{u.ativo?"Bloquear":"Ativar"}</button>
+        </div>)}
+      </div>
+    </Card>}
+    <Card className="!rounded-2xl border-cyan-500/15 bg-cyan-500/[.02]"><div className="text-[9px] tracking-[.2em] text-cyan-300 mb-3">MATRIZ DE ACESSO</div><div className="grid md:grid-cols-2 gap-2 text-xs">
+      <div className="rounded-xl border border-white/8 p-3"><strong>Administrador</strong><div className="text-[#777782] mt-1">Acesso total, usuários, financeiro, exclusões e configurações.</div></div>
+      <div className="rounded-xl border border-white/8 p-3"><strong>Gerente</strong><div className="text-[#777782] mt-1">Operação, financeiro, relatórios, caixa, estoque e estornos.</div></div>
+      <div className="rounded-xl border border-white/8 p-3"><strong>Vendedor</strong><div className="text-[#777782] mt-1">PDV, caixa, atendimento, clientes e abertura de OS.</div></div>
+      <div className="rounded-xl border border-white/8 p-3"><strong>Técnico</strong><div className="text-[#777782] mt-1">Assistência, OS, clientes e movimentação técnica de estoque.</div></div>
+    </div></Card>
+  </div>;
 }
 /* ================= PDV ================= */
 function PDVTab({ caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
@@ -3470,7 +3521,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.1 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.2 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4959,7 +5010,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.1</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.2</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
