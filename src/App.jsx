@@ -1143,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.6</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.7</div>
       </div>
     </aside>
   );
@@ -1807,7 +1807,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.6</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.7</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1997,7 +1997,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.6</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.7</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3629,7 +3629,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.6 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.7 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5118,7 +5118,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.6</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.7</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5575,9 +5575,9 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
         <div><div class="label">Aparelho</div><div class="value"><strong>${escapeHtml(a.marcaModelo||"Não informado")}</strong></div></div>
         <div><div class="label">IMEI / Serial</div><div class="value">${escapeHtml(a.serial||"Não informado")}</div></div>
         <div><div class="label">Cor</div><div class="value">${escapeHtml(a.cor||"Não informada")}</div></div>
-        <div><div class="label">Acessórios recebidos</div><div class="value">${escapeHtml(a.acessoriosRecebidos||detail.acessoriosRecebidos||"Nenhum informado")}</div></div>
+        <div><div class="label">Acessórios recebidos</div><div class="value">${escapeHtml(detail.acessoriosRecebidos||a.acessoriosRecebidos||"Nenhum informado")}</div></div>
         <div class="full"><div class="label">Defeito / problema relatado pelo cliente</div><div class="value">${escapeHtml(detail.problemaRelatado||"Não informado")}</div></div>
-        <div class="full"><div class="label">Estado / observações de entrada</div><div class="value">${escapeHtml(detail.observacoesEntrada||detail.observacoes||"Sem observações adicionais registradas.")}</div></div>
+        <div class="full"><div class="label">Estado / observações de entrada</div><div class="value">${escapeHtml(detail.observacoesCondicao||detail.observacoesEntrada||detail.observacoes||"Sem observações adicionais registradas.")}</div></div>
         <div><div class="label">Previsão inicial</div><div class="value">${detail.previsaoEntrega?new Date(detail.previsaoEntrega+"T12:00:00").toLocaleDateString("pt-BR"):"A confirmar após diagnóstico"}</div></div>
         <div><div class="label">Status</div><div class="value">${escapeHtml(STATUS[detail.status]?.label||detail.status||"Recebido")}</div></div>
       </div></div>
@@ -5699,6 +5699,18 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
 
       {sub === "entrada" && (
         <div className="space-y-4">
+          <Card className="!rounded-2xl border-purple-500/25 bg-[linear-gradient(145deg,rgba(139,92,246,.08),rgba(255,255,255,.01))]">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <div className="text-[9px] tracking-[.22em] text-purple-300">VIA DO CLIENTE</div>
+                <div className="text-base font-medium text-white mt-1">Comprovante de entrada / recebimento</div>
+                <div className="text-xs text-[#777782] mt-1">Entregue esta via ao cliente assim que o aparelho ficar na assistência. Pode ser reimpressa a qualquer momento.</div>
+              </div>
+              <Button onClick={imprimirComprovanteEntrada} className="shrink-0">
+                <span className="flex items-center justify-center gap-2"><Printer size={15}/> Imprimir via do cliente</span>
+              </Button>
+            </div>
+          </Card>
           <Card>
             <div className="flex items-start justify-between gap-3 mb-4">
               <div><div className="text-sm font-medium text-white">Recebimento do aparelho</div><div className="text-xs text-[#73737E] mt-1">Confira os dados e registre a condição física antes de iniciar o diagnóstico.</div></div>
@@ -5746,7 +5758,11 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
               <Button onClick={addCondicaoItem} className="px-3"><Plus size={15}/></Button>
             </div>
             <div className="mt-3"><Label>Observações de avaria</Label><Textarea rows={2} value={detail.observacoesCondicao || ""} onChange={(e) => onSalvar({ ...detail, observacoesCondicao: e.target.value })} placeholder="Ex: trinca no canto superior direito, amassado na lateral..."/></div>
-            {detail.status === "recebido" && <Button className="w-full mt-4" onClick={concluirEntrada}><span className="flex items-center justify-center gap-2">Concluir entrada e iniciar diagnóstico <ArrowRight size={15}/></span></Button>}
+            {detail.status === "recebido" && <div className="grid md:grid-cols-2 gap-2 mt-4">
+              <Button variant="ghost" onClick={imprimirComprovanteEntrada}><span className="flex items-center justify-center gap-2"><Printer size={15}/> Imprimir via do cliente</span></Button>
+              <Button onClick={concluirEntrada}><span className="flex items-center justify-center gap-2">Concluir entrada e iniciar diagnóstico <ArrowRight size={15}/></span></Button>
+            </div>}
+            {detail.status !== "recebido" && <Button variant="ghost" className="w-full mt-4" onClick={imprimirComprovanteEntrada}><span className="flex items-center justify-center gap-2"><Printer size={15}/> Reimprimir via do cliente</span></Button>}
           </Card>
         </div>
       )}
