@@ -21,12 +21,35 @@ Deno.serve(async(req)=>{
    if(pe){await admin.auth.admin.deleteUser(c.user.id);throw pe;} return Response.json({ok:true},{headers:cors});
   }
   if(b.action==="profile"){
+   const target=String(b.auth_user_id||"");
+   if(!target)throw new Error("Usuário inválido.");
    const patch:any={updated_at:new Date().toISOString()};
-   if(b.role!==undefined){if(!["admin","gerente","vendedor","tecnico"].includes(b.role))throw new Error("Nível inválido.");patch.role=b.role;}
-   if(b.ativo!==undefined)patch.ativo=!!b.ativo;
-   const {error}=await admin.from("enigma_usuarios").update(patch).eq("auth_user_id",b.auth_user_id);if(error)throw error;
-   if(b.ativo===false)await admin.auth.admin.updateUserById(b.auth_user_id,{ban_duration:"876000h"});
-   if(b.ativo===true)await admin.auth.admin.updateUserById(b.auth_user_id,{ban_duration:"none"});
+   if(b.nome!==undefined){const nome=String(b.nome||"").trim();if(!nome)throw new Error("Nome obrigatório.");patch.nome=nome;}
+   if(b.username!==undefined){
+    const username=String(b.username||"").trim().toLowerCase();
+    if(!/^[a-z0-9._-]{3,30}$/.test(username))throw new Error("Usuário inválido.");
+    const {data:dup}=await admin.from("enigma_usuarios").select("id").eq("username",username).neq("auth_user_id",target).maybeSingle();
+    if(dup)throw new Error("Este nome de usuário já está em uso.");
+    patch.username=username;
+    const {error:ae}=await admin.auth.admin.updateUserById(target,{email:`${username}@login.enigma.local`,user_metadata:{username,...(b.nome!==undefined?{nome:String(b.nome).trim()}:{})}});
+    if(ae)throw ae;
+    patch.email=`${username}@login.enigma.local`;
+   }else if(b.nome!==undefined){
+    const {error:ae}=await admin.auth.admin.updateUserById(target,{user_metadata:{nome:String(b.nome).trim()}});
+    if(ae)throw ae;
+   }
+   if(b.role!==undefined){
+    if(!["admin","gerente","vendedor","tecnico"].includes(b.role))throw new Error("Nível inválido.");
+    if(target===user.id && b.role!=="admin")throw new Error("Você não pode remover seu próprio acesso de Administrador.");
+    patch.role=b.role;
+   }
+   if(b.ativo!==undefined){
+    if(target===user.id && b.ativo===false)throw new Error("Você não pode bloquear sua própria conta.");
+    patch.ativo=!!b.ativo;
+   }
+   const {error}=await admin.from("enigma_usuarios").update(patch).eq("auth_user_id",target);if(error)throw error;
+   if(b.ativo===false)await admin.auth.admin.updateUserById(target,{ban_duration:"876000h"});
+   if(b.ativo===true)await admin.auth.admin.updateUserById(target,{ban_duration:"none"});
    return Response.json({ok:true},{headers:cors});
   }
   if(b.action==="password"){if(String(b.password||"").length<6)throw new Error("Senha mínima: 6 caracteres.");const {error}=await admin.auth.admin.updateUserById(b.auth_user_id,{password:b.password});if(error)throw error;return Response.json({ok:true},{headers:cors});}

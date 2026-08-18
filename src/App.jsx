@@ -1143,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.5</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.6</div>
       </div>
     </aside>
   );
@@ -1807,7 +1807,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.5</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.6</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1951,6 +1951,8 @@ function ConfiguracoesTab({usuario}) {
   const [erro,setErro]=useState(""),[ok,setOk]=useState("");
   const [auditoria,setAuditoria]=useState([]);
   const [loadingAudit,setLoadingAudit]=useState(false);
+  const [editando,setEditando]=useState(null);
+  const [editForm,setEditForm]=useState({nome:"",username:""});
   async function carregarUsuarios(){
     if(role!=="admin")return;setLoadingUsers(true);
     try{setUsuarios(await sb("enigma_usuarios?select=id,auth_user_id,nome,email,username,role,ativo,created_at&order=nome.asc")||[]);}catch(e){setErro(e.message);}
@@ -1973,6 +1975,18 @@ function ConfiguracoesTab({usuario}) {
     setErro("");setOk("");
     try{if(patch.senha)await enigmaAdminUsers({action:"password",auth_user_id:u.auth_user_id,password:patch.senha});else await enigmaAdminUsers({action:"profile",auth_user_id:u.auth_user_id,...patch});setOk("Acesso atualizado.");await carregarUsuarios();}catch(e){setErro(e.message);}
   }
+  function iniciarEdicao(u){
+    setErro("");setOk("");
+    setEditando(u.auth_user_id);
+    setEditForm({nome:u.nome||"",username:u.username||""});
+  }
+  async function salvarEdicao(u){
+    const nome=editForm.nome.trim(),username=editForm.username.trim().replace(/\s/g,"").toLowerCase();
+    if(!nome||!username){setErro("Nome e usuário são obrigatórios.");return;}
+    await alterar(u,{nome,username});
+    setEditando(null);
+  }
+  function ehProprioUsuario(u){return !!usuario?.auth_user_id && u.auth_user_id===usuario.auth_user_id;}
   async function redefinirSenha(u){
     const senha=window.prompt(`Nova senha para ${u.nome} (mínimo 6 caracteres):`);
     if(!senha)return;if(senha.length<6){setErro("A senha precisa ter pelo menos 6 caracteres.");return;}await alterar(u,{senha});
@@ -1983,7 +1997,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.5</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.6</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -1998,12 +2012,21 @@ function ConfiguracoesTab({usuario}) {
       {erro&&<div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/[.04] p-3 text-xs text-red-200">{erro}</div>}
       {ok&&<div className="mt-3 rounded-xl border border-green-500/20 bg-green-500/[.04] p-3 text-xs text-green-200">{ok}</div>}
       <div className="mt-6 border-t border-white/8 pt-4 space-y-2">
-        {loadingUsers&&!usuarios.length?<div className="text-xs text-[#666672]">Carregando usuários...</div>:usuarios.map(u=><div key={u.id} className="rounded-xl border border-white/8 bg-white/[.015] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
-          <div className="min-w-0 flex-1"><div className="text-sm text-white">{u.nome}</div><div className="text-[10px] text-[#666672] mt-1">{u.username||u.email} · {u.ativo?"ATIVO":"BLOQUEADO"}</div></div>
-          <select value={u.role} onChange={e=>alterar(u,{role:e.target.value})} className="h-9 rounded-lg border border-white/10 bg-[#111118] px-2 text-xs text-white"><option value="admin">Administrador</option><option value="gerente">Gerente</option><option value="vendedor">Vendedor</option><option value="tecnico">Técnico</option></select>
-          <button onClick={()=>redefinirSenha(u)} className="h-9 rounded-lg border border-white/10 px-3 text-xs text-[#B9B9C3]">Redefinir senha</button>
-          <button onClick={()=>alterar(u,{ativo:!u.ativo})} className={"h-9 rounded-lg border px-3 text-xs "+(u.ativo?"border-red-500/20 text-red-300":"border-green-500/20 text-green-300")}>{u.ativo?"Bloquear":"Ativar"}</button>
-        </div>)}
+        {loadingUsers&&!usuarios.length?<div className="text-xs text-[#666672]">Carregando usuários...</div>:usuarios.map(u=>{
+          const proprio=ehProprioUsuario(u),ed=editando===u.auth_user_id;
+          return <div key={u.id} className="rounded-xl border border-white/8 bg-white/[.015] p-3">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+              <div className="min-w-0 flex-1">
+                {ed?<div className="grid sm:grid-cols-2 gap-2"><div><Label>Nome</Label><Input value={editForm.nome} onChange={e=>setEditForm({...editForm,nome:e.target.value})}/></div><div><Label>Usuário / login</Label><Input value={editForm.username} onChange={e=>setEditForm({...editForm,username:e.target.value.replace(/\s/g,"").toLowerCase()})}/></div></div>:<><div className="text-sm text-white">{u.nome} {proprio&&<span className="ml-2 text-[9px] text-purple-300">VOCÊ</span>}</div><div className="text-[10px] text-[#666672] mt-1">@{u.username||"sem-usuario"} · {u.email||"—"} · {u.ativo?"ATIVO":"BLOQUEADO"}</div></>}
+              </div>
+              {ed?<div className="flex gap-2"><button onClick={()=>salvarEdicao(u)} className="h-9 rounded-lg border border-green-500/20 px-3 text-xs text-green-300">Salvar</button><button onClick={()=>setEditando(null)} className="h-9 rounded-lg border border-white/10 px-3 text-xs text-[#B9B9C3]">Cancelar</button></div>:<button onClick={()=>iniciarEdicao(u)} className="h-9 rounded-lg border border-purple-500/20 px-3 text-xs text-purple-300">Editar nome/usuário</button>}
+              <select value={u.role} disabled={proprio} title={proprio?"Você não pode alterar o nível da própria conta administrativa.":""} onChange={e=>alterar(u,{role:e.target.value})} className={"h-9 rounded-lg border border-white/10 bg-[#111118] px-2 text-xs text-white "+(proprio?"opacity-40 cursor-not-allowed":"")}><option value="admin">Administrador</option><option value="gerente">Gerente</option><option value="vendedor">Vendedor</option><option value="tecnico">Técnico</option></select>
+              <button onClick={()=>redefinirSenha(u)} className="h-9 rounded-lg border border-white/10 px-3 text-xs text-[#B9B9C3]">Redefinir senha</button>
+              <button disabled={proprio} title={proprio?"Você não pode bloquear sua própria conta.":""} onClick={()=>alterar(u,{ativo:!u.ativo})} className={"h-9 rounded-lg border px-3 text-xs "+(proprio?"border-white/5 text-[#44444D] cursor-not-allowed":u.ativo?"border-red-500/20 text-red-300":"border-green-500/20 text-green-300")}>{u.ativo?"Bloquear":"Ativar"}</button>
+            </div>
+            {proprio&&<div className="mt-2 text-[9px] text-[#666672]">Proteção: sua própria conta não pode ser bloqueada nem rebaixada de Administrador por esta tela.</div>}
+          </div>
+        })}
       </div>
     </Card>}
     {role==="admin"&&<Card className="!rounded-2xl">
@@ -3606,7 +3629,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.5 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.6 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5095,7 +5118,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.5</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.6</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
