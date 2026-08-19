@@ -1143,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.8</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.9</div>
       </div>
     </aside>
   );
@@ -1807,7 +1807,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.8</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.9</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1997,7 +1997,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.8</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.9</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3658,7 +3658,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.8 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.9 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5147,7 +5147,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.8</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.9</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5585,10 +5585,13 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
     try{
     const c=detail.cliente||{}, a=detail.aparelho||{};
     const aceite=detail.assinaturaCliente;
+    const condicoes=(detail.condicaoAparelho||[]);
+    const condicaoLabel=(st)=>st==="ok"?"Funcionando / sem avaria":st==="defeito"?"Com avaria / não funcionando":"Não verificado";
+    const condicoesHtml=condicoes.length?condicoes.map(item=>`<tr><td>${escapeHtml(item.item||"Item")}</td><td class="${item.status==="ok"?"ok":item.status==="defeito"?"bad":"nt"}">${escapeHtml(condicaoLabel(item.status))}</td></tr>`).join(""):`<tr><td colspan="2">Nenhuma condição de entrada registrada.</td></tr>`;
     const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante de Entrada OS ${escapeHtml(detail.numero)}</title><style>
       @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11px;line-height:1.4}
       ${enigmaPrintCss()}
-      .title{font-size:15px;font-weight:800;margin:12px 0 3px}.muted{color:#666;font-size:9px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 16px}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.label{font-size:8px;color:#666;text-transform:uppercase;letter-spacing:.8px}.value{font-size:11px;margin-top:2px}.full{grid-column:1/-1}.sign{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:48px}.line{border-top:1px solid #111;padding-top:5px;text-align:center;font-size:9px}.notice{font-size:9px;color:#555;margin-top:14px}
+      .title{font-size:15px;font-weight:800;margin:12px 0 3px}.muted{color:#666;font-size:9px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px 16px}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.label{font-size:8px;color:#666;text-transform:uppercase;letter-spacing:.8px}.value{font-size:11px;margin-top:2px}.full{grid-column:1/-1}.sign{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:48px}.line{border-top:1px solid #111;padding-top:5px;text-align:center;font-size:9px}.notice{font-size:9px;color:#555;margin-top:14px}.cond-table{width:100%;border-collapse:collapse;margin-top:6px}.cond-table th,.cond-table td{border-bottom:1px solid #ddd;padding:6px 5px;text-align:left;font-size:9px}.cond-table th{font-size:8px;text-transform:uppercase;letter-spacing:.6px;color:#555}.cond-table td:last-child{font-weight:700}.ok{color:#176b3a}.bad{color:#a11}.nt{color:#777}
     </style></head><body>
       ${enigmaPrintHeader("Comprovante de entrada / recebimento",`OS #${escapeHtml(detail.numero)}`)}
       <div class="title">Comprovante de recebimento do aparelho</div>
@@ -5611,6 +5614,14 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
         <div><div class="label">Previsão inicial</div><div class="value">${detail.previsaoEntrega?new Date(detail.previsaoEntrega+"T12:00:00").toLocaleDateString("pt-BR"):"A confirmar após diagnóstico"}</div></div>
         <div><div class="label">Status</div><div class="value">${escapeHtml(statusInfo(detail.status)?.label||detail.status||"Recebido")}</div></div>
       </div></div>
+
+      <div class="box">
+        <div class="label">Checklist / condição do aparelho na entrada</div>
+        <table class="cond-table">
+          <thead><tr><th>Item verificado</th><th>Condição na entrada</th></tr></thead>
+          <tbody>${condicoesHtml}</tbody>
+        </table>
+      </div>
 
       <div class="notice">O aparelho foi recebido para avaliação/serviço conforme as informações acima. Diagnóstico, orçamento, prazo definitivo e condições de reparo poderão ser informados após análise técnica. Este comprovante identifica a entrada do equipamento na ENIGMA.</div>
       <div class="sign"><div class="line">CLIENTE<br/>${escapeHtml(aceite?.nome||c.nome||"Assinatura")}</div><div class="line">ENIGMA<br/>Responsável pelo recebimento</div></div>
