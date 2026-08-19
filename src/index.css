@@ -15,3 +15,184 @@ body { color-scheme: dark; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 button, input, textarea { font: inherit; }
+
+
+/* ============================================================
+   ENIGMA OS V4.5.1 — Identidade visual / temas
+   ============================================================ */
+@font-face{
+  font-family:"Bensa";
+  src:local("Bensa");
+  font-display:swap;
+}
+
+:root{
+  --enigma-bg:#07070b;
+  --enigma-bg-2:#0b0b12;
+  --enigma-panel:#101017;
+  --enigma-panel-2:#14141e;
+  --enigma-text:#f7f7fb;
+  --enigma-muted:#8f8f9f;
+  --enigma-purple:#a855f7;
+  --enigma-purple-2:#7c3aed;
+  --enigma-blue:#168cff;
+  --enigma-cyan:#22d3ee;
+  --enigma-border:rgba(168,85,247,.22);
+}
+
+html[data-theme="light"]{
+  --enigma-bg:#f4f5fa;
+  --enigma-bg-2:#ffffff;
+  --enigma-panel:#ffffff;
+  --enigma-panel-2:#f7f7fc;
+  --enigma-text:#161620;
+  --enigma-muted:#626275;
+  --enigma-purple:#7c3aed;
+  --enigma-purple-2:#6d28d9;
+  --enigma-blue:#0969da;
+  --enigma-cyan:#0891b2;
+  --enigma-border:rgba(124,58,237,.18);
+}
+
+html,body,#root{background:var(--enigma-bg)!important;}
+body{color:var(--enigma-text);transition:background-color .18s ease,color .18s ease}
+
+.enigma-shell{
+  background:
+    radial-gradient(circle at 88% 4%, rgba(37,99,235,.12), transparent 26rem),
+    radial-gradient(circle at 18% 18%, rgba(168,85,247,.13), transparent 28rem),
+    var(--enigma-bg)!important;
+  color:var(--enigma-text)!important;
+}
+
+html[data-theme="light"] .enigma-shell{
+  background:
+    radial-gradient(circle at 88% 4%, rgba(9,105,218,.08), transparent 26rem),
+    radial-gradient(circle at 14% 10%, rgba(124,58,237,.09), transparent 28rem),
+    var(--enigma-bg)!important;
+}
+
+.enigma-sidenav{
+  background:
+    linear-gradient(180deg,rgba(168,85,247,.055),transparent 22%),
+    var(--enigma-bg-2)!important;
+  border-right-color:rgba(168,85,247,.20)!important;
+  box-shadow:16px 0 45px rgba(0,0,0,.18);
+}
+
+.enigma-brand-panel{
+  position:relative;
+  background:
+    radial-gradient(circle at 50% 50%,rgba(168,85,247,.15),transparent 58%);
+}
+.enigma-brand-panel:after{
+  content:"";
+  position:absolute;left:18%;right:18%;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--enigma-purple),var(--enigma-blue),transparent);
+  box-shadow:0 0 16px rgba(168,85,247,.65);
+}
+.enigma-logo{
+  filter:drop-shadow(0 0 13px rgba(168,85,247,.20)) drop-shadow(0 0 22px rgba(22,140,255,.09));
+}
+html[data-theme="light"] .enigma-logo{
+  filter:brightness(.12) saturate(1.2) drop-shadow(0 0 8px rgba(124,58,237,.10));
+}
+
+.enigma-nav-item{
+  position:relative;
+}
+.enigma-nav-item:hover{
+  border-color:rgba(168,85,247,.18)!important;
+  box-shadow:inset 0 0 18px rgba(168,85,247,.035);
+}
+
+.enigma-card{
+  border-color:rgba(168,85,247,.13)!important;
+  background:
+    linear-gradient(145deg,rgba(168,85,247,.024),rgba(22,140,255,.015)),
+    var(--enigma-panel)!important;
+  box-shadow:0 14px 40px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.018);
+  transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;
+}
+.enigma-card:hover{
+  border-color:rgba(168,85,247,.23)!important;
+  box-shadow:0 16px 42px rgba(0,0,0,.20),0 0 26px rgba(168,85,247,.035);
+}
+
+.enigma-input{
+  background:var(--enigma-bg-2)!important;
+  border-color:rgba(168,85,247,.15)!important;
+  color:var(--enigma-text)!important;
+}
+.enigma-input:focus{
+  border-color:rgba(168,85,247,.55)!important;
+  box-shadow:0 0 0 3px rgba(168,85,247,.10),0 0 24px rgba(168,85,247,.07);
+}
+
+.enigma-theme-switch{
+  border-color:rgba(168,85,247,.18)!important;
+  background:rgba(168,85,247,.04)!important;
+}
+
+/* Bensa como linguagem de marca: títulos e navegação; textos longos continuam legíveis */
+.enigma-shell h1,
+.enigma-shell h2,
+.enigma-shell h3,
+.enigma-shell [class*="text-xl"],
+.enigma-shell [class*="text-2xl"],
+.enigma-shell [class*="tracking-[.2"],
+.enigma-sidenav nav button span{
+  font-family:"Bensa","Arial Narrow",Arial,sans-serif;
+  letter-spacing:.035em;
+}
+.enigma-sidenav nav button span{letter-spacing:.02em}
+
+/* neon mais intenso no dark */
+html[data-theme="dark"] .text-purple-300,
+html[data-theme="dark"] .text-purple-200,
+html[data-theme="dark"] .text-purple-400{color:#cf8cff!important}
+html[data-theme="dark"] .text-cyan-300{color:#67e8f9!important}
+html[data-theme="dark"] [class*="border-purple-500"]{border-color:rgba(192,92,255,.35)!important}
+html[data-theme="dark"] [class*="bg-purple-500"]{background-color:rgba(168,85,247,.15)!important}
+
+/* Tema claro: reaproveita a UI existente sem alterar lógica */
+html[data-theme="light"] body{color-scheme:light}
+html[data-theme="light"] .bg-\[\#09090D\],
+html[data-theme="light"] .bg-\[\#0A0A0F\],
+html[data-theme="light"] .bg-\[\#0C0C12\]{background-color:#f4f5fa!important}
+html[data-theme="light"] .bg-\[\#0F0F14\],
+html[data-theme="light"] .bg-\[\#111118\],
+html[data-theme="light"] .bg-\[\#131318\]{background-color:#fff!important}
+
+html[data-theme="light"] .text-white,
+html[data-theme="light"] .text-\[\#F2F2F5\],
+html[data-theme="light"] .text-\[\#E5E5EA\],
+html[data-theme="light"] .text-\[\#C9C9D2\],
+html[data-theme="light"] .text-\[\#B9B9C3\],
+html[data-theme="light"] .text-\[\#B5B5BF\]{color:#171720!important}
+
+html[data-theme="light"] .text-\[\#8A8A96\],
+html[data-theme="light"] .text-\[\#858590\],
+html[data-theme="light"] .text-\[\#777782\],
+html[data-theme="light"] .text-\[\#73737E\],
+html[data-theme="light"] .text-\[\#70707B\],
+html[data-theme="light"] .text-\[\#6E6E78\],
+html[data-theme="light"] .text-\[\#666672\],
+html[data-theme="light"] .text-\[\#5F5F69\],
+html[data-theme="light"] .text-\[\#555560\]{color:#626275!important}
+
+html[data-theme="light"] [class*="border-white/"],
+html[data-theme="light"] .border-\[\#2A2A34\],
+html[data-theme="light"] .border-\[\#22222A\]{border-color:rgba(23,23,32,.10)!important}
+
+html[data-theme="light"] [class*="bg-white/"]{background-color:rgba(17,17,27,.025)!important}
+html[data-theme="light"] [class*="bg-black/"]{background-color:rgba(17,17,27,.035)!important}
+html[data-theme="light"] .shadow-\[inset_3px_0_0_\#8B5CF6\]{box-shadow:inset 3px 0 0 #7c3aed!important}
+
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder{color:#9a9aaa!important}
+html[data-theme="light"] select{color:#171720!important;background:#fff!important}
+
+@media (max-width:767px){
+  .enigma-theme-switch button{width:30px;height:30px}
+}

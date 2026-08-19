@@ -6,8 +6,19 @@ import {
   Plus, Clock, AlertCircle, X, Wallet, Lock, Unlock, Check, ShoppingBag,
   TrendingUp, Package, ChevronRight, ChevronDown, Printer, PenTool,
   BellRing, Eraser, Minus, LayoutDashboard, Users, Settings, Headset,
-  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Layers, Upload, Link as LinkIcon
+  BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Layers, Upload, Link as LinkIcon, Sun, Moon, Monitor
 } from "lucide-react";
+
+
+/* ---------------- visual / tema ENIGMA ---------------- */
+const ENIGMA_THEME_KEY = "enigma_theme";
+function initialEnigmaTheme(){
+  try{return localStorage.getItem(ENIGMA_THEME_KEY)||"auto";}catch{return "auto";}
+}
+function resolvedEnigmaTheme(mode){
+  if(mode!=="auto") return mode;
+  try{return window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}catch{return "dark";}
+}
 
 /* ---------------- Supabase ---------------- */
 const SUPABASE_URL = "https://rvyjzlgvwpvgvjdqexne.supabase.co";
@@ -332,7 +343,7 @@ function resizeImage(file, maxWidth = 1000, quality = 0.7) {
 
 /* ---------------- UI primitives ---------------- */
 function Card({ children, className = "" }) {
-  return <div className={"rounded-xl border border-[#2A2A34] bg-[#131318] p-4 " + className}>{children}</div>;
+  return <div className={"enigma-card rounded-xl border border-[#2A2A34] bg-[#131318] p-4 " + className}>{children}</div>;
 }
 function Label({ children }) {
   return <div className="text-[11px] tracking-[0.15em] uppercase text-[#8A8A96] mb-1">{children}</div>;
@@ -340,7 +351,7 @@ function Label({ children }) {
 function Input(props) {
   return (
     <input {...props} className={
-      "w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
+      "enigma-input w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
       (props.className || "")
     } />
   );
@@ -348,7 +359,7 @@ function Input(props) {
 function Textarea(props) {
   return (
     <textarea {...props} className={
-      "w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
+      "enigma-input w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
       (props.className || "")
     } />
   );
@@ -425,6 +436,22 @@ function EnigmaSistema({ usuario, onLogout }) {
   const patchTimer = useRef(null);
   const role=usuario?.role||"vendedor";
   const allowedTabs=ROLE_TABS[role]||[];
+  const [themeMode,setThemeMode]=useState(initialEnigmaTheme);
+
+  useEffect(()=>{
+    const apply=()=>{
+      const resolved=resolvedEnigmaTheme(themeMode);
+      document.documentElement.dataset.theme=resolved;
+      document.documentElement.dataset.themeMode=themeMode;
+      try{localStorage.setItem(ENIGMA_THEME_KEY,themeMode);}catch{}
+    };
+    apply();
+    if(themeMode!=="auto") return;
+    const mq=window.matchMedia("(prefers-color-scheme: light)");
+    const listener=()=>apply();
+    mq.addEventListener?.("change",listener);
+    return()=>mq.removeEventListener?.("change",listener);
+  },[themeMode]);
 
 
   useEffect(() => {
@@ -1063,9 +1090,9 @@ function EnigmaSistema({ usuario, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090D] text-[#F2F2F5] font-sans md:pl-64 pb-20 md:pb-0">
+    <div className="enigma-shell min-h-screen bg-[#09090D] text-[#F2F2F5] font-sans md:pl-64 pb-20 md:pb-0">
       <SideNav tab={tab} setTab={navigate} role={role} usuario={usuario} onLogout={onLogout} />
-      <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} usuario={usuario} />
+      <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} usuario={usuario} themeMode={themeMode} setThemeMode={setThemeMode} />
       <MobileSectionNav tab={tab} setTab={navigate} role={role} />
       <main className="max-w-6xl mx-auto px-4 md:px-8 pt-6 pb-10">
         {tab === "dashboard" && (
@@ -1117,21 +1144,13 @@ const NAV_ITEMS = [
 
 function SideNav({ tab, setTab, role, usuario, onLogout }) {
   return (
-    <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 border-r border-white/10 bg-[#0C0C12] z-20 flex-col">
-      <div className="px-6 py-6 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600/30 to-blue-500/20 border border-purple-400/30 flex items-center justify-center shadow-[0_0_25px_rgba(139,92,246,.12)]">
-            <Sparkles size={18} className="text-purple-300" />
-          </div>
-          <div>
-            <div className="text-[10px] tracking-[.24em] uppercase text-[#72727D]">Sistema</div>
-            <div className="font-bold tracking-[.22em] text-white">ENIGMA</div>
-          </div>
-        </div>
+    <aside className="enigma-sidenav hidden md:flex fixed inset-y-0 left-0 w-64 border-r border-white/10 bg-[#0C0C12] z-20 flex-col">
+      <div className="enigma-brand-panel px-5 py-5 border-b border-white/10">
+        <img src="/enigma-logo-oficial.png" alt="ENIGMA" className="enigma-logo w-full h-[118px] object-contain" />
       </div>
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
         {NAV_ITEMS.filter(item=>tabPermitida(role,item.id)).map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => setTab(id)} className={"w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition border " + (tab === id ? "bg-purple-500/10 border-purple-500/25 text-white shadow-[inset_3px_0_0_#8B5CF6]" : "border-transparent text-[#8A8A96] hover:text-white hover:bg-white/[.035]") }>
+          <button key={id} onClick={() => setTab(id)} className={"enigma-nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition border " + (tab === id ? "bg-purple-500/10 border-purple-500/25 text-white shadow-[inset_3px_0_0_#8B5CF6]" : "border-transparent text-[#8A8A96] hover:text-white hover:bg-white/[.035]") }>
             <Icon size={17} className={tab === id ? "text-purple-300" : ""} />
             <span>{label}</span>
           </button>
@@ -1143,13 +1162,13 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.0</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.1</div>
       </div>
     </aside>
   );
 }
 
-function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario }) {
+function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario, themeMode, setThemeMode }) {
   const current = NAV_ITEMS.find((item) => item.id === tab);
   return (
     <header className="border-b border-white/10 bg-[#09090D]/90 backdrop-blur-xl sticky top-0 z-10">
@@ -1160,11 +1179,18 @@ function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario }) {
           </button>
         ) : (
           <div>
-            <div className="md:hidden text-[10px] tracking-[0.23em] text-purple-400 uppercase mb-0.5">ENIGMA OS</div>
+            <img src="/enigma-logo-oficial.png" alt="ENIGMA" className="enigma-logo md:hidden h-7 w-auto object-contain mb-1" />
             <div className="text-lg md:text-xl font-semibold text-white">{current?.label || "ENIGMA"}</div>
           </div>
         )}
         <div className="flex items-center gap-2">
+          <div className="enigma-theme-switch flex items-center rounded-xl border border-white/10 bg-white/[.03] p-1" title="Tema do sistema">
+            {[["dark",Moon,"Escuro"],["light",Sun,"Claro"],["auto",Monitor,"Automático"]].map(([id,Icon,label])=>(
+              <button key={id} onClick={()=>setThemeMode(id)} title={label} aria-label={`Tema ${label}`} className={"w-8 h-8 rounded-lg flex items-center justify-center transition "+(themeMode===id?"bg-purple-500/20 text-purple-200 shadow-[0_0_16px_rgba(168,85,247,.25)]":"text-[#777782] hover:text-white")}>
+                <Icon size={14}/>
+              </button>
+            ))}
+          </div>
           <span className="hidden lg:inline text-[9px] text-[#5F5F69]">{usuario?.nome||""} · {ROLE_LABELS[usuario?.role]||usuario?.role||""}</span>
           {saveError && <span className="hidden sm:flex items-center gap-1 text-[11px] text-red-400"><AlertCircle size={13} /> conexão</span>}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/[.03]">
@@ -1850,7 +1876,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.0</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.1</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2040,7 +2066,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.0</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.1</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3701,7 +3727,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.0 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.1 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5190,7 +5216,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.0</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.1</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
