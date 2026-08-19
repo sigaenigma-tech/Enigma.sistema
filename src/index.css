@@ -18,181 +18,195 @@ button, input, textarea { font: inherit; }
 
 
 /* ============================================================
-   ENIGMA OS V4.5.1 — Identidade visual / temas
+   ENIGMA OS V4.5.1 — IDENTIDADE VISUAL / THEMES
+   Bensa is used when installed on the device; fallbacks preserve
+   the geometric brand feel on devices without the local font.
    ============================================================ */
-@font-face{
-  font-family:"Bensa";
-  src:local("Bensa");
-  font-display:swap;
-}
 
 :root{
-  --enigma-bg:#07070b;
-  --enigma-bg-2:#0b0b12;
-  --enigma-panel:#101017;
-  --enigma-panel-2:#14141e;
-  --enigma-text:#f7f7fb;
-  --enigma-muted:#8f8f9f;
-  --enigma-purple:#a855f7;
-  --enigma-purple-2:#7c3aed;
-  --enigma-blue:#168cff;
-  --enigma-cyan:#22d3ee;
-  --enigma-border:rgba(168,85,247,.22);
+  --enigma-purple:#9A3CFF;
+  --enigma-purple-2:#C13CFF;
+  --enigma-blue:#168CFF;
+  --enigma-cyan:#00D7FF;
+  --enigma-pink:#FF3FD1;
+  --enigma-green:#27E6A5;
+  --enigma-orange:#FF9A1F;
+  --enigma-bg:#07070B;
+  --enigma-surface:#101018;
+  --enigma-surface-2:#151522;
+  --enigma-text:#F7F5FF;
+  --enigma-muted:#8D8A9C;
+  --enigma-border:rgba(168,85,247,.24);
 }
-
-html[data-theme="light"]{
-  --enigma-bg:#f4f5fa;
-  --enigma-bg-2:#ffffff;
-  --enigma-panel:#ffffff;
-  --enigma-panel-2:#f7f7fc;
-  --enigma-text:#161620;
-  --enigma-muted:#626275;
-  --enigma-purple:#7c3aed;
-  --enigma-purple-2:#6d28d9;
-  --enigma-blue:#0969da;
-  --enigma-cyan:#0891b2;
-  --enigma-border:rgba(124,58,237,.18);
+html[data-enigma-theme="light"]{
+  --enigma-bg:#F4F5FA;
+  --enigma-surface:#FFFFFF;
+  --enigma-surface-2:#F8F7FC;
+  --enigma-text:#17131E;
+  --enigma-muted:#686272;
+  --enigma-border:rgba(111,48,195,.20);
 }
-
 html,body,#root{background:var(--enigma-bg)!important;}
-body{color:var(--enigma-text);transition:background-color .18s ease,color .18s ease}
-
-.enigma-shell{
+body{transition:background-color .22s ease,color .22s ease;}
+.enigma-app{
   background:
-    radial-gradient(circle at 88% 4%, rgba(37,99,235,.12), transparent 26rem),
-    radial-gradient(circle at 18% 18%, rgba(168,85,247,.13), transparent 28rem),
+    radial-gradient(circle at 84% 2%,rgba(154,60,255,.13),transparent 30rem),
+    radial-gradient(circle at 18% 85%,rgba(22,140,255,.08),transparent 30rem),
     var(--enigma-bg)!important;
   color:var(--enigma-text)!important;
+  min-height:100vh;
 }
-
-html[data-theme="light"] .enigma-shell{
-  background:
-    radial-gradient(circle at 88% 4%, rgba(9,105,218,.08), transparent 26rem),
-    radial-gradient(circle at 14% 10%, rgba(124,58,237,.09), transparent 28rem),
-    var(--enigma-bg)!important;
-}
-
-.enigma-sidenav{
-  background:
-    linear-gradient(180deg,rgba(168,85,247,.055),transparent 22%),
-    var(--enigma-bg-2)!important;
-  border-right-color:rgba(168,85,247,.20)!important;
-  box-shadow:16px 0 45px rgba(0,0,0,.18);
-}
-
-.enigma-brand-panel{
-  position:relative;
-  background:
-    radial-gradient(circle at 50% 50%,rgba(168,85,247,.15),transparent 58%);
-}
-.enigma-brand-panel:after{
-  content:"";
-  position:absolute;left:18%;right:18%;bottom:-1px;height:1px;
-  background:linear-gradient(90deg,transparent,var(--enigma-purple),var(--enigma-blue),transparent);
-  box-shadow:0 0 16px rgba(168,85,247,.65);
-}
-.enigma-logo{
-  filter:drop-shadow(0 0 13px rgba(168,85,247,.20)) drop-shadow(0 0 22px rgba(22,140,255,.09));
-}
-html[data-theme="light"] .enigma-logo{
-  filter:brightness(.12) saturate(1.2) drop-shadow(0 0 8px rgba(124,58,237,.10));
-}
-
-.enigma-nav-item{
-  position:relative;
-}
-.enigma-nav-item:hover{
-  border-color:rgba(168,85,247,.18)!important;
-  box-shadow:inset 0 0 18px rgba(168,85,247,.035);
-}
-
-.enigma-card{
-  border-color:rgba(168,85,247,.13)!important;
-  background:
-    linear-gradient(145deg,rgba(168,85,247,.024),rgba(22,140,255,.015)),
-    var(--enigma-panel)!important;
-  box-shadow:0 14px 40px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.018);
-  transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;
-}
-.enigma-card:hover{
-  border-color:rgba(168,85,247,.23)!important;
-  box-shadow:0 16px 42px rgba(0,0,0,.20),0 0 26px rgba(168,85,247,.035);
-}
-
-.enigma-input{
-  background:var(--enigma-bg-2)!important;
-  border-color:rgba(168,85,247,.15)!important;
-  color:var(--enigma-text)!important;
-}
-.enigma-input:focus{
-  border-color:rgba(168,85,247,.55)!important;
-  box-shadow:0 0 0 3px rgba(168,85,247,.10),0 0 24px rgba(168,85,247,.07);
-}
-
-.enigma-theme-switch{
-  border-color:rgba(168,85,247,.18)!important;
-  background:rgba(168,85,247,.04)!important;
-}
-
-/* Bensa como linguagem de marca: títulos e navegação; textos longos continuam legíveis */
-.enigma-shell h1,
-.enigma-shell h2,
-.enigma-shell h3,
-.enigma-shell [class*="text-xl"],
-.enigma-shell [class*="text-2xl"],
-.enigma-shell [class*="tracking-[.2"],
-.enigma-sidenav nav button span{
-  font-family:"Bensa","Arial Narrow",Arial,sans-serif;
+.enigma-display,.enigma-nav-label,
+.enigma-app h1,.enigma-app h2,.enigma-app h3{
+  font-family:"Bensa","Bank Gothic","Eurostile","Arial Narrow",system-ui,sans-serif;
   letter-spacing:.035em;
 }
-.enigma-sidenav nav button span{letter-spacing:.02em}
-
-/* neon mais intenso no dark */
-html[data-theme="dark"] .text-purple-300,
-html[data-theme="dark"] .text-purple-200,
-html[data-theme="dark"] .text-purple-400{color:#cf8cff!important}
-html[data-theme="dark"] .text-cyan-300{color:#67e8f9!important}
-html[data-theme="dark"] [class*="border-purple-500"]{border-color:rgba(192,92,255,.35)!important}
-html[data-theme="dark"] [class*="bg-purple-500"]{background-color:rgba(168,85,247,.15)!important}
-
-/* Tema claro: reaproveita a UI existente sem alterar lógica */
-html[data-theme="light"] body{color-scheme:light}
-html[data-theme="light"] .bg-\[\#09090D\],
-html[data-theme="light"] .bg-\[\#0A0A0F\],
-html[data-theme="light"] .bg-\[\#0C0C12\]{background-color:#f4f5fa!important}
-html[data-theme="light"] .bg-\[\#0F0F14\],
-html[data-theme="light"] .bg-\[\#111118\],
-html[data-theme="light"] .bg-\[\#131318\]{background-color:#fff!important}
-
-html[data-theme="light"] .text-white,
-html[data-theme="light"] .text-\[\#F2F2F5\],
-html[data-theme="light"] .text-\[\#E5E5EA\],
-html[data-theme="light"] .text-\[\#C9C9D2\],
-html[data-theme="light"] .text-\[\#B9B9C3\],
-html[data-theme="light"] .text-\[\#B5B5BF\]{color:#171720!important}
-
-html[data-theme="light"] .text-\[\#8A8A96\],
-html[data-theme="light"] .text-\[\#858590\],
-html[data-theme="light"] .text-\[\#777782\],
-html[data-theme="light"] .text-\[\#73737E\],
-html[data-theme="light"] .text-\[\#70707B\],
-html[data-theme="light"] .text-\[\#6E6E78\],
-html[data-theme="light"] .text-\[\#666672\],
-html[data-theme="light"] .text-\[\#5F5F69\],
-html[data-theme="light"] .text-\[\#555560\]{color:#626275!important}
-
-html[data-theme="light"] [class*="border-white/"],
-html[data-theme="light"] .border-\[\#2A2A34\],
-html[data-theme="light"] .border-\[\#22222A\]{border-color:rgba(23,23,32,.10)!important}
-
-html[data-theme="light"] [class*="bg-white/"]{background-color:rgba(17,17,27,.025)!important}
-html[data-theme="light"] [class*="bg-black/"]{background-color:rgba(17,17,27,.035)!important}
-html[data-theme="light"] .shadow-\[inset_3px_0_0_\#8B5CF6\]{box-shadow:inset 3px 0 0 #7c3aed!important}
-
-html[data-theme="light"] input::placeholder,
-html[data-theme="light"] textarea::placeholder{color:#9a9aaa!important}
-html[data-theme="light"] select{color:#171720!important;background:#fff!important}
-
-@media (max-width:767px){
-  .enigma-theme-switch button{width:30px;height:30px}
+.enigma-app h1,.enigma-app h2{letter-spacing:.05em;}
+.enigma-brand-panel{
+  min-height:155px;
+  background:
+    radial-gradient(circle at 50% 25%,rgba(154,60,255,.18),transparent 65%),
+    linear-gradient(180deg,rgba(16,12,28,.98),rgba(8,8,13,.96));
 }
+.enigma-brand-glow{
+  height:115px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  filter:drop-shadow(0 0 13px rgba(154,60,255,.42)) drop-shadow(0 0 26px rgba(22,140,255,.14));
+}
+.enigma-official-logo{
+  width:146px;
+  height:112px;
+  object-fit:contain;
+  display:block;
+  mix-blend-mode:screen;
+}
+.theme-light .enigma-official-logo{
+  filter:invert(1);
+  mix-blend-mode:multiply;
+}
+.theme-light .enigma-brand-panel{
+  background:
+    radial-gradient(circle at 50% 25%,rgba(154,60,255,.12),transparent 68%),
+    linear-gradient(180deg,#fff,#f7f5fb);
+}
+.theme-light .enigma-brand-glow{filter:drop-shadow(0 0 14px rgba(126,52,201,.15));}
+
+/* stronger dark neon */
+.theme-dark [class*="bg-[#131318]"],
+.theme-dark [class*="bg-[#111118]"],
+.theme-dark [class*="bg-[#101016]"]{
+  background-color:rgba(15,15,24,.93)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.018);
+}
+.theme-dark [class*="border-[#2A2A34]"],
+.theme-dark [class*="border-white/10"]{border-color:rgba(154,60,255,.17)!important;}
+.theme-dark [class*="bg-purple-500/10"]{
+  background-color:rgba(154,60,255,.15)!important;
+  box-shadow:0 0 22px rgba(154,60,255,.08),inset 0 0 18px rgba(154,60,255,.04);
+}
+.theme-dark button:hover{filter:brightness(1.08);}
+.theme-dark aside{
+  background:
+    linear-gradient(180deg,rgba(10,9,16,.98),rgba(7,7,12,.99))!important;
+  box-shadow:12px 0 42px rgba(0,0,0,.24),1px 0 0 rgba(154,60,255,.12);
+}
+.theme-dark header{
+  background:rgba(7,7,12,.84)!important;
+  box-shadow:0 1px 24px rgba(0,0,0,.22);
+}
+
+/* theme selector */
+.theme-switch-btn{color:#777383;}
+.theme-switch-btn:hover{color:var(--enigma-text);background:rgba(154,60,255,.08);}
+.theme-switch-btn.is-active{
+  color:#fff;
+  background:linear-gradient(135deg,rgba(154,60,255,.9),rgba(22,140,255,.72));
+  box-shadow:0 0 16px rgba(154,60,255,.28);
+}
+.theme-cycle-mobile{color:var(--enigma-purple);background:var(--enigma-surface);}
+
+/* LIGHT — deliberately designed, not a blind inversion */
+.theme-light{
+  color:#17131E!important;
+  background:
+    radial-gradient(circle at 85% 0%,rgba(154,60,255,.10),transparent 26rem),
+    radial-gradient(circle at 10% 90%,rgba(22,140,255,.08),transparent 28rem),
+    #F4F5FA!important;
+}
+.theme-light aside{
+  background:rgba(255,255,255,.96)!important;
+  border-color:rgba(94,63,126,.13)!important;
+  box-shadow:10px 0 32px rgba(52,33,70,.06);
+}
+.theme-light header,
+.theme-light .md\:hidden.sticky{
+  background:rgba(249,249,252,.88)!important;
+  border-color:rgba(94,63,126,.12)!important;
+}
+.theme-light [class*="bg-[#131318]"],
+.theme-light [class*="bg-[#111118]"],
+.theme-light [class*="bg-[#101016]"],
+.theme-light [class*="bg-[#0F0F14]"],
+.theme-light [class*="bg-[#0C0C12]"],
+.theme-light [class*="bg-[#09090D]"],
+.theme-light [class*="bg-[#08080D]"],
+.theme-light [class*="bg-[#1B1B22]"]{
+  background-color:#FFFFFF!important;
+}
+.theme-light [class*="border-[#2A2A34]"],
+.theme-light [class*="border-white/10"],
+.theme-light [class*="border-white/8"],
+.theme-light [class*="border-white/[."]{
+  border-color:rgba(83,61,105,.15)!important;
+}
+.theme-light [class*="text-white"],
+.theme-light [class*="text-[#F2F2F5]"],
+.theme-light [class*="text-[#E5E5EA]"],
+.theme-light [class*="text-[#C9C9D2]"],
+.theme-light [class*="text-[#B5B5BF]"]{
+  color:#1B1622!important;
+}
+.theme-light [class*="text-[#8A8A96]"],
+.theme-light [class*="text-[#777782]"],
+.theme-light [class*="text-[#74747F]"],
+.theme-light [class*="text-[#70707B]"],
+.theme-light [class*="text-[#666672]"],
+.theme-light [class*="text-[#5F5F69]"],
+.theme-light [class*="text-[#555560]"],
+.theme-light [class*="text-[#454550]"]{
+  color:#6E6875!important;
+}
+.theme-light input,.theme-light textarea,.theme-light select{
+  background:#fff!important;
+  color:#19151F!important;
+  border-color:rgba(89,62,116,.18)!important;
+}
+.theme-light input::placeholder,.theme-light textarea::placeholder{color:#99939F!important;}
+.theme-light [class*="bg-white/[."]{background-color:rgba(80,52,110,.035)!important;}
+.theme-light [class*="bg-black/"]{background-color:rgba(72,47,98,.04)!important;}
+.theme-light [class*="bg-purple-500/10"]{
+  background-color:rgba(145,61,238,.10)!important;
+  box-shadow:inset 3px 0 0 #8F3FEB;
+}
+.theme-light .theme-switch-btn.is-active{color:#fff!important;}
+.theme-light .theme-switch-btn{color:#6B6273;}
+.theme-light .theme-cycle-mobile{background:#fff;}
+.theme-light [class*="shadow-[0_0_"]{box-shadow:none!important;}
+
+/* keep accent colors vivid in both themes */
+.text-purple-300,.text-purple-400{color:#A84CFF!important;}
+.text-cyan-300{color:#00A7D9!important;}
+.text-blue-300{color:#278DFF!important;}
+.text-green-300{color:#13B77A!important;}
+.text-amber-300{color:#D88700!important;}
+.theme-dark .text-cyan-300{color:#20DFFF!important;}
+.theme-dark .text-blue-300{color:#54A7FF!important;}
+.theme-dark .text-green-300{color:#42EAA8!important;}
+.theme-dark .text-amber-300{color:#FFB33A!important;}
+
+/* scrollbars */
+.enigma-app *{scrollbar-width:thin;scrollbar-color:rgba(154,60,255,.45) transparent;}
+.enigma-app *::-webkit-scrollbar{width:7px;height:7px}
+.enigma-app *::-webkit-scrollbar-thumb{background:linear-gradient(var(--enigma-purple),var(--enigma-blue));border-radius:99px}

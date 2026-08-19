@@ -9,17 +9,6 @@ import {
   BarChart3, Wrench, Sparkles, ArrowUpRight, QrCode, Copy, ExternalLink, Send, RefreshCw, UserCheck, Layers, Upload, Link as LinkIcon, Sun, Moon, Monitor
 } from "lucide-react";
 
-
-/* ---------------- visual / tema ENIGMA ---------------- */
-const ENIGMA_THEME_KEY = "enigma_theme";
-function initialEnigmaTheme(){
-  try{return localStorage.getItem(ENIGMA_THEME_KEY)||"auto";}catch{return "auto";}
-}
-function resolvedEnigmaTheme(mode){
-  if(mode!=="auto") return mode;
-  try{return window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}catch{return "dark";}
-}
-
 /* ---------------- Supabase ---------------- */
 const SUPABASE_URL = "https://rvyjzlgvwpvgvjdqexne.supabase.co";
 const SUPABASE_KEY = "sb_publishable_jMQ-tBzmSo2LuxT9vsM9rg_OT2oAyIH";
@@ -159,6 +148,28 @@ function EnigmaLogin({onAuthenticated}){
       <div className="mt-5 pt-4 border-t border-white/8 text-[9px] text-[#555560]">Acesso protegido por autenticação Supabase e permissões por função.</div>
     </div>
   </div>;
+}
+
+
+function useEnigmaTheme(){
+  const [preference,setPreference]=useState(()=>{
+    try{return localStorage.getItem("enigma_theme")||"dark";}catch{return "dark";}
+  });
+  const [systemDark,setSystemDark]=useState(()=>window.matchMedia?.("(prefers-color-scheme: dark)")?.matches!==false);
+  useEffect(()=>{
+    const mq=window.matchMedia?.("(prefers-color-scheme: dark)");
+    if(!mq)return;
+    const fn=e=>setSystemDark(e.matches);
+    mq.addEventListener?.("change",fn);
+    return()=>mq.removeEventListener?.("change",fn);
+  },[]);
+  useEffect(()=>{try{localStorage.setItem("enigma_theme",preference);}catch{}},[preference]);
+  const resolved=preference==="auto"?(systemDark?"dark":"light"):preference;
+  useEffect(()=>{
+    document.documentElement.dataset.enigmaTheme=resolved;
+    document.documentElement.style.colorScheme=resolved;
+  },[resolved]);
+  return {preference,setPreference,resolved};
 }
 
 function EnigmaProtegido(){
@@ -343,7 +354,7 @@ function resizeImage(file, maxWidth = 1000, quality = 0.7) {
 
 /* ---------------- UI primitives ---------------- */
 function Card({ children, className = "" }) {
-  return <div className={"enigma-card rounded-xl border border-[#2A2A34] bg-[#131318] p-4 " + className}>{children}</div>;
+  return <div className={"rounded-xl border border-[#2A2A34] bg-[#131318] p-4 " + className}>{children}</div>;
 }
 function Label({ children }) {
   return <div className="text-[11px] tracking-[0.15em] uppercase text-[#8A8A96] mb-1">{children}</div>;
@@ -351,7 +362,7 @@ function Label({ children }) {
 function Input(props) {
   return (
     <input {...props} className={
-      "enigma-input w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
+      "w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
       (props.className || "")
     } />
   );
@@ -359,7 +370,7 @@ function Input(props) {
 function Textarea(props) {
   return (
     <textarea {...props} className={
-      "enigma-input w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
+      "w-full bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 py-2.5 text-[#F2F2F5] placeholder-[#5A5A64] outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/40 " +
       (props.className || "")
     } />
   );
@@ -419,6 +430,7 @@ export default function AppRouter() {
 
 /* ============================================================ */
 function EnigmaSistema({ usuario, onLogout }) {
+  const {preference:themePreference,setPreference:setThemePreference,resolved:resolvedTheme}=useEnigmaTheme();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [saveError, setSaveError] = useState(false);
@@ -436,22 +448,6 @@ function EnigmaSistema({ usuario, onLogout }) {
   const patchTimer = useRef(null);
   const role=usuario?.role||"vendedor";
   const allowedTabs=ROLE_TABS[role]||[];
-  const [themeMode,setThemeMode]=useState(initialEnigmaTheme);
-
-  useEffect(()=>{
-    const apply=()=>{
-      const resolved=resolvedEnigmaTheme(themeMode);
-      document.documentElement.dataset.theme=resolved;
-      document.documentElement.dataset.themeMode=themeMode;
-      try{localStorage.setItem(ENIGMA_THEME_KEY,themeMode);}catch{}
-    };
-    apply();
-    if(themeMode!=="auto") return;
-    const mq=window.matchMedia("(prefers-color-scheme: light)");
-    const listener=()=>apply();
-    mq.addEventListener?.("change",listener);
-    return()=>mq.removeEventListener?.("change",listener);
-  },[themeMode]);
 
 
   useEffect(() => {
@@ -926,7 +922,7 @@ function EnigmaSistema({ usuario, onLogout }) {
     const novaOS = {
       cliente_id: form.clienteId || null,
       cliente: { nome: form.clienteNome, telefone: form.clienteTelefone, cpf: form.clienteCpf, endereco: form.clienteEndereco },
-      aparelho: { tipo: form.aparelhoTipo, marcaModelo: form.aparelhoMarcaModelo, serial: form.aparelhoSerial, cor: form.aparelhoCor || "" },
+      aparelho: { tipo: form.aparelhoTipo, marcaModelo: form.aparelhoMarcaModelo, serial: form.aparelhoSerial, cor: form.aparelhoCor || "", acesso: form.aparelhoAcesso || { tipo: "nao_informado", valor: "", padrao: [] } },
       problema_relatado: form.problemaRelatado,
       checklist: CHECKLIST_PADRAO.map((item) => ({ id: genId(), item, status: "nao_testado" })),
       condicao_aparelho: CONDICAO_PADRAO.map((item) => ({ id: genId(), item, status: "nao_testado" })),
@@ -1090,9 +1086,9 @@ function EnigmaSistema({ usuario, onLogout }) {
   };
 
   return (
-    <div className="enigma-shell min-h-screen bg-[#09090D] text-[#F2F2F5] font-sans md:pl-64 pb-20 md:pb-0">
+    <div className={"enigma-app theme-"+resolvedTheme+" min-h-screen bg-[#09090D] text-[#F2F2F5] font-sans md:pl-64 pb-20 md:pb-0"}>
       <SideNav tab={tab} setTab={navigate} role={role} usuario={usuario} onLogout={onLogout} />
-      <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} usuario={usuario} themeMode={themeMode} setThemeMode={setThemeMode} />
+      <Header caixaAberto={caixaAberto} saveError={saveError} tab={tab} osView={osView} onVoltarOS={() => setOsView("lista")} usuario={usuario} themePreference={themePreference} setThemePreference={setThemePreference} />
       <MobileSectionNav tab={tab} setTab={navigate} role={role} />
       <main className="max-w-6xl mx-auto px-4 md:px-8 pt-6 pb-10">
         {tab === "dashboard" && (
@@ -1144,15 +1140,17 @@ const NAV_ITEMS = [
 
 function SideNav({ tab, setTab, role, usuario, onLogout }) {
   return (
-    <aside className="enigma-sidenav hidden md:flex fixed inset-y-0 left-0 w-64 border-r border-white/10 bg-[#0C0C12] z-20 flex-col">
+    <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 border-r border-white/10 bg-[#0C0C12] z-20 flex-col">
       <div className="enigma-brand-panel px-5 py-5 border-b border-white/10">
-        <img src="/enigma-logo-oficial.png" alt="ENIGMA" className="enigma-logo w-full h-[118px] object-contain" />
+        <div className="enigma-brand-glow">
+          <img src="/enigma-logo-oficial.jpg" alt="ENIGMA" className="enigma-official-logo" />
+        </div>
       </div>
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
         {NAV_ITEMS.filter(item=>tabPermitida(role,item.id)).map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => setTab(id)} className={"enigma-nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition border " + (tab === id ? "bg-purple-500/10 border-purple-500/25 text-white shadow-[inset_3px_0_0_#8B5CF6]" : "border-transparent text-[#8A8A96] hover:text-white hover:bg-white/[.035]") }>
+          <button key={id} onClick={() => setTab(id)} className={"w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition border " + (tab === id ? "bg-purple-500/10 border-purple-500/25 text-white shadow-[inset_3px_0_0_#8B5CF6]" : "border-transparent text-[#8A8A96] hover:text-white hover:bg-white/[.035]") }>
             <Icon size={17} className={tab === id ? "text-purple-300" : ""} />
-            <span>{label}</span>
+            <span className="enigma-nav-label">{label}</span>
           </button>
         ))}
       </nav>
@@ -1162,14 +1160,19 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.1</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.2</div>
       </div>
     </aside>
   );
 }
 
-function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario, themeMode, setThemeMode }) {
+function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario, themePreference, setThemePreference }) {
   const current = NAV_ITEMS.find((item) => item.id === tab);
+  const themeOptions=[
+    {id:"dark",label:"Dark",Icon:Moon},
+    {id:"light",label:"Light",Icon:Sun},
+    {id:"auto",label:"Auto",Icon:Monitor},
+  ];
   return (
     <header className="border-b border-white/10 bg-[#09090D]/90 backdrop-blur-xl sticky top-0 z-10">
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-3">
@@ -1179,20 +1182,19 @@ function Header({ caixaAberto, saveError, tab, osView, onVoltarOS, usuario, them
           </button>
         ) : (
           <div>
-            <img src="/enigma-logo-oficial.png" alt="ENIGMA" className="enigma-logo md:hidden h-7 w-auto object-contain mb-1" />
-            <div className="text-lg md:text-xl font-semibold text-white">{current?.label || "ENIGMA"}</div>
+            <div className="md:hidden text-[10px] tracking-[0.23em] text-purple-400 uppercase mb-0.5">ENIGMA OS</div>
+            <div className="enigma-display text-lg md:text-xl font-semibold text-white">{current?.label || "ENIGMA"}</div>
           </div>
         )}
         <div className="flex items-center gap-2">
-          <div className="enigma-theme-switch flex items-center rounded-xl border border-white/10 bg-white/[.03] p-1" title="Tema do sistema">
-            {[["dark",Moon,"Escuro"],["light",Sun,"Claro"],["auto",Monitor,"Automático"]].map(([id,Icon,label])=>(
-              <button key={id} onClick={()=>setThemeMode(id)} title={label} aria-label={`Tema ${label}`} className={"w-8 h-8 rounded-lg flex items-center justify-center transition "+(themeMode===id?"bg-purple-500/20 text-purple-200 shadow-[0_0_16px_rgba(168,85,247,.25)]":"text-[#777782] hover:text-white")}>
-                <Icon size={14}/>
-              </button>
-            ))}
-          </div>
           <span className="hidden lg:inline text-[9px] text-[#5F5F69]">{usuario?.nome||""} · {ROLE_LABELS[usuario?.role]||usuario?.role||""}</span>
           {saveError && <span className="hidden sm:flex items-center gap-1 text-[11px] text-red-400"><AlertCircle size={13} /> conexão</span>}
+          <div className="enigma-theme-switch hidden sm:flex items-center rounded-xl border border-white/10 bg-white/[.025] p-1">
+            {themeOptions.map(({id,label,Icon})=><button key={id} onClick={()=>setThemePreference(id)} title={`Tema ${label}`} className={"theme-switch-btn flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] transition "+(themePreference===id?"is-active":"")}><Icon size={13}/><span className="hidden xl:inline">{label}</span></button>)}
+          </div>
+          <button className="sm:hidden theme-cycle-mobile w-9 h-9 rounded-xl border border-white/10 flex items-center justify-center" onClick={()=>setThemePreference(themePreference==="dark"?"light":themePreference==="light"?"auto":"dark")} title="Alternar tema">
+            {themePreference==="dark"?<Moon size={15}/>:themePreference==="light"?<Sun size={15}/>:<Monitor size={15}/>}
+          </button>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/[.03]">
             <span className={"w-2 h-2 rounded-full " + (caixaAberto ? "bg-emerald-400 shadow-[0_0_9px_rgba(52,211,153,.7)]" : "bg-[#4A4A54]")} />
             <span className="text-[11px] tracking-wide text-[#B5B5BF] hidden sm:block">{caixaAberto ? "Caixa aberto" : "Caixa fechado"}</span>
@@ -1876,7 +1878,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.1</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.2</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2066,7 +2068,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.1</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.2</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3727,7 +3729,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.1 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.2 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5155,6 +5157,38 @@ function ListaOS({ index, onAbrir, onNova }) {
 }
 
 /* ================= OS: NOVA ================= */
+function PatternLock({ value=[], onChange, disabled=false }) {
+  const boxRef=useRef(null);
+  const [drawing,setDrawing]=useState(false);
+  const seq=Array.isArray(value)?value:[];
+  function pointFromEvent(e){
+    const el=boxRef.current;if(!el)return null;
+    const r=el.getBoundingClientRect();
+    const x=e.clientX-r.left,y=e.clientY-r.top;
+    const col=Math.max(0,Math.min(2,Math.round((x/r.width)*2)));
+    const row=Math.max(0,Math.min(2,Math.round((y/r.height)*2)));
+    const cx=(col+.5)*r.width/3,cy=(row+.5)*r.height/3;
+    if(Math.hypot(x-cx,y-cy)>Math.min(r.width,r.height)/7)return null;
+    return row*3+col+1;
+  }
+  function addPoint(n){if(!n||seq.includes(n))return;onChange([...seq,n]);}
+  function down(e){if(disabled)return;e.currentTarget.setPointerCapture?.(e.pointerId);setDrawing(true);onChange([]);const n=pointFromEvent(e);if(n)onChange([n]);}
+  function move(e){if(!drawing||disabled)return;addPoint(pointFromEvent(e));}
+  function up(){setDrawing(false);}
+  const pos=n=>({left:`${((n-1)%3)*50+0}%`,top:`${Math.floor((n-1)/3)*50+0}%`});
+  return <div>
+    <div ref={boxRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} className="relative w-52 h-52 max-w-full mx-auto touch-none select-none rounded-2xl border border-purple-500/25 bg-purple-500/[.035] p-5">
+      <svg className="absolute inset-5 w-[calc(100%-2.5rem)] h-[calc(100%-2.5rem)] pointer-events-none" viewBox="0 0 100 100">
+        {seq.slice(1).map((n,i)=>{const a=seq[i],ax=((a-1)%3)*50,ay=Math.floor((a-1)/3)*50,bx=((n-1)%3)*50,by=Math.floor((n-1)/3)*50;return <line key={i} x1={ax} y1={ay} x2={bx} y2={by} stroke="#A84CFF" strokeWidth="4" strokeLinecap="round" opacity=".8"/>})}
+      </svg>
+      <div className="absolute inset-5 grid grid-cols-3 grid-rows-3 place-items-center">
+        {[1,2,3,4,5,6,7,8,9].map(n=><div key={n} className={"w-5 h-5 rounded-full border-2 transition pointer-events-none "+(seq.includes(n)?"bg-purple-500 border-purple-300 shadow-[0_0_14px_rgba(168,76,255,.8)]":"bg-[#17171F] border-[#5C5C68]")}/>) }
+      </div>
+    </div>
+    <div className="flex items-center justify-between mt-2"><span className="text-[10px] text-[#777782]">Desenhe ligando os pontos com mouse ou toque.</span><button type="button" onClick={()=>onChange([])} className="text-[10px] text-purple-300">Limpar padrão</button></div>
+  </div>;
+}
+
 function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   const [clienteId,setClienteId]=useState(null);
   const [buscaCliente,setBuscaCliente]=useState("");
@@ -5167,6 +5201,10 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   const [aparelhoMarcaModelo, setAparelhoMarcaModelo] = useState("");
   const [aparelhoSerial, setAparelhoSerial] = useState("");
   const [aparelhoCor, setAparelhoCor] = useState("");
+  const [acessoTipo,setAcessoTipo]=useState("nao_informado");
+  const [acessoValor,setAcessoValor]=useState("");
+  const [acessoPadrao,setAcessoPadrao]=useState([]);
+  const [mostrarAcesso,setMostrarAcesso]=useState(false);
   const [problemaRelatado, setProblemaRelatado] = useState("");
   const [acessoriosRecebidos, setAcessoriosRecebidos] = useState("");
   const [previsaoEntrega, setPrevisaoEntrega] = useState("");
@@ -5216,7 +5254,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.1</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.2</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5268,6 +5306,15 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
           <Label>Número de série / IMEI</Label><Input value={aparelhoSerial} onChange={e=>setAparelhoSerial(e.target.value)} placeholder="Opcional" className="mb-3"/>
           <Label>Cor</Label><Input value={aparelhoCor} onChange={e=>setAparelhoCor(e.target.value)} placeholder="Ex: Preto, Roxo, Titânio natural" className="mb-3"/>
           <Label>Acessórios recebidos</Label><Input value={acessoriosRecebidos} onChange={e=>setAcessoriosRecebidos(e.target.value)} placeholder="Ex: aparelho + carregador + capa"/>
+          <div className="mt-4 pt-4 border-t border-white/8">
+            <div className="flex items-center justify-between gap-2 mb-2"><Label>Acesso ao aparelho</Label><span className="text-[9px] text-[#666672]">Uso técnico · não sai na impressão</span></div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {[{id:"nao_informado",label:"Sem senha / não informada"},{id:"pin",label:"PIN numérico"},{id:"senha",label:"Senha letras + números"},{id:"padrao",label:"Padrão 3×3"}].map(a=><button type="button" key={a.id} onClick={()=>{setAcessoTipo(a.id);setAcessoValor("");setAcessoPadrao([])}} className={"py-2 px-2 rounded-lg text-[10px] border transition "+(acessoTipo===a.id?"border-purple-500 bg-purple-500/10 text-purple-200":"border-[#2A2A34] text-[#8A8A96]")}>{a.label}</button>)}
+            </div>
+            {acessoTipo==="pin"&&<div><Label>PIN</Label><div className="flex gap-2"><Input type={mostrarAcesso?"text":"password"} inputMode="numeric" pattern="[0-9]*" value={acessoValor} onChange={e=>setAcessoValor(e.target.value.replace(/\D/g,""))} placeholder="Digite o PIN"/><Button type="button" variant="ghost" onClick={()=>setMostrarAcesso(!mostrarAcesso)}>{mostrarAcesso?"Ocultar":"Mostrar"}</Button></div></div>}
+            {acessoTipo==="senha"&&<div><Label>Senha alfanumérica</Label><div className="flex gap-2"><Input type={mostrarAcesso?"text":"password"} value={acessoValor} onChange={e=>setAcessoValor(e.target.value)} placeholder="Digite a senha"/><Button type="button" variant="ghost" onClick={()=>setMostrarAcesso(!mostrarAcesso)}>{mostrarAcesso?"Ocultar":"Mostrar"}</Button></div></div>}
+            {acessoTipo==="padrao"&&<PatternLock value={acessoPadrao} onChange={setAcessoPadrao}/>} 
+          </div>
         </Card>
         <Card className="!rounded-2xl">
           <div className="text-[9px] tracking-[.2em] text-purple-300 mb-3">3. MOTIVO DO ATENDIMENTO</div>
@@ -5280,7 +5327,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
         <Button variant="ghost" className="min-w-28" onClick={onCancelar}>Cancelar</Button>
         <Button className="min-w-40" disabled={!podeCriar} onClick={()=>onCriar({
           clienteId,clienteNome,clienteTelefone,clienteCpf,clienteEndereco,
-          aparelhoTipo,aparelhoMarcaModelo,aparelhoSerial,aparelhoCor,problemaRelatado,acessoriosRecebidos,previsaoEntrega
+          aparelhoTipo,aparelhoMarcaModelo,aparelhoSerial,aparelhoCor,aparelhoAcesso:{tipo:acessoTipo,valor:acessoTipo==="pin"||acessoTipo==="senha"?acessoValor:"",padrao:acessoTipo==="padrao"?acessoPadrao:[]},problemaRelatado,acessoriosRecebidos,previsaoEntrega
         })}><span className="flex items-center justify-center gap-2"><Plus size={15}/> Abrir OS vinculada</span></Button>
       </div>
     </div>
@@ -5843,6 +5890,12 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
                 <Label>Aparelho</Label>
                 <Input placeholder="Marca / modelo" value={detail.aparelho.marcaModelo || ""} onChange={(e) => onSalvar({ ...detail, aparelho: { ...detail.aparelho, marcaModelo: e.target.value } })}/>
                 <Input placeholder="Serial / IMEI" value={detail.aparelho.serial || ""} onChange={(e) => onSalvar({ ...detail, aparelho: { ...detail.aparelho, serial: e.target.value } })}/>
+                <div className="rounded-xl border border-purple-500/15 bg-purple-500/[.025] p-3">
+                  <div className="flex items-center justify-between"><Label>Acesso ao aparelho</Label><span className="text-[9px] text-[#666672]">RESTRITO · NÃO IMPRESSO</span></div>
+                  <div className="text-xs text-[#C9C9D2] mt-1">{detail.aparelho?.acesso?.tipo==="pin"?"PIN numérico":detail.aparelho?.acesso?.tipo==="senha"?"Senha alfanumérica":detail.aparelho?.acesso?.tipo==="padrao"?"Padrão 3×3":"Sem senha / não informada"}</div>
+                  {(detail.aparelho?.acesso?.tipo==="pin"||detail.aparelho?.acesso?.tipo==="senha")&&<details className="mt-2"><summary className="cursor-pointer text-[10px] text-purple-300">Mostrar credencial</summary><div className="mt-2 font-mono text-sm tracking-wider text-white break-all">{detail.aparelho?.acesso?.valor||"—"}</div></details>}
+                  {detail.aparelho?.acesso?.tipo==="padrao"&&<details className="mt-2"><summary className="cursor-pointer text-[10px] text-purple-300">Mostrar padrão</summary><div className="mt-2"><PatternLock value={detail.aparelho?.acesso?.padrao||[]} onChange={()=>{}} disabled/></div></details>}
+                </div>
                 <Input placeholder="Acessórios recebidos" value={detail.acessoriosRecebidos || ""} onChange={(e) => onSalvar({ ...detail, acessoriosRecebidos: e.target.value })}/>
                 <Input type="date" value={detail.previsaoEntrega || ""} onChange={(e) => onSalvar({ ...detail, previsaoEntrega: e.target.value })}/>
               </div>
