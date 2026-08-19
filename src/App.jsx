@@ -1143,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.9</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.0</div>
       </div>
     </aside>
   );
@@ -1232,6 +1232,8 @@ function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate,
   const [dados,setDados]=useState({vendas:[],movs:[],vendasAnteriores:[]});
   const [loading,setLoading]=useState(true);
   const [mostrarInsights,setMostrarInsights]=useState(false);
+  const [painel,setPainel]=useState("geral");
+  const [osDashboard,setOsDashboard]=useState([]);
 
   function intervaloAtual(){
     const fim=new Date();
@@ -1269,11 +1271,13 @@ function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate,
         ]);
         setDados({vendas:(vendasRows||[]).map(rowToVenda),movs:[],vendasAnteriores:(vendasAnterioresRows||[]).map(rowToVenda)});
       }else{
-        const [vendasRows,movsRows,vendasAnterioresRows]=await Promise.all([
+        const [vendasRows,movsRows,vendasAnterioresRows,osRows]=await Promise.all([
           sb(`vendas?select=*&timestamp=gte.${inicioISO}&timestamp=lte.${fimISO}&order=timestamp.asc`),
           sb(`financeiro_movimentacoes?select=*&data_competencia=gte.${inicioDia}&data_competencia=lte.${fimDia}&order=data_competencia.asc`),
-          sb(`vendas?select=*&timestamp=gte.${inicioAnteriorISO}&timestamp=lte.${fimAnteriorISO}&order=timestamp.asc`)
+          sb(`vendas?select=*&timestamp=gte.${inicioAnteriorISO}&timestamp=lte.${fimAnteriorISO}&order=timestamp.asc`),
+          sb(`ordens_servico?select=id,numero,data_entrada,cliente,aparelho,status,valor_final,valor_mao_de_obra,pecas_usadas,orcamento,entrega,diagnostico_tecnico,timeline&data_entrada=gte.${inicioISO}&data_entrada=lte.${fimISO}&order=data_entrada.desc`)
         ]);
+        setOsDashboard(osRows||[]);
         setDados({
           vendas:(vendasRows||[]).map(rowToVenda),
           movs:movsRows||[],
@@ -1535,6 +1539,44 @@ function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate,
     </div>;
   }
 
+  const osDashValidas=osDashboard.filter(o=>o.status!=="cancelado");
+  const valorOS=(o)=>Number(o.valor_final||o.orcamento?.valorProposto||0);
+  const osDashEntregues=osDashValidas.filter(o=>o.status==="entregue");
+  const osDashProntas=osDashValidas.filter(o=>o.status==="pronto");
+  const osDashReparo=osDashValidas.filter(o=>["em_reparo","aprovado"].includes(o.status));
+  const osDashAguardando=osDashValidas.filter(o=>o.status==="aguardando_aprovacao");
+  const fatOS=osDashEntregues.reduce((a,o)=>a+valorOS(o),0);
+  const abertoOS=osDashProntas.reduce((a,o)=>a+valorOS(o),0);
+  const andamentoValorOS=osDashReparo.reduce((a,o)=>a+valorOS(o),0);
+  const aguardandoValorOS=osDashAguardando.reduce((a,o)=>a+valorOS(o),0);
+  const ticketOS=osDashEntregues.length?fatOS/osDashEntregues.length:0;
+  const aprovadasOS=osDashValidas.filter(o=>["aprovado","em_reparo","pronto","entregue"].includes(o.status)||["aprovado","aceito"].includes(o.orcamento?.status)).length;
+  const recusadasOS=osDashValidas.filter(o=>["recusado","rejeitado"].includes(o.orcamento?.status)).length;
+  const decididasOS=aprovadasOS+recusadasOS;
+  const taxaAprovacaoOS=decididasOS?aprovadasOS/decididasOS*100:0;
+  const mapaServicosOS={};
+  osDashValidas.forEach(o=>(o.pecas_usadas||[]).forEach(pc=>{const nome=String(pc.nome||"Serviço / peça").trim();if(!mapaServicosOS[nome])mapaServicosOS[nome]={qtd:0,valor:0};mapaServicosOS[nome].qtd+=Number(pc.qtd)||1;mapaServicosOS[nome].valor+=(Number(pc.preco)||0)*(Number(pc.qtd)||1);}));
+  const rankingServicosOS=Object.entries(mapaServicosOS).map(([nome,d])=>({nome,...d})).sort((a,b)=>b.qtd-a.qtd).slice(0,6);
+  const maxServicoOS=Math.max(1,...rankingServicosOS.map(x=>x.qtd));
+  const mapaAparelhosOS={};
+  osDashValidas.forEach(o=>{const nome=String(o.aparelho?.marcaModelo||"Não informado").trim()||"Não informado";mapaAparelhosOS[nome]=(mapaAparelhosOS[nome]||0)+1;});
+  const rankingAparelhosOS=Object.entries(mapaAparelhosOS).map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd).slice(0,6);
+
+  if(painel==="os"){
+    return <div className="space-y-5">
+      <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_88%_10%,rgba(139,92,246,.20),transparent_30%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4"><div><div className="text-[9px] tracking-[.24em] text-purple-300">ENIGMA // ASSISTÊNCIA</div><h1 className="text-2xl text-white mt-2">Dashboard de Ordens de Serviço</h1><p className="text-sm text-[#858590] mt-1">Financeiro, conversão e desempenho da assistência técnica.</p></div><div className="flex flex-wrap gap-2"><div className="flex rounded-xl border border-white/10 bg-black/20 p-1">{[["geral","Visão geral"],["pdv","Vendas / PDV"],["os","Assistência / OS"]].map(([id,l])=><button key={id} onClick={()=>setPainel(id)} className={"rounded-lg px-3 py-2 text-[10px] "+(painel===id?"bg-purple-500/20 text-purple-200":"text-[#70707B]")}>{l}</button>)}</div><div className="flex rounded-xl border border-white/10 bg-black/20 p-1">{[7,30,90].map(n=><button key={n} onClick={()=>setPeriodo(n)} className={"rounded-lg px-3 py-2 text-[10px] "+(periodo===n?"bg-cyan-500/15 text-cyan-200":"text-[#70707B]")}>{n} dias</button>)}</div><button onClick={carregarDashboard} className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center text-cyan-300"><RefreshCw size={15} className={loading?"animate-spin":""}/></button></div></div>
+      </section>
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3"><MetricCard label="Faturamento OS" value={fmt(fatOS)} helper={`${osDashEntregues.length} entregue(s) no período`} icon={TrendingUp} accent="green"/><MetricCard label="Valores em aberto" value={fmt(abertoOS)} helper={`${osDashProntas.length} pronta(s) para retirada`} icon={Clock} accent="amber"/><MetricCard label="Em andamento" value={fmt(andamentoValorOS)} helper={`${osDashReparo.length} OS aprovada(s)/reparo`} icon={Wrench} accent="purple"/><MetricCard label="Ticket médio OS" value={fmt(ticketOS)} helper="OS entregues" icon={BarChart3} accent="blue"/></section>
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-3"><MetricCard label="Aguardando aprovação" value={String(osDashAguardando.length)} helper={fmt(aguardandoValorOS)} icon={Clock} accent="amber"/><MetricCard label="Taxa de aprovação" value={`${taxaAprovacaoOS.toFixed(0)}%`} helper={`${aprovadasOS} aprovada(s) · ${recusadasOS} recusada(s)`} icon={CheckCircle2} accent="green"/><MetricCard label="OS recebidas" value={String(osDashValidas.length)} helper={`últimos ${periodo} dias`} icon={ClipboardList} accent="blue"/><MetricCard label="Prontas" value={String(osDashProntas.length)} helper="aguardando retirada" icon={CheckCircle2} accent="purple"/></section>
+      <section className="grid xl:grid-cols-2 gap-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5"><div className="flex justify-between mb-5"><div><div className="text-[9px] tracking-[.22em] text-green-300">TOP SERVIÇOS / PEÇAS</div><div className="text-xs text-[#666672] mt-1">O que mais foi realizado nas OS</div></div></div>{!rankingServicosOS.length?<div className="text-xs text-[#666672] py-8">Ainda não há peças/serviços registrados no período.</div>:<div className="space-y-4">{rankingServicosOS.map((r,i)=><div key={r.nome}><div className="flex justify-between gap-3 mb-1.5"><div className="text-xs text-[#CBCBD2] truncate"><span className="text-[#555560] mr-2">0{i+1}</span>{r.nome}</div><div className="text-right shrink-0"><span className="font-mono text-xs text-green-300">{r.qtd}x</span><span className="text-[9px] text-[#555560] ml-2">{fmt(r.valor)}</span></div></div><div className="h-2 rounded-full bg-white/[.045] overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-purple-600 via-purple-400 to-cyan-400" style={{width:`${Math.max(6,r.qtd/maxServicoOS*100)}%`}}/></div></div>)}</div>}</div>
+        <div className="rounded-2xl border border-white/10 bg-white/[.012] p-5"><div className="text-[9px] tracking-[.22em] text-cyan-300">APARELHOS MAIS ATENDIDOS</div><div className="text-xs text-[#666672] mt-1 mb-5">Modelos com maior entrada na assistência</div>{!rankingAparelhosOS.length?<div className="text-xs text-[#666672] py-8">Sem OS no período.</div>:<div className="space-y-2">{rankingAparelhosOS.map((r,i)=><div key={r.nome} className="rounded-xl border border-white/8 p-3 flex justify-between"><div className="text-xs text-white"><span className="text-cyan-300 mr-2">#{i+1}</span>{r.nome}</div><div className="font-mono text-xs">{r.qtd} OS</div></div>)}</div>}</div>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[.012] p-5"><div className="flex items-center justify-between mb-4"><div><div className="text-[9px] tracking-[.22em] text-purple-300">OS RECENTES DO PERÍODO</div><div className="text-xs text-[#666672] mt-1">Acompanhamento financeiro e operacional</div></div><button onClick={()=>onNavigate("os")} className="text-[10px] text-purple-300">Abrir ordens →</button></div><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="text-[9px] text-[#666672] border-b border-white/8"><th className="py-2">OS</th><th>Cliente / aparelho</th><th>Status</th><th className="text-right">Valor</th></tr></thead><tbody>{osDashboard.slice(0,10).map(o=><tr key={o.id} className="border-b border-white/[.05]"><td className="py-3 text-xs text-purple-300">#{o.numero}</td><td className="text-xs text-white">{o.cliente?.nome||"—"}<div className="text-[9px] text-[#666672]">{o.aparelho?.marcaModelo||"—"}</div></td><td><StatusBadge status={o.status}/></td><td className="text-right font-mono text-xs">{fmt(valorOS(o))}</td></tr>)}</tbody></table></div></section>
+    </div>;
+  }
+
   return (
     <div className="space-y-5">
       <section className="rounded-3xl border border-purple-500/20 bg-[radial-gradient(circle_at_88%_10%,rgba(139,92,246,.20),transparent_30%),radial-gradient(circle_at_12%_100%,rgba(34,211,238,.08),transparent_32%),linear-gradient(145deg,#111119,#0D0D13)] p-5 md:p-7 overflow-hidden relative">
@@ -1546,6 +1588,7 @@ function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate,
             <p className="text-sm text-[#8E8E99] mt-2 max-w-2xl">Vendas, estoque e assistência traduzidos em sinais visuais para decidir mais rápido.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">{[["geral","Visão geral"],["pdv","Vendas / PDV"],["os","Assistência / OS"]].map(([id,l])=><button key={id} onClick={()=>setPainel(id)} className={"rounded-lg px-3 py-2 text-[10px] "+(painel===id?"bg-purple-500/20 text-purple-200":"text-[#70707B]")}>{l}</button>)}</div>
             <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
               {[7,30,90].map(n=><button key={n} onClick={()=>setPeriodo(n)} className={"rounded-lg px-3 py-2 text-[10px] transition "+(periodo===n?"bg-purple-500/20 text-purple-200 border border-purple-500/25":"text-[#70707B] border border-transparent")}>{n} dias</button>)}
             </div>
@@ -1807,7 +1850,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.9</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.0</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1997,7 +2040,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.9</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.0</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3658,7 +3701,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.9 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.0 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5147,7 +5190,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.9</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.0</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
