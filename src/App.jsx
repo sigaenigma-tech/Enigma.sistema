@@ -1143,7 +1143,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.7</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.4.8</div>
       </div>
     </aside>
   );
@@ -1807,7 +1807,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.7</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.4.8</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -1997,7 +1997,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.7</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.4.8</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2786,9 +2786,38 @@ function enigmaPrintFooter(){
   return `<div class="enigma-footer">${escapeHtml(ENIGMA_PRINT.nome)} · ${escapeHtml(ENIGMA_PRINT.endereco)} · ${escapeHtml(ENIGMA_PRINT.whatsapp)} · ${escapeHtml(ENIGMA_PRINT.instagram)}</div>`;
 }
 function openPrintHtml(html){
-  const w=window.open("","_blank","width=900,height=750");
-  if(!w){alert("O navegador bloqueou a janela de impressão. Permita pop-ups para este site.");return;}
-  w.document.open();w.document.write(html);w.document.close();
+  try{
+    const w=window.open("","_blank","width=900,height=750");
+    if(w){
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      return true;
+    }
+    // Fallback para navegadores que bloqueiam popup: imprime por iframe invisível.
+    const iframe=document.createElement("iframe");
+    iframe.style.position="fixed";
+    iframe.style.right="0";
+    iframe.style.bottom="0";
+    iframe.style.width="1px";
+    iframe.style.height="1px";
+    iframe.style.border="0";
+    iframe.style.opacity="0";
+    document.body.appendChild(iframe);
+    const doc=iframe.contentWindow?.document;
+    if(!doc) throw new Error("Não foi possível abrir a impressão.");
+    doc.open();doc.write(html);doc.close();
+    setTimeout(()=>{
+      try{iframe.contentWindow?.focus();iframe.contentWindow?.print();}
+      finally{setTimeout(()=>iframe.remove(),1200);}
+    },400);
+    return true;
+  }catch(e){
+    console.error("Falha ao abrir impressão:",e);
+    alert("Não foi possível abrir a impressão. Atualize a página e tente novamente.");
+    return false;
+  }
 }
 
 function fmtPrint(v){
@@ -3629,7 +3658,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.7 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.4.8 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5118,7 +5147,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.7</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.4.8</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5553,6 +5582,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   }
 
   function imprimirComprovanteEntrada(){
+    try{
     const c=detail.cliente||{}, a=detail.aparelho||{};
     const aceite=detail.assinaturaCliente;
     const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comprovante de Entrada OS ${escapeHtml(detail.numero)}</title><style>
@@ -5579,7 +5609,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
         <div class="full"><div class="label">Defeito / problema relatado pelo cliente</div><div class="value">${escapeHtml(detail.problemaRelatado||"Não informado")}</div></div>
         <div class="full"><div class="label">Estado / observações de entrada</div><div class="value">${escapeHtml(detail.observacoesCondicao||detail.observacoesEntrada||detail.observacoes||"Sem observações adicionais registradas.")}</div></div>
         <div><div class="label">Previsão inicial</div><div class="value">${detail.previsaoEntrega?new Date(detail.previsaoEntrega+"T12:00:00").toLocaleDateString("pt-BR"):"A confirmar após diagnóstico"}</div></div>
-        <div><div class="label">Status</div><div class="value">${escapeHtml(STATUS[detail.status]?.label||detail.status||"Recebido")}</div></div>
+        <div><div class="label">Status</div><div class="value">${escapeHtml(statusInfo(detail.status)?.label||detail.status||"Recebido")}</div></div>
       </div></div>
 
       <div class="notice">O aparelho foi recebido para avaliação/serviço conforme as informações acima. Diagnóstico, orçamento, prazo definitivo e condições de reparo poderão ser informados após análise técnica. Este comprovante identifica a entrada do equipamento na ENIGMA.</div>
@@ -5588,8 +5618,11 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
       <script>window.onload=()=>setTimeout(()=>window.print(),250)</script>
     </body></html>`;
     openPrintHtml(html);
+      }catch(e){
+      console.error("Erro no comprovante de entrada:",e);
+      alert("Não foi possível gerar o comprovante de entrada. Tente novamente.");
+    }
   }
-
   function imprimirOrcamento(){
     const c=detail.cliente||{},a=detail.aparelho||{};
     const linhas=(detail.pecasUsadas||[]).map(p=>`<tr><td>${escapeHtml(p.nome||"Peça")}</td><td class="c">${Number(p.qtd)||1}</td><td class="r">${fmtPrint(p.preco)}</td><td class="r">${fmtPrint((Number(p.preco)||0)*(Number(p.qtd)||1))}</td></tr>`).join("");
