@@ -1172,7 +1172,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.3</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.4</div>
       </div>
     </aside>
   );
@@ -1890,7 +1890,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.3</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.4</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2080,7 +2080,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.3</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.4</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3749,7 +3749,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.3 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.4 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5285,7 +5285,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.3</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.4</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5398,9 +5398,13 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
   const statusMinimo = (id) => Math.max(0, FLUXO_PRINCIPAL.indexOf(id));
   const pode = (id) => etapaAtual >= statusMinimo(id);
-  const totalPecas = (detail.pecasUsadas || []).reduce((s, p) => s + (Number(p.preco) || 0) * (Number(p.qtd) || 0), 0);
-  const desconto = Number(detail.orcamento?.desconto) || 0;
-  const valorEstimado = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + totalPecas - desconto);
+  // V4.5.4: preço para o cliente e custo interno ficam completamente separados.
+  const totalCustoPecas = (detail.pecasUsadas || []).reduce((s, p) => s + (Number(p.custo) || 0) * (Number(p.qtd) || 0), 0);
+  const legadoTotal = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + (detail.pecasUsadas || []).reduce((s,p)=>s+(Number(p.preco)||0)*(Number(p.qtd)||0),0) - (Number(detail.orcamento?.desconto)||0));
+  const valorCobrado = Number(detail.orcamento?.valorCobrado ?? (detail.orcamento?.valorProposto || legadoTotal || 0)) || 0;
+  const valorEstimado = Math.max(0, valorCobrado);
+  const lucroBruto = valorCobrado - totalCustoPecas;
+  const margemLucro = valorCobrado > 0 ? (lucroBruto / valorCobrado) * 100 : 0;
   const aprovacao = detail.orcamento?.status || "rascunho";
   const pecasResultados = estoque.filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
   const testesFinais = detail.entrega?.testesFinais || [
@@ -5485,7 +5489,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
       const snapshot = {
         numero: detail.numero, cliente: detail.cliente?.nome || "", aparelho: `${detail.aparelho?.marca || ""} ${detail.aparelho?.modelo || ""}`.trim(),
         diagnostico: detail.diagnosticoTecnico || "", observacao: detail.orcamento?.observacao || "",
-        maoObra: Number(detail.valorMaoDeObra) || 0, pecas: totalPecas, desconto, total: valorEstimado,
+        total: valorEstimado,
         prazo: detail.previsaoEntrega || null
       };
       const result = await rpc("enigma_criar_aprovacao_orcamento", { p_os_id: String(detail.id), p_snapshot: snapshot });
@@ -5536,15 +5540,15 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   }
 
   function adicionarPecaAvulsa() {
-    if (!pecaAvulsa.nome.trim() || Number(pecaAvulsa.preco) <= 0) {
-      alert("Informe a descrição e o valor cobrado da peça avulsa.");
+    if (!pecaAvulsa.nome.trim()) {
+      alert("Informe a descrição da peça avulsa.");
       return;
     }
     const peca = {
       id: genId(), origem: "avulsa", estoqueId: null, nome: pecaAvulsa.nome.trim(),
       qtd: Math.max(1, Number(pecaAvulsa.qtd) || 1),
       custo: Number(String(pecaAvulsa.custo).replace(",", ".")) || 0,
-      preco: Number(String(pecaAvulsa.preco).replace(",", ".")) || 0,
+      preco: 0,
     };
     onSalvar({ ...detail, pecasUsadas: [...(detail.pecasUsadas || []), peca] });
     setPecaAvulsa({ nome: "", qtd: 1, custo: "", preco: "" });
@@ -5783,19 +5787,15 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   }
   function imprimirOrcamento(){
     const c=detail.cliente||{},a=detail.aparelho||{};
-    const linhas=(detail.pecasUsadas||[]).map(p=>`<tr><td>${escapeHtml(p.nome||"Peça")}</td><td class="c">${Number(p.qtd)||1}</td><td class="r">${fmtPrint(p.preco)}</td><td class="r">${fmtPrint((Number(p.preco)||0)*(Number(p.qtd)||1))}</td></tr>`).join("");
-    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Orçamento OS ${escapeHtml(detail.numero)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial;color:#111;font-size:11px;margin:0}${enigmaPrintCss()}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{padding:6px;border-bottom:1px solid #ddd;text-align:left}.r{text-align:right}.c{text-align:center}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.total{font-size:17px;font-weight:800;text-align:right;margin-top:12px}</style></head><body>
+    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Orçamento OS ${escapeHtml(detail.numero)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial;color:#111;font-size:11px;margin:0;line-height:1.45}${enigmaPrintCss()}.box{border:1px solid #bbb;border-radius:7px;padding:10px;margin-top:10px}.service{margin-top:12px;border:1px solid #bbb;border-radius:7px;padding:13px}.service-title{font-size:12px;font-weight:700}.total{font-size:19px;font-weight:800;text-align:right;margin-top:14px}.muted{font-size:9px;color:#666}</style></head><body>
     ${enigmaPrintHeader("Orçamento de assistência técnica",`OS #${escapeHtml(detail.numero)}`)}
     <div class="box"><strong>Cliente:</strong> ${escapeHtml(c.nome||"—")} · ${escapeHtml(c.telefone||"")}<br><strong>Aparelho:</strong> ${escapeHtml(a.marcaModelo||"—")} ${a.serial?`· IMEI/Serial ${escapeHtml(a.serial)}`:""}<br><strong>Defeito relatado:</strong> ${escapeHtml(detail.problemaRelatado||"—")}<br><strong>Diagnóstico:</strong> ${escapeHtml(detail.diagnosticoTecnico||"Não informado")}</div>
-    <table><thead><tr><th>Peça / serviço</th><th class="c">Qtd.</th><th class="r">Unit.</th><th class="r">Total</th></tr></thead><tbody>${linhas}<tr><td>Mão de obra</td><td class="c">1</td><td class="r">${fmtPrint(detail.valorMaoDeObra)}</td><td class="r">${fmtPrint(detail.valorMaoDeObra)}</td></tr></tbody></table>
-    ${Number(detail.orcamento?.desconto||0)>0?`<div class="r">Desconto: -${fmtPrint(detail.orcamento.desconto)}</div>`:""}
-    <div class="total">TOTAL PROPOSTO: ${fmtPrint(valorEstimado)}</div>
+    <div class="service"><div class="service-title">Serviço / reparo conforme diagnóstico</div><div class="muted">O valor abaixo corresponde ao serviço completo proposto pela ENIGMA.</div><div class="total">VALOR TOTAL: ${fmtPrint(valorEstimado)}</div></div>
     ${detail.orcamento?.observacao?`<div class="box"><strong>Observações:</strong><br>${escapeHtml(detail.orcamento.observacao)}</div>`:""}
     <div class="box">Este orçamento está sujeito à aprovação do cliente antes da execução do serviço.</div>
     ${enigmaPrintFooter()}<script>window.onload=()=>setTimeout(()=>window.print(),250)</script></body></html>`;
     openPrintHtml(html);
   }
-
   function imprimirComprovanteEntrega(){
     const c=detail.cliente||{},a=detail.aparelho||{},e=detail.entrega||{};
     const valor=Number(detail.valorFinal||valorEstimado||0);
@@ -5999,17 +5999,21 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
         <div className="space-y-4">
           <Card>
             <div className="flex items-start justify-between gap-3 mb-4">
-              <div><div className="text-sm font-medium text-white">Orçamento</div><div className="text-xs text-[#73737E] mt-1">Peças entram automaticamente a partir da aba Peças.</div><button onClick={imprimirOrcamento} className="mt-2 text-[10px] text-purple-300 flex items-center gap-1"><Printer size={12}/> Imprimir orçamento</button></div>
+              <div><div className="text-sm font-medium text-white">Orçamento</div><div className="text-xs text-[#73737E] mt-1">O cliente vê apenas o valor total. Custos e margem ficam somente para uso interno.</div><button onClick={imprimirOrcamento} className="mt-2 text-[10px] text-purple-300 flex items-center gap-1"><Printer size={12}/> Imprimir orçamento</button></div>
               <span className={"text-[10px] uppercase tracking-[.14em] px-2.5 py-1.5 rounded-full border " + (aprovacao === "aprovado" ? "text-green-300 border-green-500/30 bg-green-500/10" : aprovacao === "recusado" ? "text-red-300 border-red-500/30 bg-red-500/10" : "text-amber-300 border-amber-500/30 bg-amber-500/10")}>{aprovacao === "aprovado" ? "Aprovado" : aprovacao === "recusado" ? "Recusado" : detail.status === "aguardando_aprovacao" ? "Aguardando cliente" : "Rascunho"}</span>
             </div>
-            <div className="grid md:grid-cols-3 gap-3">
-              <div><Label>Mão de obra</Label><Input inputMode="decimal" value={detail.valorMaoDeObra ?? ""} onChange={(e) => onSalvar({ ...detail, valorMaoDeObra: e.target.value.replace(",", ".") })} placeholder="R$ 0,00"/></div>
-              <div><Label>Peças</Label><div className="h-[42px] rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 flex items-center justify-between"><span className="font-mono text-[#E5E5EA]">{fmt(totalPecas)}</span><button onClick={() => setSub("pecas")} className="text-[11px] text-purple-300">editar</button></div></div>
-              <div><Label>Desconto</Label><Input inputMode="decimal" value={detail.orcamento?.desconto ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), desconto: e.target.value.replace(",", ".") } })} placeholder="R$ 0,00"/></div>
+            <div className="grid lg:grid-cols-[1.25fr_.75fr] gap-3">
+              <div>
+                <Label>Valor cobrado do cliente</Label>
+                <Input inputMode="decimal" value={detail.orcamento?.valorCobrado ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), valorCobrado: e.target.value.replace(",", ".") } })} placeholder="R$ 0,00"/>
+                <div className="text-[10px] text-[#666672] mt-1">Este é o único valor exibido ao cliente no orçamento.</div>
+              </div>
+              <div><Label>Custo das peças · interno</Label><div className="h-[42px] rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 flex items-center justify-between"><span className="font-mono text-[#E5E5EA]">{fmt(totalCustoPecas)}</span><button onClick={() => setSub("pecas")} className="text-[11px] text-purple-300">editar custos</button></div></div>
             </div>
-            <div className="mt-4 rounded-xl border border-purple-500/20 bg-purple-500/[.06] p-4 flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-[.18em] text-purple-300">Total proposto</div><div className="text-xs text-[#777782] mt-1">Mão de obra + peças − desconto</div></div>
-              <div className="font-mono text-2xl text-white">{fmt(valorEstimado)}</div>
+            <div className="mt-4 grid sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.06] p-4"><div className="text-[9px] uppercase tracking-[.16em] text-purple-300">Valor cobrado</div><div className="font-mono text-xl text-white mt-1">{fmt(valorCobrado)}</div></div>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[.04] p-4"><div className="text-[9px] uppercase tracking-[.16em] text-amber-300">Custo interno</div><div className="font-mono text-xl text-white mt-1">{fmt(totalCustoPecas)}</div></div>
+              <div className={"rounded-xl border p-4 "+(lucroBruto>=0?"border-green-500/20 bg-green-500/[.05]":"border-red-500/20 bg-red-500/[.05]")}><div className={"text-[9px] uppercase tracking-[.16em] "+(lucroBruto>=0?"text-green-300":"text-red-300")}>Lucro bruto · margem</div><div className="font-mono text-xl text-white mt-1">{fmt(lucroBruto)}</div><div className="text-[10px] text-[#777782] mt-1">{margemLucro.toFixed(1)}% sobre o valor cobrado</div></div>
             </div>
             <div className="mt-4"><Label>Observação do orçamento</Label><Textarea rows={3} value={detail.orcamento?.observacao || ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), observacao: e.target.value } })} placeholder="Prazo, condição da peça, observações..."/></div>
             {detail.status === "diagnostico" && <Button className="w-full mt-4" onClick={enviarOrcamento}><span className="flex items-center justify-center gap-2">Enviar orçamento e aguardar aprovação <ArrowRight size={15}/></span></Button>}
@@ -6054,7 +6058,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
               {pecasResultados.length === 0 && <div className="text-xs text-[#5A5A64] py-3">Nenhuma peça cadastrada com esse nome.</div>}
               {pecasResultados.map((p) => (
                 <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-[#0F0F14] border border-[#2A2A34]">
-                  <div><div className="text-sm text-white">{p.nome}</div><div className="text-xs text-[#6E6E78]">{fmt(p.preco)} · estoque {p.quantidade}</div></div>
+                  <div><div className="text-sm text-white">{p.nome}</div><div className="text-xs text-[#6E6E78]">Custo {fmt(p.custo)} · estoque {p.quantidade}</div></div>
                   <Button disabled={p.quantidade < qtdPeca} className="px-3" onClick={() => { onAddPeca(p, qtdPeca); setBuscaPeca(""); setQtdPeca(1); }}><Plus size={14}/></Button>
                 </div>
               ))}
@@ -6062,28 +6066,25 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
 
             {mostrarAvulsa && <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.04] p-4 mb-4">
               <Label>Nova peça avulsa</Label>
-              <div className="grid md:grid-cols-4 gap-2 mt-2">
-                <Input className="md:col-span-2" placeholder="Descrição da peça" value={pecaAvulsa.nome} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, nome: e.target.value })}/>
+              <div className="grid md:grid-cols-[2fr_.6fr_1fr_auto] gap-2 mt-2">
+                <Input placeholder="Descrição da peça" value={pecaAvulsa.nome} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, nome: e.target.value })}/>
                 <Input type="number" min="1" placeholder="Qtd." value={pecaAvulsa.qtd} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, qtd: e.target.value })}/>
-                <Input inputMode="decimal" placeholder="Valor cobrado" value={pecaAvulsa.preco} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, preco: e.target.value })}/>
+                <Input inputMode="decimal" placeholder="Custo real" value={pecaAvulsa.custo} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, custo: e.target.value })}/>
+                <Button onClick={adicionarPecaAvulsa}>Adicionar</Button>
               </div>
-              <div className="grid md:grid-cols-[1fr_auto] gap-2 mt-2">
-                <Input inputMode="decimal" placeholder="Custo da peça (opcional)" value={pecaAvulsa.custo} onChange={(e) => setPecaAvulsa({ ...pecaAvulsa, custo: e.target.value })}/>
-                <Button onClick={adicionarPecaAvulsa}>Adicionar ao orçamento</Button>
-              </div>
-              <div className="text-[11px] text-[#666672] mt-2">Peça avulsa entra no orçamento, mas não altera o estoque.</div>
+              <div className="text-[11px] text-[#666672] mt-2">O custo é interno e nunca aparece para o cliente. Peça avulsa não altera o estoque.</div>
             </div>}
 
             {(detail.pecasUsadas || []).length === 0 ? <div className="text-sm text-[#5A5A64] text-center py-5">Nenhuma peça adicionada</div> :
               <div className="divide-y divide-[#22222A]">
                 {detail.pecasUsadas.map((p) => (
                   <div key={p.id} className="flex items-center justify-between py-3">
-                    <div><div className="text-sm text-white">{p.nome}</div><div className="text-xs text-[#6E6E78]">{p.qtd}x {fmt(p.preco)} · {p.estoqueId ? "estoque" : "avulsa"}</div></div>
-                    <div className="flex items-center gap-3"><span className="font-mono text-sm">{fmt(p.preco * p.qtd)}</span><button onClick={() => onRemovePeca(p)} className="text-[#666672] hover:text-red-400"><Trash2 size={15}/></button></div>
+                    <div><div className="text-sm text-white">{p.nome}</div><div className="text-xs text-[#6E6E78]">{p.qtd}x custo {fmt(p.custo)} · {p.estoqueId ? "estoque" : "avulsa"}</div></div>
+                    <div className="flex items-center gap-3"><span className="font-mono text-sm">{fmt((Number(p.custo)||0) * p.qtd)}</span><button onClick={() => onRemovePeca(p)} className="text-[#666672] hover:text-red-400"><Trash2 size={15}/></button></div>
                   </div>
                 ))}
               </div>}
-            {(detail.pecasUsadas || []).length > 0 && <div className="flex justify-between border-t border-[#2A2A34] pt-3 mt-3"><span className="text-sm text-[#8A8A96]">Total em peças</span><span className="font-mono text-white">{fmt(totalPecas)}</span></div>}
+            {(detail.pecasUsadas || []).length > 0 && <div className="flex justify-between border-t border-[#2A2A34] pt-3 mt-3"><span className="text-sm text-[#8A8A96]">Custo total das peças · interno</span><span className="font-mono text-white">{fmt(totalCustoPecas)}</span></div>}
           </Card>
         </div>
       )}
@@ -6138,7 +6139,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
             <div className="flex items-center justify-between gap-3 mb-4"><div className="text-sm font-medium text-white">Entrega e garantia</div><button onClick={imprimirComprovanteEntrega} className="text-[10px] text-purple-300 flex items-center gap-1"><Printer size={12}/> Imprimir entrega</button></div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div><Label>Garantia (dias)</Label><Input type="number" min="0" value={detail.entrega?.garantiaDias ?? 90} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), garantiaDias: Number(e.target.value) } })}/></div>
-              <div><Label>Valor final</Label><Input inputMode="decimal" value={detail.valorFinal ?? ""} placeholder={fmt(valorEstimado)} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })}/></div>
+              <div><Label>Valor final</Label><Input inputMode="decimal" value={detail.valorFinal ?? ""} placeholder={fmt(valorCobrado)} onChange={(e) => onSalvar({ ...detail, valorFinal: e.target.value.replace(",", ".") })}/></div>
               <div><Label>Pagamento</Label><select value={detail.entrega?.pagamentoStatus || "pendente"} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), pagamentoStatus: e.target.value } })} className="w-full h-[42px] bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 text-sm"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></div>
               <div><Label>Forma</Label><select value={detail.entrega?.formaPagamento || "pix"} onChange={(e) => onSalvar({ ...detail, entrega: { ...(detail.entrega || {}), formaPagamento: e.target.value } })} className="w-full h-[42px] bg-[#0F0F14] border border-[#2A2A34] rounded-lg px-3 text-sm"><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="outro">Outro</option></select></div>
             </div>
@@ -6325,7 +6326,7 @@ function OrcamentoPublico({ token }) {
   return <div className="min-h-screen bg-[#09090D] text-[#F2F2F5] p-4"><div className="max-w-xl mx-auto space-y-4"><div className="text-center py-4"><div className="text-2xl font-black tracking-[.18em]">ENIGMA</div><div className="text-[10px] uppercase tracking-[.22em] text-purple-300">Aprovação de orçamento</div></div>
     <Card><div className="text-xs text-purple-300">OS #{s.numero}</div><div className="text-lg font-semibold mt-1">{s.aparelho}</div><div className="text-xs text-[#888894]">Cliente: {s.cliente}</div></Card>
     <Card><Label>Diagnóstico</Label><div className="text-sm text-[#C9C9D2] whitespace-pre-wrap">{s.diagnostico||"Diagnóstico informado pela assistência."}</div>{s.observacao&&<><Label className="mt-4">Observações</Label><div className="text-sm text-[#C9C9D2]">{s.observacao}</div></>}</Card>
-    <Card><div className="space-y-2 text-sm"><div className="flex justify-between"><span>Mão de obra</span><span>{fmt(s.maoObra||0)}</span></div><div className="flex justify-between"><span>Peças</span><span>{fmt(s.pecas||0)}</span></div>{Number(s.desconto)>0&&<div className="flex justify-between"><span>Desconto</span><span>- {fmt(s.desconto)}</span></div>}<div className="flex justify-between pt-3 border-t border-[#292932] text-lg font-semibold"><span>Total</span><span>{fmt(s.total||0)}</span></div></div></Card>
+    <Card><div className="text-[10px] uppercase tracking-[.16em] text-purple-300">Valor total do orçamento</div><div className="font-mono text-3xl text-white mt-2">{fmt(s.total||0)}</div><div className="text-xs text-[#777782] mt-2">Valor referente ao serviço/reparo completo conforme diagnóstico apresentado.</div></Card>
     <Card><Label>Nome completo</Label><Input value={nome} onChange={e=>setNome(e.target.value)} /><label className="flex gap-3 mt-4 text-sm text-[#C9C9D2]"><input type="checkbox" checked={ciente} onChange={e=>setCiente(e.target.checked)} className="mt-1"/><span>Li e estou de acordo com o orçamento apresentado e estou ciente de que minha decisão será registrada com data e hora.</span></label><div className="grid grid-cols-2 gap-2 mt-4"><Button disabled={!ciente||!nome.trim()||enviando} onClick={()=>decidir("aprovado")}><CheckCircle2 size={15} className="inline mr-1"/>Aprovar</Button><Button variant="danger" disabled={!ciente||!nome.trim()||enviando} onClick={()=>decidir("recusado")}><XCircle size={15} className="inline mr-1"/>Recusar</Button></div></Card>
   </div></div>;
 }
