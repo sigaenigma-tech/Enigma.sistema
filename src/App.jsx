@@ -245,8 +245,8 @@ function rowToOSDetail(r) {
   return {
     id: r.id, numero: r.numero, dataEntrada: r.data_entrada,
     cliente: r.cliente, clienteId: r.cliente_id || null, aparelho: r.aparelho, problemaRelatado: r.problema_relatado || "",
-    checklist: r.checklist || [], condicaoAparelho: r.condicao_aparelho || [], observacoesCondicao: r.observacoes_condicao || "",
-    fotos: r.fotos || [], pecasUsadas: r.pecas_usadas || [], timeline: r.timeline || [], notificacoes: r.notificacoes || [],
+    checklist: Array.isArray(r.checklist) ? r.checklist : [], condicaoAparelho: Array.isArray(r.condicao_aparelho) ? r.condicao_aparelho : [], observacoesCondicao: r.observacoes_condicao || "",
+    fotos: Array.isArray(r.fotos) ? r.fotos : [], pecasUsadas: Array.isArray(r.pecas_usadas) ? r.pecas_usadas : [], timeline: Array.isArray(r.timeline) ? r.timeline : [], notificacoes: Array.isArray(r.notificacoes) ? r.notificacoes : [],
     termos: r.termos ?? TERMO_PADRAO, assinaturaCliente: r.assinatura_cliente || null, status: r.status,
     valorMaoDeObra: r.valor_mao_de_obra ?? "", valorFinal: r.valor_final ?? "",
     diagnosticoTecnico: r.diagnostico_tecnico || "", orcamento: r.orcamento || {}, entrega: r.entrega || {},
@@ -1172,7 +1172,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.4</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.5</div>
       </div>
     </aside>
   );
@@ -1890,7 +1890,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.4</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.5</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2080,7 +2080,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.4</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.5</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3749,7 +3749,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.4 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.5 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5285,7 +5285,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.4</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.5</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5398,16 +5398,21 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
   const statusMinimo = (id) => Math.max(0, FLUXO_PRINCIPAL.indexOf(id));
   const pode = (id) => etapaAtual >= statusMinimo(id);
-  // V4.5.4: preço para o cliente e custo interno ficam completamente separados.
-  const totalCustoPecas = (detail.pecasUsadas || []).reduce((s, p) => s + (Number(p.custo) || 0) * (Number(p.qtd) || 0), 0);
-  const legadoTotal = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + (detail.pecasUsadas || []).reduce((s,p)=>s+(Number(p.preco)||0)*(Number(p.qtd)||0),0) - (Number(detail.orcamento?.desconto)||0));
-  const valorCobrado = Number(detail.orcamento?.valorCobrado ?? (detail.orcamento?.valorProposto || legadoTotal || 0)) || 0;
+  // V4.5.5: preço para o cliente e custo interno ficam completamente separados.
+  // Compatibilidade com OS antigas/finalizadas: normaliza estruturas legadas antes de calcular/renderizar.
+  const pecasUsadasSafe = Array.isArray(detail.pecasUsadas) ? detail.pecasUsadas : [];
+  const orcamentoSafe = detail.orcamento && typeof detail.orcamento === "object" && !Array.isArray(detail.orcamento) ? detail.orcamento : {};
+  const entregaSafe = detail.entrega && typeof detail.entrega === "object" && !Array.isArray(detail.entrega) ? detail.entrega : {};
+  const checklistSafe = Array.isArray(detail.checklist) ? detail.checklist : [];
+  const totalCustoPecas = pecasUsadasSafe.reduce((s, p) => s + (Number(p?.custo) || 0) * (Number(p?.qtd) || 0), 0);
+  const legadoTotal = Math.max(0, (Number(detail.valorMaoDeObra) || 0) + pecasUsadasSafe.reduce((s,p)=>s+(Number(p?.preco)||0)*(Number(p?.qtd)||0),0) - (Number(orcamentoSafe.desconto)||0));
+  const valorCobrado = Number(orcamentoSafe.valorCobrado ?? (orcamentoSafe.valorProposto || legadoTotal || 0)) || 0;
   const valorEstimado = Math.max(0, valorCobrado);
   const lucroBruto = valorCobrado - totalCustoPecas;
   const margemLucro = valorCobrado > 0 ? (lucroBruto / valorCobrado) * 100 : 0;
-  const aprovacao = detail.orcamento?.status || "rascunho";
+  const aprovacao = orcamentoSafe.status || "rascunho";
   const pecasResultados = estoque.filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
-  const testesFinais = detail.entrega?.testesFinais || [
+  const testesFinais = Array.isArray(entregaSafe.testesFinais) ? entregaSafe.testesFinais : [
     { id: "liga", item: "Liga / desliga", status: false },
     { id: "carga", item: "Carregamento", status: false },
     { id: "tela", item: "Tela / touch", status: false },
@@ -5425,15 +5430,15 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
 
   function toggleChecklist(itemId) {
     const ordem = ["nao_testado", "ok", "defeito"];
-    const checklist = detail.checklist.map((c) => c.id !== itemId ? c : { ...c, status: ordem[(ordem.indexOf(c.status) + 1) % ordem.length] });
+    const checklist = checklistSafe.map((c) => c.id !== itemId ? c : { ...c, status: ordem[(ordem.indexOf(c.status) + 1) % ordem.length] });
     onSalvar({ ...detail, checklist });
   }
   function addChecklistItem() {
     if (!novoItem.trim()) return;
-    onSalvar({ ...detail, checklist: [...detail.checklist, { id: genId(), item: novoItem.trim(), status: "nao_testado" }] });
+    onSalvar({ ...detail, checklist: [...checklistSafe, { id: genId(), item: novoItem.trim(), status: "nao_testado" }] });
     setNovoItem("");
   }
-  function removeChecklistItem(itemId) { onSalvar({ ...detail, checklist: detail.checklist.filter((c) => c.id !== itemId) }); }
+  function removeChecklistItem(itemId) { onSalvar({ ...detail, checklist: checklistSafe.filter((c) => c.id !== itemId) }); }
 
   function toggleCondicao(itemId) {
     const ordem = ["nao_testado", "ok", "defeito"];
@@ -5550,7 +5555,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
       custo: Number(String(pecaAvulsa.custo).replace(",", ".")) || 0,
       preco: 0,
     };
-    onSalvar({ ...detail, pecasUsadas: [...(detail.pecasUsadas || []), peca] });
+    onSalvar({ ...detail, pecasUsadas: [...pecasUsadasSafe, peca] });
     setPecaAvulsa({ nome: "", qtd: 1, custo: "", preco: "" });
     setMostrarAvulsa(false);
   }
@@ -6005,7 +6010,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
             <div className="grid lg:grid-cols-[1.25fr_.75fr] gap-3">
               <div>
                 <Label>Valor cobrado do cliente</Label>
-                <Input inputMode="decimal" value={detail.orcamento?.valorCobrado ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...(detail.orcamento || {}), valorCobrado: e.target.value.replace(",", ".") } })} placeholder="R$ 0,00"/>
+                <Input inputMode="decimal" value={orcamentoSafe.valorCobrado ?? ""} onChange={(e) => onSalvar({ ...detail, orcamento: { ...orcamentoSafe, valorCobrado: e.target.value.replace(",", ".") } })} placeholder="R$ 0,00"/>
                 <div className="text-[10px] text-[#666672] mt-1">Este é o único valor exibido ao cliente no orçamento.</div>
               </div>
               <div><Label>Custo das peças · interno</Label><div className="h-[42px] rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 flex items-center justify-between"><span className="font-mono text-[#E5E5EA]">{fmt(totalCustoPecas)}</span><button onClick={() => setSub("pecas")} className="text-[11px] text-purple-300">editar custos</button></div></div>
@@ -6075,7 +6080,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
               <div className="text-[11px] text-[#666672] mt-2">O custo é interno e nunca aparece para o cliente. Peça avulsa não altera o estoque.</div>
             </div>}
 
-            {(detail.pecasUsadas || []).length === 0 ? <div className="text-sm text-[#5A5A64] text-center py-5">Nenhuma peça adicionada</div> :
+            {pecasUsadasSafe.length === 0 ? <div className="text-sm text-[#5A5A64] text-center py-5">Nenhuma peça adicionada</div> :
               <div className="divide-y divide-[#22222A]">
                 {detail.pecasUsadas.map((p) => (
                   <div key={p.id} className="flex items-center justify-between py-3">
@@ -6084,7 +6089,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
                   </div>
                 ))}
               </div>}
-            {(detail.pecasUsadas || []).length > 0 && <div className="flex justify-between border-t border-[#2A2A34] pt-3 mt-3"><span className="text-sm text-[#8A8A96]">Custo total das peças · interno</span><span className="font-mono text-white">{fmt(totalCustoPecas)}</span></div>}
+            {pecasUsadasSafe.length > 0 && <div className="flex justify-between border-t border-[#2A2A34] pt-3 mt-3"><span className="text-sm text-[#8A8A96]">Custo total das peças · interno</span><span className="font-mono text-white">{fmt(totalCustoPecas)}</span></div>}
           </Card>
         </div>
       )}
@@ -6245,7 +6250,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
         <h2>Aparelho</h2><div>{detail.aparelho.marcaModelo} {detail.aparelho.serial ? `· ${detail.aparelho.serial}` : ""}</div><div>Relato: {detail.problemaRelatado}</div>
         <h2>Diagnóstico</h2><div>{detail.diagnosticoTecnico || "—"}</div>
         <h2>Orçamento</h2><div>Mão de obra: {fmt(detail.valorMaoDeObra)} · Peças: {fmt(totalPecas)} · Desconto: {fmt(desconto)} · Total: {fmt(detail.valorFinal || valorEstimado)}</div>
-        <h2>Peças</h2>{(detail.pecasUsadas || []).map((pc)=><div key={pc.id}>{pc.qtd}x {pc.nome} — {fmt(pc.preco * pc.qtd)}</div>)}
+        <h2>Peças</h2>{pecasUsadasSafe.map((pc)=><div key={pc.id}>{pc.qtd}x {pc.nome} — {fmt(pc.preco * pc.qtd)}</div>)}
         <h2>Garantia</h2><div>{detail.entrega?.garantiaDias ?? 90} dias</div><div>{detail.entrega?.observacoes || ""}</div>
         <h2>Termos</h2><div style={{ whiteSpace: "pre-wrap" }}>{detail.termos || TERMO_PADRAO}</div>
       </div>
