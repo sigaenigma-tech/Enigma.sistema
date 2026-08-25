@@ -1172,7 +1172,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.5</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.6</div>
       </div>
     </aside>
   );
@@ -1890,7 +1890,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.5</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.6</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2080,7 +2080,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.5</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.6</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3749,7 +3749,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.5 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.6 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -5285,7 +5285,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.5</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.6</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5398,7 +5398,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
   const statusMinimo = (id) => Math.max(0, FLUXO_PRINCIPAL.indexOf(id));
   const pode = (id) => etapaAtual >= statusMinimo(id);
-  // V4.5.5: preço para o cliente e custo interno ficam completamente separados.
+  // V4.5.6: preço para o cliente e custo interno ficam completamente separados.
   // Compatibilidade com OS antigas/finalizadas: normaliza estruturas legadas antes de calcular/renderizar.
   const pecasUsadasSafe = Array.isArray(detail.pecasUsadas) ? detail.pecasUsadas : [];
   const orcamentoSafe = detail.orcamento && typeof detail.orcamento === "object" && !Array.isArray(detail.orcamento) ? detail.orcamento : {};
@@ -5411,7 +5411,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   const lucroBruto = valorCobrado - totalCustoPecas;
   const margemLucro = valorCobrado > 0 ? (lucroBruto / valorCobrado) * 100 : 0;
   const aprovacao = orcamentoSafe.status || "rascunho";
-  const pecasResultados = estoque.filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
+  const pecasResultados = (Array.isArray(estoque) ? estoque : []).filter((p) => p.categoria === "peca" && p.nome.toLowerCase().includes(buscaPeca.toLowerCase()));
   const testesFinais = Array.isArray(entregaSafe.testesFinais) ? entregaSafe.testesFinais : [
     { id: "liga", item: "Liga / desliga", status: false },
     { id: "carga", item: "Carregamento", status: false },
@@ -6212,9 +6212,9 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
           <Card>
             <Label>Histórico automático</Label>
             <div className="mt-3">
-              {[...(detail.timeline || [])].reverse().map((t, idx) => (
+              {[...(Array.isArray(detail.timeline) ? detail.timeline : [])].reverse().map((t, idx) => (
                 <div key={t.id} className="flex gap-3">
-                  <div className="flex flex-col items-center"><span className="w-2.5 h-2.5 rounded-full mt-1.5" style={{ backgroundColor: statusInfo(t.status).color }}/>{idx < (detail.timeline || []).length - 1 && <span className="w-px flex-1 bg-[#2A2A34]"/>}</div>
+                  <div className="flex flex-col items-center"><span className="w-2.5 h-2.5 rounded-full mt-1.5" style={{ backgroundColor: statusInfo(t.status).color }}/>{idx < (Array.isArray(detail.timeline) ? detail.timeline : []).length - 1 && <span className="w-px flex-1 bg-[#2A2A34]"/>}</div>
                   <div className="pb-4"><div className="text-sm text-white">{statusInfo(t.status).label}</div><div className="text-[11px] text-[#666672] mt-0.5">{fmtDateTime(t.timestamp)}</div>{t.obs && <div className="text-xs text-[#9A9AA4] mt-1">{t.obs}</div>}</div>
                 </div>
               ))}
@@ -6226,7 +6226,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
               {[{id:"whatsapp",label:"WhatsApp"},{id:"ligacao",label:"Ligação"},{id:"presencial",label:"Presencial"}].map((m)=><button key={m.id} onClick={()=>setNotifMeio(m.id)} className={"flex-1 py-2 rounded-lg text-xs border "+(notifMeio===m.id?"border-purple-500 text-purple-300 bg-purple-500/10":"border-[#2A2A34] text-[#8A8A96]")}>{m.label}</button>)}
             </div>
             <Button variant="ghost" className="w-full mt-2" onClick={registrarNotificacao}><BellRing size={14} className="inline mr-2"/>Registrar aviso</Button>
-            <div className="divide-y divide-[#22222A] mt-3">{[...(detail.notificacoes || [])].reverse().map((n)=><div key={n.id} className="flex justify-between py-2 text-sm"><span className="capitalize">{n.meio}</span><span className="text-xs text-[#666672]">{fmtDateTime(n.timestamp)}</span></div>)}</div>
+            <div className="divide-y divide-[#22222A] mt-3">{[...(Array.isArray(detail.notificacoes) ? detail.notificacoes : [])].reverse().map((n)=><div key={n.id} className="flex justify-between py-2 text-sm"><span className="capitalize">{n.meio}</span><span className="text-xs text-[#666672]">{fmtDateTime(n.timestamp)}</span></div>)}</div>
           </Card>
         </div>
       )}
@@ -6246,12 +6246,12 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
       <div className="print-area">
         <h1>ENIGMA — Ordem de Serviço #{detail.numero}</h1>
         <div>Entrada: {fmtDateTime(detail.dataEntrada)} · Status: {statusInfo(detail.status).label}</div>
-        <h2>Cliente</h2><div>{detail.cliente.nome} · {detail.cliente.telefone || "—"} · CPF {detail.cliente.cpf || "—"}</div>
-        <h2>Aparelho</h2><div>{detail.aparelho.marcaModelo} {detail.aparelho.serial ? `· ${detail.aparelho.serial}` : ""}</div><div>Relato: {detail.problemaRelatado}</div>
+        <h2>Cliente</h2><div>{detail.cliente?.nome || "Cliente não informado"} · {detail.cliente?.telefone || "—"} · CPF {detail.cliente?.cpf || "—"}</div>
+        <h2>Aparelho</h2><div>{detail.aparelho?.marcaModelo || detail.aparelho?.modelo || "Aparelho não informado"} {detail.aparelho?.serial ? `· ${detail.aparelho.serial}` : ""}</div><div>Relato: {detail.problemaRelatado || "—"}</div>
         <h2>Diagnóstico</h2><div>{detail.diagnosticoTecnico || "—"}</div>
-        <h2>Orçamento</h2><div>Mão de obra: {fmt(detail.valorMaoDeObra)} · Peças: {fmt(totalPecas)} · Desconto: {fmt(desconto)} · Total: {fmt(detail.valorFinal || valorEstimado)}</div>
-        <h2>Peças</h2>{pecasUsadasSafe.map((pc)=><div key={pc.id}>{pc.qtd}x {pc.nome} — {fmt(pc.preco * pc.qtd)}</div>)}
-        <h2>Garantia</h2><div>{detail.entrega?.garantiaDias ?? 90} dias</div><div>{detail.entrega?.observacoes || ""}</div>
+        <h2>Orçamento</h2><div>Valor total: {fmt(detail.valorFinal || valorEstimado || legadoTotal || 0)}</div>
+        <h2>Peças</h2>{pecasUsadasSafe.length ? pecasUsadasSafe.map((pc,i)=><div key={pc?.id || i}>{Number(pc?.qtd)||1}x {pc?.nome || "Peça"} </div>) : <div>Nenhuma peça registrada.</div>}
+        <h2>Garantia</h2><div>{entregaSafe.garantiaDias ?? 90} dias</div><div>{entregaSafe.observacoes || ""}</div>
         <h2>Termos</h2><div style={{ whiteSpace: "pre-wrap" }}>{detail.termos || TERMO_PADRAO}</div>
       </div>
     </div>
