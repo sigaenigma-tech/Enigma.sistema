@@ -354,6 +354,45 @@ function resizeImage(file, maxWidth = 1000, quality = 0.7) {
   });
 }
 
+
+/* ---------------- películas: compatibilidade automática ---------------- */
+function normalizarBuscaPeliculas(v="") {
+  return String(v).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]+/g," ").trim();
+}
+function pareceProdutoPelicula(p={}) {
+  const t=normalizarBuscaPeliculas(`${p.nome||""} ${p.sku||""} ${p.compatibilidade||""}`);
+  return ["pelicula","vidro","3d","9d","ceramica","hidrogel","privacidade"].some(x=>t.includes(x));
+}
+function grupoPeliculaDoProduto(produto, grupos=[]) {
+  if(!produto || !pareceProdutoPelicula(produto)) return null;
+  const texto=normalizarBuscaPeliculas(`${produto.nome||""} ${produto.compatibilidade||""} ${produto.sku||""} ${produto.marca||""}`);
+  if(!texto) return null;
+  let melhor=null, melhorScore=0;
+  for(const g of (grupos||[])){
+    const termos=[g.nome,g.marca,...(Array.isArray(g.modelos)?g.modelos:[])].map(normalizarBuscaPeliculas).filter(Boolean);
+    let score=0;
+    for(const termo of termos){
+      if(termo.length>=3 && texto.includes(termo)) score=Math.max(score,100+termo.length);
+      const toks=termo.split(" ").filter(x=>/^(?:[a-z]{0,4}\d+[a-z0-9]*|iphone|galaxy|moto|redmi|poco)$/i.test(x));
+      const txtToks=new Set(texto.split(" "));
+      const hits=toks.filter(x=>txtToks.has(x)).length;
+      if(hits) score=Math.max(score,hits*20+(hits===toks.length?20:0));
+    }
+    if(score>melhorScore){melhorScore=score;melhor=g;}
+  }
+  return melhorScore>=20?melhor:null;
+}
+function compatibilidadeAutomaticaProduto(produto, grupos=[]) {
+  const g=grupoPeliculaDoProduto(produto,grupos);
+  return g ? [...new Set(Array.isArray(g.modelos)?g.modelos:[])].join(" · ") : "";
+}
+function textoPesquisaProduto(produto, grupos=[]) {
+  const auto=compatibilidadeAutomaticaProduto(produto,grupos);
+  return normalizarBuscaPeliculas(`${produto?.nome||""} ${produto?.sku||""} ${produto?.codigoBarras||""} ${produto?.marca||""} ${produto?.compatibilidade||""} ${auto} ${produto?.fornecedor||""}`);
+}
+
 /* ---------------- UI primitives ---------------- */
 function Card({ children, className = "" }) {
   return <div className={"rounded-xl border border-[#2A2A34] bg-[#131318] p-4 " + className}>{children}</div>;
@@ -432,6 +471,7 @@ export default function AppRouter() {
 
 /* ============================================================ */
 function EnigmaSistema({ usuario, onLogout }) {
+  const [peliculaGruposBusca,setPeliculaGruposBusca]=useState([]);
   const {preference:themePreference,setPreference:setThemePreference,resolved:resolvedTheme}=useEnigmaTheme();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
@@ -1110,7 +1150,7 @@ function EnigmaSistema({ usuario, onLogout }) {
           <AtendimentoTab osIndex={osIndex} clientes={clientes} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} onAbrirCliente={() => setTab("clientes")} />
         )}
         {tab === "pdv" && (
-          <PDVTab role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => navigate("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+          <PDVTab peliculaGrupos={peliculaGruposBusca} role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => navigate("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
         {tab === "financeiro" && tabPermitida(role,"financeiro") && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
@@ -1123,7 +1163,7 @@ function EnigmaSistema({ usuario, onLogout }) {
         {tab === "clientes" && <ClientesTab clientes={clientes} osIndex={osIndex} onAdd={adicionarCliente} onEdit={atualizarCliente} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
         {tab === "estoque" && (
-          <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
+          <EstoqueTab peliculaGrupos={peliculaGruposBusca} estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
         {tab === "compras" && <ComprasTab estoque={estoque} onMovimentar={movimentarEstoque} />}
         {tab === "peliculas" && <TabelaPeliculasTab estoque={estoque} />}
@@ -1172,7 +1212,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.6</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.7</div>
       </div>
     </aside>
   );
@@ -1283,6 +1323,8 @@ function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate,
     inicio.setHours(0,0,0,0);
     return {inicio,fim};
   }
+
+  useEffect(()=>{(async()=>{try{const rows=await sb("pelicula_grupos?select=*&ativo=eq.true");setPeliculaGruposBusca((rows||[]).map(r=>({...r,modelos:Array.isArray(r.modelos)?r.modelos:[]})));}catch(e){console.warn("Compatibilidade automática de películas indisponível:",e);setPeliculaGruposBusca([]);}})();},[]);
 
   async function carregarDashboard(){
     setLoading(true);
@@ -1890,7 +1932,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.6</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.7</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2080,7 +2122,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.6</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.7</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2125,7 +2167,7 @@ function ConfiguracoesTab({usuario}) {
   </div>;
 }
 /* ================= PDV ================= */
-function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
+function PDVTab({ peliculaGrupos=[], role, caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
   const [modo, setModo] = useState("estoque"); // estoque | seminovo | manual
   const [busca, setBusca] = useState("");
@@ -2169,7 +2211,7 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
     );
   }
 
-  const resultados = estoque.filter((p) => p.categoria === "acessorio" && p.nome.toLowerCase().includes(busca.toLowerCase()));
+  const qProduto=normalizarBuscaPeliculas(busca); const resultados = estoque.filter((p) => p.categoria === "acessorio" && (!qProduto || textoPesquisaProduto(p,peliculaGrupos).includes(qProduto)));
   const seminovosDisponiveis = seminovos.filter((x) => {
     const preco = Number(x?.dados?.pdv?.precoVenda) || 0;
     const q = busca.toLowerCase();
@@ -3749,7 +3791,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.6 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.7 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4239,7 +4281,8 @@ function ComprasTab({ estoque=[], onMovimentar }) {
   </div>;
 }
 
-function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onMovimentar, onAdd, onEdit, onRemove }) {
+function EstoqueTab({ peliculaGrupos=[], estoque, seminovos = [], onAtualizarSeminovo, onMovimentar, onAdd, onEdit, onRemove }) {
+  const compatAuto=(p)=>compatibilidadeAutomaticaProduto(p,peliculaGrupos);
   const [secao,setSecao]=useState("produtos");
   const [mostrarForm,setMostrarForm]=useState(false);
   const vazio={nome:"",categoria:"acessorio",preco:"",custo:"",quantidade:"",estoqueMinimo:"2",sku:"",codigoBarras:"",marca:"",compatibilidade:"",fornecedor:""};
@@ -4252,8 +4295,8 @@ function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onMovimentar
     setForm(vazio);setMostrarForm(false);
   }
 
-  const q=busca.toLowerCase();
-  const lista=estoque.filter(p=>!q||[p.nome,p.sku,p.codigoBarras,p.marca,p.compatibilidade,p.fornecedor].some(v=>String(v||"").toLowerCase().includes(q)));
+  const q=normalizarBuscaPeliculas(busca);
+  const lista=estoque.filter(p=>!q||textoPesquisaProduto(p,peliculaGrupos).includes(q));
   const baixos=estoque.filter(p=>p.quantidade<=p.estoqueMinimo);
   const valorEstoque=estoque.reduce((a,p)=>a+(Number(p.custo)||0)*(Number(p.quantidade)||0),0);
   const semiLista=seminovos.filter(x=>!q||[x.marca,x.modelo,x.armazenamento,x.cor,x.imei,x.serial].some(v=>String(v||"").toLowerCase().includes(q)));
@@ -5285,7 +5328,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.6</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.7</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
@@ -5398,7 +5441,7 @@ function DetalheOS({ role, detail, estoque, onSalvar, onAddPeca, onRemovePeca })
   const etapaAtual = Math.max(0, FLUXO_PRINCIPAL.indexOf(detail.status));
   const statusMinimo = (id) => Math.max(0, FLUXO_PRINCIPAL.indexOf(id));
   const pode = (id) => etapaAtual >= statusMinimo(id);
-  // V4.5.6: preço para o cliente e custo interno ficam completamente separados.
+  // V4.5.7: preço para o cliente e custo interno ficam completamente separados.
   // Compatibilidade com OS antigas/finalizadas: normaliza estruturas legadas antes de calcular/renderizar.
   const pecasUsadasSafe = Array.isArray(detail.pecasUsadas) ? detail.pecasUsadas : [];
   const orcamentoSafe = detail.orcamento && typeof detail.orcamento === "object" && !Array.isArray(detail.orcamento) ? detail.orcamento : {};
