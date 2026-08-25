@@ -233,7 +233,9 @@ function rowToVenda(r) {
     vendedorNome: r.vendedor_nome || "",
     status: r.status || "concluida",
     canceladoEm: r.cancelado_em || r.estornado_em || null,
-    motivoCancelamento: r.motivo_cancelamento || r.motivo_estorno || ""
+    motivoCancelamento: r.motivo_cancelamento || r.motivo_estorno || "",
+    retroativa: r.retroativa === true,
+    movimentaEstoque: r.movimenta_estoque !== false,
   };
 }
 function rowToOSIndex(r) {
@@ -646,7 +648,7 @@ function EnigmaSistema({ usuario, onLogout }) {
   }
 
 
-  async function registrarFinanceiroAutomatico({ tipo, categoriaNome, descricao, valor, formaPagamento, origem, origemId, dados = {} }) {
+  async function registrarFinanceiroAutomatico({ tipo, categoriaNome, descricao, valor, formaPagamento, origem, origemId, dados = {}, dataCompetencia = null, dataPagamento = null }) {
     try {
       let categoriaId = null;
       if (categoriaNome) {
@@ -659,8 +661,8 @@ function EnigmaSistema({ usuario, onLogout }) {
         descricao,
         valor: Number(valor) || 0,
         forma_pagamento: formaPagamento || null,
-        data_competencia: new Date().toISOString().slice(0,10),
-        data_pagamento: new Date().toISOString(),
+        data_competencia: dataCompetencia || new Date().toISOString().slice(0,10),
+        data_pagamento: dataPagamento || new Date().toISOString(),
         status: "pago",
         origem,
         origem_id: String(origemId || ""),
@@ -692,10 +694,13 @@ function EnigmaSistema({ usuario, onLogout }) {
     } catch (e) { setSaveError(true); }
     setTab("pdv");
   }
-  async function registrarVenda({ itens, formaPagamento, clienteId = null }) {
-    if (!caixaAtual) return null;
+  async function registrarVenda({ itens, formaPagamento, clienteId = null, retroativa = false, dataVenda = null }) {
+    if (!caixaAtual && !retroativa) return null;
     const total = itens.reduce((s, it) => s + it.valor * it.qtd, 0);
     const seminovosVenda = itens.filter((i) => i.seminovoId);
+    if (retroativa && seminovosVenda.length) { alert("No modo retroativo, lance seminovos como item manual para não alterar o estoque atual."); return null; }
+    const dataEfetiva = retroativa && dataVenda ? `${dataVenda}T12:00:00` : new Date().toISOString();
+    if (retroativa && (!dataVenda || dataVenda > "2026-08-24")) { alert("Venda retroativa permitida somente até 24/08/2026."); return null; }
     try {
       // Revalida cada unidade antes de vender para impedir venda duplicada.
       for (const item of seminovosVenda) {
@@ -707,8 +712,11 @@ function EnigmaSistema({ usuario, onLogout }) {
       const rows = await sb("vendas", {
         method: "POST",
         body: JSON.stringify({
-          caixa_id: caixaAtual.id,
+          caixa_id: retroativa ? null : caixaAtual.id,
           cliente_id: clienteId || null,
+          timestamp: dataEfetiva,
+          retroativa,
+          movimenta_estoque: !retroativa,
           itens,
           forma_pagamento: formaPagamento,
           pagamentos: [{ forma:formaPagamento, valor:total }],
@@ -732,7 +740,9 @@ function EnigmaSistema({ usuario, onLogout }) {
         formaPagamento,
         origem: "pdv",
         origemId: venda.id,
-        dados: { itens, clienteId: clienteId || null }
+        dataCompetencia: retroativa ? dataVenda : null,
+        dataPagamento: retroativa ? dataEfetiva : null,
+        dados: { itens, clienteId: clienteId || null, retroativa, movimentaEstoque: !retroativa, dataOriginal: retroativa ? dataVenda : null }
       });
 
       // Baixa individual dos seminovos vendidos.
@@ -753,11 +763,13 @@ function EnigmaSistema({ usuario, onLogout }) {
         await atualizarSeminovo(item.seminovoId, { status: "vendido", dados });
       }
 
-      setCaixaAtual({ ...caixaAtual, vendas: [...caixaAtual.vendas, venda] });
+      if (!retroativa && caixaAtual) setCaixaAtual({ ...caixaAtual, vendas: [...caixaAtual.vendas, venda] });
       setSaveError(false);
-      const usados = itens.filter((i) => i.estoqueId);
-      for (const u of usados) {
-        await movimentarEstoque(u.estoqueId,{tipo:"venda",quantidade:u.qtd,origem:"pdv",origemId:venda.id,observacao:`Venda PDV ${venda.id}`});
+      if (!retroativa) {
+        const usados = itens.filter((i) => i.estoqueId);
+        for (const u of usados) {
+          await movimentarEstoque(u.estoqueId,{tipo:"venda",quantidade:u.qtd,origem:"pdv",origemId:venda.id,observacao:`Venda PDV ${venda.id}`});
+        }
       }
       return venda;
     } catch (e) {
@@ -828,7 +840,7 @@ function EnigmaSistema({ usuario, onLogout }) {
       } catch {}
 
       // Devolve produtos ao estoque com rastreabilidade.
-      const usados=(venda.itens||[]).filter(i=>i.estoqueId);
+      const usados=venda.retroativa?[]:(venda.itens||[]).filter(i=>i.estoqueId);
       for(const u of usados){
         await movimentarEstoque(u.estoqueId,{
           tipo:"devolucao",quantidade:u.qtd,origem:"estorno_pdv",
@@ -867,8 +879,8 @@ function EnigmaSistema({ usuario, onLogout }) {
         body: JSON.stringify({ itens: novosItens, forma_pagamento: novaForma, total: novoTotal }),
       });
       // reconcilia estoque: devolve o que não é mais usado, desconta o que passou a ser usado a mais
-      const oldMap = {}; (venda.itens || []).forEach((i) => { if (i.estoqueId) oldMap[i.estoqueId] = (oldMap[i.estoqueId] || 0) + i.qtd; });
-      const newMap = {}; novosItens.forEach((i) => { if (i.estoqueId) newMap[i.estoqueId] = (newMap[i.estoqueId] || 0) + i.qtd; });
+      const oldMap = {}; if(!venda.retroativa) (venda.itens || []).forEach((i) => { if (i.estoqueId) oldMap[i.estoqueId] = (oldMap[i.estoqueId] || 0) + i.qtd; });
+      const newMap = {}; if(!venda.retroativa) novosItens.forEach((i) => { if (i.estoqueId) newMap[i.estoqueId] = (newMap[i.estoqueId] || 0) + i.qtd; });
       const idsEstoque = new Set([...Object.keys(oldMap), ...Object.keys(newMap)]);
       idsEstoque.forEach((id) => {
         const delta = (oldMap[id] || 0) - (newMap[id] || 0);
@@ -1160,7 +1172,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.2</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.3</div>
       </div>
     </aside>
   );
@@ -1878,7 +1890,7 @@ function AtendimentoTab({ osIndex, clientes=[], onNovaOS, onAbrirOS, onAbrirClie
     </Card>
 
     <div className="rounded-xl border border-white/8 bg-white/[.012] p-4">
-      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.2</div>
+      <div className="text-[9px] tracking-[.18em] text-[#777783]">FLUXO V4.5.3</div>
       <div className="flex flex-wrap gap-2 mt-3">{["Cliente","OS","Diagnóstico","Orçamento","Aprovação","Reparo","Pagamento","Entrega","Pós-venda"].map((x,i)=><span key={x} className="text-[9px] rounded-full border border-purple-500/15 bg-purple-500/[.035] px-3 py-1.5 text-[#A9A9B4]">{i+1}. {x}</span>)}</div>
     </div>
   </div>;
@@ -2068,7 +2080,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.2</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.3</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2131,6 +2143,8 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
   const [buscaCliente,setBuscaCliente]=useState("");
   const [mostrarClientes,setMostrarClientes]=useState(false);
   const [novoCliente,setNovoCliente]=useState({nome:"",telefone:""});
+  const [modoRetroativo,setModoRetroativo]=useState(false);
+  const [dataRetroativa,setDataRetroativa]=useState("2026-08-24");
 
   async function carregarHistoricoVendas(){
     setCarregandoHistorico(true);
@@ -2195,10 +2209,9 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
   async function finalizar() {
     if (itens.length === 0 || finalizando) return;
     setFinalizando(true);
-    const venda = await onVenda({ itens, formaPagamento: forma, clienteId: clienteSelecionado?.id || null });
+    const venda = await onVenda({ itens, formaPagamento: forma, clienteId: clienteSelecionado?.id || null, retroativa: modoRetroativo, dataVenda: modoRetroativo ? dataRetroativa : null });
     setFinalizando(false);
-    setItens([]); setForma("dinheiro"); setClienteSelecionado(null); setBuscaCliente("");
-    if (venda) setCupomAberto(venda);
+    if (venda) { setItens([]); setForma("dinheiro"); setClienteSelecionado(null); setBuscaCliente(""); setCupomAberto(venda); }
   }
 
   const clientesEncontrados=clientes.filter(c=>{
@@ -2214,6 +2227,13 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
 
   return (
     <div className="space-y-4">
+      {(role==="admin"||role==="gerente")&&<Card className={modoRetroativo?"!border-amber-400/35 !bg-amber-400/[.035]":""}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div><div className="text-[9px] tracking-[.2em] text-amber-300">MODO IMPLANTAÇÃO</div><div className="text-xs text-[#777783] mt-1">Venda retroativa entra em relatórios e ranking, mas NÃO altera o estoque atual.</div></div>
+          <button type="button" onClick={()=>setModoRetroativo(!modoRetroativo)} className={"rounded-xl border px-4 py-2 text-xs "+(modoRetroativo?"border-amber-400/40 bg-amber-400/10 text-amber-300":"border-white/10 text-[#8A8A96]")}>{modoRetroativo?"RETROATIVO ATIVO":"Ativar retroativo"}</button>
+        </div>
+        {modoRetroativo&&<div className="mt-3 grid sm:grid-cols-[220px_1fr] gap-3 items-end"><div><Label>Data original da venda</Label><Input type="date" max="2026-08-24" value={dataRetroativa} onChange={e=>setDataRetroativa(e.target.value)}/></div><div className="rounded-lg border border-amber-400/20 p-3 text-[10px] text-amber-200">CORTE: até 24/08/2026. Produtos podem ser lançados detalhadamente sem baixar novamente o saldo contado na implantação.</div></div>}
+      </Card>}
       <Card className="!rounded-2xl">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div><div className="text-[9px] tracking-[.2em] text-purple-300">CLIENTE DA VENDA</div><div className="text-[10px] text-[#666672] mt-1">Opcional</div></div>
@@ -2351,7 +2371,7 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
                 </button>
               ))}
             </div>
-            <Button onClick={finalizar} disabled={finalizando} className="w-full">{finalizando ? "Salvando..." : "Finalizar venda"}</Button>
+            <Button onClick={finalizar} disabled={finalizando} className="w-full">{finalizando ? "Salvando..." : modoRetroativo ? `Lançar venda retroativa · ${dataRetroativa.split("-").reverse().join("/")}` : "Finalizar venda"}</Button>
           </>
         )}
       </Card>
@@ -3729,7 +3749,7 @@ function TabelaPeliculasTab({ estoque=[] }) {
     try{
       await sb("pelicula_estoque_links",{method:"POST",body:JSON.stringify({grupo_id:selecionado.id,estoque_id:produtoVinculo})});
       await carregar();setVinculando(false);setProdutoVinculo("");
-    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.2 no Supabase.");}
+    }catch(e){console.error(e);alert("Não foi possível criar o vínculo. Execute o SQL da V4.5.3 no Supabase.");}
   }
 
   async function removerVinculo(produtoId){
@@ -4409,6 +4429,7 @@ function ProdutoCard({ p, onEdit, onRemove, onMovimentar }) {
   const [loadingHist,setLoadingHist]=useState(false);
   const [editando,setEditando]=useState(false);
   const [ed,setEd]=useState({...p});
+  const [motivoAjuste,setMotivoAjuste]=useState("Correção de implantação / contagem física");
 
   async function carregarHistorico(){
     setLoadingHist(true);
@@ -4422,7 +4443,15 @@ function ProdutoCard({ p, onEdit, onRemove, onMovimentar }) {
     if(ok){setMovQtd("1");setMovObs("");await carregarHistorico();}
   }
   async function salvarEd(){
-    await onEdit(p.id,{nome:ed.nome,categoria:ed.categoria,sku:ed.sku,codigoBarras:ed.codigoBarras,marca:ed.marca,compatibilidade:ed.compatibilidade,fornecedor:ed.fornecedor,preco:Number(ed.preco),custo:Number(ed.custo),estoqueMinimo:Number(ed.estoqueMinimo)});
+    const novaQtd=Math.max(0,Number(ed.quantidade)||0);
+    const atualQtd=Number(p.quantidade)||0;
+    const ok=await onEdit(p.id,{nome:ed.nome,categoria:ed.categoria,sku:ed.sku,codigoBarras:ed.codigoBarras,marca:ed.marca,compatibilidade:ed.compatibilidade,fornecedor:ed.fornecedor,preco:Number(ed.preco),custo:Number(ed.custo),estoqueMinimo:Number(ed.estoqueMinimo)});
+    if(!ok) return;
+    if(novaQtd!==atualQtd){
+      const delta=novaQtd-atualQtd;
+      const movOk=await onMovimentar(p.id,{tipo:delta>0?"ajuste_positivo":"ajuste_negativo",quantidade:Math.abs(delta),origem:"manual",observacao:motivoAjuste||"Ajuste manual pela edição do produto"});
+      if(!movOk) return;
+    }
     setEditando(false);
   }
 
@@ -4466,6 +4495,8 @@ function ProdutoCard({ p, onEdit, onRemove, onMovimentar }) {
         <Input inputMode="decimal" value={ed.custo??""} onChange={e=>setEd({...ed,custo:e.target.value})} placeholder="Custo"/>
         <Input inputMode="decimal" value={ed.preco??""} onChange={e=>setEd({...ed,preco:e.target.value})} placeholder="Preço"/>
         <Input inputMode="numeric" value={ed.estoqueMinimo??""} onChange={e=>setEd({...ed,estoqueMinimo:e.target.value})} placeholder="Estoque mínimo"/>
+        <Input inputMode="numeric" value={ed.quantidade??""} onChange={e=>setEd({...ed,quantidade:e.target.value})} placeholder="Quantidade atual"/>
+        <Input value={motivoAjuste} onChange={e=>setMotivoAjuste(e.target.value)} placeholder="Motivo do ajuste de quantidade"/>
         <Button onClick={salvarEd}>Salvar alterações</Button>
       </div>:<div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-xs text-[#7A7A85]">
         <div>SKU: <span className="text-[#C9C9D2]">{p.sku||"—"}</span></div><div>Cód. barras: <span className="text-[#C9C9D2]">{p.codigoBarras||"—"}</span></div>
@@ -5254,7 +5285,7 @@ function NovaOS({ clientes=[], onAddCliente, onCriar, onCancelar }) {
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/[.08] to-transparent p-4">
-        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.2</div>
+        <div className="text-[10px] tracking-[0.2em] uppercase text-purple-300 mb-1">Fluxo conectado V4.5.3</div>
         <div className="text-lg font-medium text-white">Nova ordem de serviço</div>
         <div className="text-xs text-[#777782] mt-1">Comece pelo cliente. A OS ficará ligada ao mesmo cadastro usado no PDV e no histórico.</div>
       </div>
