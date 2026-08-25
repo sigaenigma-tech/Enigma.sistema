@@ -354,45 +354,6 @@ function resizeImage(file, maxWidth = 1000, quality = 0.7) {
   });
 }
 
-
-/* ---------------- películas: compatibilidade automática ---------------- */
-function normalizarBuscaPeliculas(v="") {
-  return String(v).toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9]+/g," ").trim();
-}
-function pareceProdutoPelicula(p={}) {
-  const t=normalizarBuscaPeliculas(`${p.nome||""} ${p.sku||""} ${p.compatibilidade||""}`);
-  return ["pelicula","vidro","3d","9d","ceramica","hidrogel","privacidade"].some(x=>t.includes(x));
-}
-function grupoPeliculaDoProduto(produto, grupos=[]) {
-  if(!produto || !pareceProdutoPelicula(produto)) return null;
-  const texto=normalizarBuscaPeliculas(`${produto.nome||""} ${produto.compatibilidade||""} ${produto.sku||""} ${produto.marca||""}`);
-  if(!texto) return null;
-  let melhor=null, melhorScore=0;
-  for(const g of (grupos||[])){
-    const termos=[g.nome,g.marca,...(Array.isArray(g.modelos)?g.modelos:[])].map(normalizarBuscaPeliculas).filter(Boolean);
-    let score=0;
-    for(const termo of termos){
-      if(termo.length>=3 && texto.includes(termo)) score=Math.max(score,100+termo.length);
-      const toks=termo.split(" ").filter(x=>/^(?:[a-z]{0,4}\d+[a-z0-9]*|iphone|galaxy|moto|redmi|poco)$/i.test(x));
-      const txtToks=new Set(texto.split(" "));
-      const hits=toks.filter(x=>txtToks.has(x)).length;
-      if(hits) score=Math.max(score,hits*20+(hits===toks.length?20:0));
-    }
-    if(score>melhorScore){melhorScore=score;melhor=g;}
-  }
-  return melhorScore>=20?melhor:null;
-}
-function compatibilidadeAutomaticaProduto(produto, grupos=[]) {
-  const g=grupoPeliculaDoProduto(produto,grupos);
-  return g ? [...new Set(Array.isArray(g.modelos)?g.modelos:[])].join(" · ") : "";
-}
-function textoPesquisaProduto(produto, grupos=[]) {
-  const auto=compatibilidadeAutomaticaProduto(produto,grupos);
-  return normalizarBuscaPeliculas(`${produto?.nome||""} ${produto?.sku||""} ${produto?.codigoBarras||""} ${produto?.marca||""} ${produto?.compatibilidade||""} ${auto} ${produto?.fornecedor||""}`);
-}
-
 /* ---------------- UI primitives ---------------- */
 function Card({ children, className = "" }) {
   return <div className={"rounded-xl border border-[#2A2A34] bg-[#131318] p-4 " + className}>{children}</div>;
@@ -471,7 +432,6 @@ export default function AppRouter() {
 
 /* ============================================================ */
 function EnigmaSistema({ usuario, onLogout }) {
-  const [peliculaGruposBusca,setPeliculaGruposBusca]=useState([]);
   const {preference:themePreference,setPreference:setThemePreference,resolved:resolvedTheme}=useEnigmaTheme();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
@@ -1150,7 +1110,7 @@ function EnigmaSistema({ usuario, onLogout }) {
           <AtendimentoTab osIndex={osIndex} clientes={clientes} onNovaOS={() => { setTab("os"); setOsView("nova"); }} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} onAbrirCliente={() => setTab("clientes")} />
         )}
         {tab === "pdv" && (
-          <PDVTab peliculaGrupos={peliculaGruposBusca} role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => navigate("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
+          <PDVTab role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => navigate("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
         {tab === "financeiro" && tabPermitida(role,"financeiro") && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
         {tab === "os" && osView === "lista" && (
@@ -1163,7 +1123,7 @@ function EnigmaSistema({ usuario, onLogout }) {
         {tab === "clientes" && <ClientesTab clientes={clientes} osIndex={osIndex} onAdd={adicionarCliente} onEdit={atualizarCliente} onAbrirOS={(id) => { setTab("os"); abrirDetalheOS(id); }} />}
         {tab === "avaliacao" && <AvaliacaoUsadosTab avaliacoes={avaliacoes} estoque={estoque} onSalvar={salvarAvaliacaoUsado} onRegistrarCompra={registrarAquisicaoComEstoque} />}
         {tab === "estoque" && (
-          <EstoqueTab peliculaGrupos={peliculaGruposBusca} estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
+          <EstoqueTab estoque={estoque} seminovos={seminovos} onAtualizarSeminovo={atualizarSeminovo} onMovimentar={movimentarEstoque} onAdd={addProduto} onEdit={editarProduto} onRemove={removerProduto} />
         )}
         {tab === "compras" && <ComprasTab estoque={estoque} onMovimentar={movimentarEstoque} />}
         {tab === "peliculas" && <TabelaPeliculasTab estoque={estoque} />}
@@ -1323,8 +1283,6 @@ function DashboardTab({ role, usuario, caixaAtual, osIndex, estoque, onNavigate,
     inicio.setHours(0,0,0,0);
     return {inicio,fim};
   }
-
-  useEffect(()=>{(async()=>{try{const rows=await sb("pelicula_grupos?select=*&ativo=eq.true");setPeliculaGruposBusca((rows||[]).map(r=>({...r,modelos:Array.isArray(r.modelos)?r.modelos:[]})));}catch(e){console.warn("Compatibilidade automática de películas indisponível:",e);setPeliculaGruposBusca([]);}})();},[]);
 
   async function carregarDashboard(){
     setLoading(true);
@@ -2167,7 +2125,7 @@ function ConfiguracoesTab({usuario}) {
   </div>;
 }
 /* ================= PDV ================= */
-function PDVTab({ peliculaGrupos=[], role, caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
+function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAddCliente, onVenda, onIrParaCaixa, onExcluirVenda, onEditarVenda }) {
   const [itens, setItens] = useState([]);
   const [modo, setModo] = useState("estoque"); // estoque | seminovo | manual
   const [busca, setBusca] = useState("");
@@ -2187,6 +2145,32 @@ function PDVTab({ peliculaGrupos=[], role, caixaAtual, estoque, seminovos = [], 
   const [novoCliente,setNovoCliente]=useState({nome:"",telefone:""});
   const [modoRetroativo,setModoRetroativo]=useState(false);
   const [dataRetroativa,setDataRetroativa]=useState("2026-08-24");
+  const [peliculaGruposPDV,setPeliculaGruposPDV]=useState([]);
+
+  useEffect(()=>{
+    let vivo=true;
+    sb("pelicula_grupos?select=*&ativo=eq.true").then(rows=>{
+      if(vivo)setPeliculaGruposPDV((rows||[]).map(r=>({...r,modelos:Array.isArray(r.modelos)?r.modelos:[]})));
+    }).catch(()=>{if(vivo)setPeliculaGruposPDV([])});
+    return()=>{vivo=false};
+  },[]);
+
+  const normPel=(v="")=>String(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+  const parecePeliculaPDV=(p)=>{const t=normPel(`${p?.nome||""} ${p?.compatibilidade||""}`);return t.includes("pelicula")||t.includes("vidro")||t.includes("3d")||t.includes("9d")||t.includes("ceramica")||t.includes("hidrogel")};
+  function gruposAutomaticosProduto(p){
+    if(!parecePeliculaPDV(p))return [];
+    const texto=normPel(`${p?.nome||""} ${p?.compatibilidade||""} ${p?.marca||""} ${p?.sku||""}`);
+    return peliculaGruposPDV.filter(g=>{
+      // V4.5.8: casa pela referência/modelo completo, nunca apenas por marca/token genérico.
+      // Isso evita que "iPhone" faça uma película aparecer como compatível com todos os iPhones.
+      const refs=[g.nome,...(g.modelos||[])].map(normPel).filter(r=>r.length>=2);
+      return refs.some(r=>texto.includes(r));
+    });
+  }
+  function textoBuscaProduto(p){
+    const gs=gruposAutomaticosProduto(p);
+    return normPel(`${p?.nome||""} ${p?.sku||""} ${p?.marca||""} ${p?.compatibilidade||""} ${gs.flatMap(g=>[g.nome,g.marca,...(g.modelos||[])]).join(" ")}`);
+  }
 
   async function carregarHistoricoVendas(){
     setCarregandoHistorico(true);
@@ -2211,7 +2195,7 @@ function PDVTab({ peliculaGrupos=[], role, caixaAtual, estoque, seminovos = [], 
     );
   }
 
-  const qProduto=normalizarBuscaPeliculas(busca); const resultados = estoque.filter((p) => p.categoria === "acessorio" && (!qProduto || textoPesquisaProduto(p,peliculaGrupos).includes(qProduto)));
+  const resultados = estoque.filter((p) => p.categoria === "acessorio" && (!normPel(busca) || textoBuscaProduto(p).includes(normPel(busca))));
   const seminovosDisponiveis = seminovos.filter((x) => {
     const preco = Number(x?.dados?.pdv?.precoVenda) || 0;
     const q = busca.toLowerCase();
@@ -2314,7 +2298,7 @@ function PDVTab({ peliculaGrupos=[], role, caixaAtual, estoque, seminovos = [], 
                 {resultados.length === 0 && <div className="text-xs text-[#5A5A64] py-2">Nenhum produto encontrado</div>}
                 {resultados.map((p) => (
                   <button key={p.id} onClick={() => addDoEstoque(p)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-[#0F0F14] border border-[#2A2A34] text-left">
-                    <span className="text-sm text-[#E5E5EA]">{p.nome}</span>
+                    <span><span className="text-sm text-[#E5E5EA]">{p.nome}</span>{gruposAutomaticosProduto(p).length>0&&<span className="block text-[9px] text-cyan-300 mt-0.5">Compatível: {[...new Set(gruposAutomaticosProduto(p).flatMap(g=>g.modelos||[]))].slice(0,6).join(" · ")}{[...new Set(gruposAutomaticosProduto(p).flatMap(g=>g.modelos||[]))].length>6?" · +":""}</span>}</span>
                     <span className="flex items-center gap-2">
                       <span className="font-mono text-xs text-[#C9C9D2]">{fmt(p.preco)}</span>
                       <EstoqueBadge item={p} />
@@ -4281,13 +4265,24 @@ function ComprasTab({ estoque=[], onMovimentar }) {
   </div>;
 }
 
-function EstoqueTab({ peliculaGrupos=[], estoque, seminovos = [], onAtualizarSeminovo, onMovimentar, onAdd, onEdit, onRemove }) {
-  const compatAuto=(p)=>compatibilidadeAutomaticaProduto(p,peliculaGrupos);
+function EstoqueTab({ estoque, seminovos = [], onAtualizarSeminovo, onMovimentar, onAdd, onEdit, onRemove }) {
   const [secao,setSecao]=useState("produtos");
   const [mostrarForm,setMostrarForm]=useState(false);
   const vazio={nome:"",categoria:"acessorio",preco:"",custo:"",quantidade:"",estoqueMinimo:"2",sku:"",codigoBarras:"",marca:"",compatibilidade:"",fornecedor:""};
   const [form,setForm]=useState(vazio);
   const [busca,setBusca]=useState("");
+  const [peliculaGrupos,setPeliculaGrupos]=useState([]);
+  useEffect(()=>{let vivo=true;sb("pelicula_grupos?select=*&ativo=eq.true").then(rows=>{if(vivo)setPeliculaGrupos((rows||[]).map(r=>({...r,modelos:Array.isArray(r.modelos)?r.modelos:[]})))}).catch(()=>{});return()=>{vivo=false}},[]);
+  const normPelEst=(v="")=>String(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+  const parecePelEst=(p)=>{const t=normPelEst(`${p?.nome||""} ${p?.compatibilidade||""}`);return t.includes("pelicula")||t.includes("vidro")||t.includes("3d")||t.includes("9d")||t.includes("ceramica")||t.includes("hidrogel")};
+  const gruposParaProduto=(p)=>{
+    if(!parecePelEst(p))return [];
+    const t=normPelEst(`${p?.nome||""} ${p?.compatibilidade||""}`);
+    // V4.5.8: a referência digitada no NOME é suficiente.
+    // Compara modelo/referência completa e ignora marca isolada para não gerar falsos positivos.
+    return peliculaGrupos.filter(g=>[g.nome,...(g.modelos||[])].map(normPelEst).filter(r=>r.length>=2).some(r=>t.includes(r)));
+  };
+  const compatPreview=gruposParaProduto(form);
 
   async function salvar(){
     if(!form.nome.trim()||form.preco==="")return;
@@ -4295,8 +4290,8 @@ function EstoqueTab({ peliculaGrupos=[], estoque, seminovos = [], onAtualizarSem
     setForm(vazio);setMostrarForm(false);
   }
 
-  const q=normalizarBuscaPeliculas(busca);
-  const lista=estoque.filter(p=>!q||textoPesquisaProduto(p,peliculaGrupos).includes(q));
+  const q=busca.toLowerCase();
+  const lista=estoque.filter(p=>!q||[p.nome,p.sku,p.codigoBarras,p.marca,p.compatibilidade,p.fornecedor,...gruposParaProduto(p).flatMap(g=>[g.nome,g.marca,...(g.modelos||[])])].some(v=>String(v||"").toLowerCase().includes(q)));
   const baixos=estoque.filter(p=>p.quantidade<=p.estoqueMinimo);
   const valorEstoque=estoque.reduce((a,p)=>a+(Number(p.custo)||0)*(Number(p.quantidade)||0),0);
   const semiLista=seminovos.filter(x=>!q||[x.marca,x.modelo,x.armazenamento,x.cor,x.imei,x.serial].some(v=>String(v||"").toLowerCase().includes(q)));
@@ -4326,7 +4321,7 @@ function EstoqueTab({ peliculaGrupos=[], estoque, seminovos = [], onAtualizarSem
           <div><Label>SKU / Código interno</Label><Input value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} placeholder="Ex: CAP-IP12-TR"/></div>
           <div><Label>Código de barras</Label><Input value={form.codigoBarras} onChange={e=>setForm({...form,codigoBarras:e.target.value})} placeholder="Leitor ou digitação"/></div>
           <div><Label>Marca</Label><Input value={form.marca} onChange={e=>setForm({...form,marca:e.target.value})} placeholder="Ex: H'maston"/></div>
-          <div><Label>Compatibilidade / Modelo</Label><Input value={form.compatibilidade} onChange={e=>setForm({...form,compatibilidade:e.target.value})} placeholder="Ex: iPhone 12 / 12 Pro"/></div>
+          <div>{parecePelEst(form)?<><Label>Compatibilidade</Label><div className="rounded-lg border border-cyan-400/20 bg-cyan-400/[.035] p-3"><div className="text-[9px] tracking-[.15em] text-cyan-300">AUTOMÁTICA PELA TABELA DE PELÍCULAS</div>{compatPreview.length?<><div className="text-[10px] text-green-300 mt-1">{[...new Set(compatPreview.flatMap(g=>g.modelos||[]))].length} modelo(s) encontrado(s)</div><div className="text-[10px] text-[#AFAFBA] mt-1">{[...new Set(compatPreview.flatMap(g=>g.modelos||[]))].join(" · ")}</div></>:<div className="text-[10px] text-amber-300 mt-1">Digite somente uma referência no Nome (ex.: Película 3D iPhone 13). O sistema consulta a tabela sozinho.</div>}</div></>:<><Label>Compatibilidade / modelo</Label><Input value={form.compatibilidade} onChange={e=>setForm({...form,compatibilidade:e.target.value})} placeholder="Opcional"/></>}</div>
           <div><Label>Fornecedor</Label><Input value={form.fornecedor} onChange={e=>setForm({...form,fornecedor:e.target.value})} placeholder="Opcional"/></div>
           <div><Label>Estoque mínimo</Label><Input inputMode="numeric" value={form.estoqueMinimo} onChange={e=>setForm({...form,estoqueMinimo:e.target.value})}/></div>
           <div><Label>Preço de custo</Label><Input inputMode="decimal" value={form.custo} onChange={e=>setForm({...form,custo:e.target.value.replace(",",".")})}/></div>
