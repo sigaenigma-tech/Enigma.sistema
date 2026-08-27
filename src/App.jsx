@@ -1172,7 +1172,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.7</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.9</div>
       </div>
     </aside>
   );
@@ -2080,7 +2080,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.7</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.9</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3473,24 +3473,65 @@ function CupomVenda({ venda, role, onFechar, onExcluirVenda, onEditarVenda, onAt
   }
   function imprimirCupomVenda(){
     const forma=FORMAS.find((f)=>f.id===venda.formaPagamento)?.label||venda.formaPagamento||"Não informada";
-    const itens=(venda.itens||[]).map(i=>`<tr><td>${escapeHtml(String(i.qtd))}x</td><td>${escapeHtml(i.descricao||"Item")}</td><td style="text-align:right">${fmt((Number(i.valor)||0)*(Number(i.qtd)||0))}</td></tr>`).join("");
-    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Venda ENIGMA</title><style>
-      @page{size:auto;margin:8mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10px;line-height:1.35;max-width:80mm;margin:auto}
-      ${enigmaPrintCss()}
-      .enigma-head{align-items:center}.enigma-logo-img{width:95px}.enigma-doc{font-size:8px}.enigma-doc strong{font-size:10px}.enigma-contact{font-size:7px}
-      table{width:100%;border-collapse:collapse;margin:10px 0}td{padding:5px 2px;border-bottom:1px dashed #bbb;vertical-align:top}.total{display:flex;justify-content:space-between;font-size:15px;font-weight:800;border-top:2px solid #111;padding-top:7px;margin-top:7px}
-      .info{font-size:9px;margin:6px 0}.thanks{text-align:center;margin-top:12px;font-size:9px}.status{text-align:center;font-weight:700;margin:6px 0}
+    const itens=(venda.itens||[]).map(i=>{
+      const qtd=Number(i.qtd)||0;
+      const valor=(Number(i.valor)||0)*qtd;
+      return `<div class="thermal-item">
+        <div class="thermal-item-line">
+          <span class="thermal-qtd">${escapeHtml(String(qtd))}x</span>
+          <span class="thermal-produto">${escapeHtml(i.descricao||"Item")}</span>
+        </div>
+        <div class="thermal-item-value">${fmtPrint(valor)}</div>
+      </div>`;
+    }).join("");
+    const vendaCurta=escapeHtml(String(venda.id||"").slice(0,8).toUpperCase());
+    const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Venda ENIGMA</title><style>
+      @page{size:58mm auto;margin:2mm}
+      *{box-sizing:border-box}
+      html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:Arial,Helvetica,sans-serif;width:54mm;max-width:54mm;margin:0 auto!important;font-size:13px!important;line-height:1.28!important;font-weight:700!important;text-rendering:geometricPrecision}
+      .thermal-head{text-align:center;border-bottom:2px dashed #000;padding:0 0 7px;margin-bottom:7px}
+      .thermal-logo{display:block;width:58px;height:58px;object-fit:contain;margin:0 auto 3px;filter:invert(1)}
+      .thermal-title{font-size:15px;font-weight:900;letter-spacing:.2px;line-height:1.1;text-transform:uppercase}
+      .thermal-meta{font-size:12px;font-weight:800;margin-top:3px}
+      .thermal-contact{font-size:10px;font-weight:700;line-height:1.25;text-align:center;border-bottom:2px dashed #000;padding:0 0 7px;margin-bottom:8px}
+      .status{text-align:center;font-size:14px;font-weight:900;margin:5px 0 8px;text-transform:uppercase}
+      .info{font-size:12px!important;font-weight:700!important;line-height:1.35;margin:5px 0;overflow-wrap:anywhere}
+      .info strong{font-weight:900}
+      .thermal-items{border-top:2px solid #000;margin-top:8px}
+      .thermal-item{padding:7px 0;border-bottom:2px dashed #000;page-break-inside:avoid}
+      .thermal-item-line{display:flex;align-items:flex-start;gap:5px;font-size:13px;line-height:1.2}
+      .thermal-qtd{flex:0 0 auto;font-weight:900;white-space:nowrap}
+      .thermal-produto{font-weight:900;overflow-wrap:anywhere;word-break:normal}
+      .thermal-item-value{text-align:right;font-size:14px;font-weight:900;margin-top:4px}
+      .payment{font-size:12px;font-weight:800;margin:8px 0 6px}
+      .payment strong{font-weight:900}
+      .total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-top:3px solid #000;border-bottom:3px solid #000;padding:7px 0 6px;margin-top:7px;font-size:19px!important;font-weight:900!important;line-height:1}
+      .total span:last-child{white-space:nowrap}
+      .estorno{border:2px solid #000;padding:6px;margin-top:8px;font-size:11px;font-weight:800}
+      .thanks{text-align:center;margin:10px 0 7px;font-size:12px;font-weight:900}
+      .thermal-footer{text-align:center;border-top:2px dashed #000;padding-top:7px;font-size:10px;font-weight:800;line-height:1.3}
+      @media print{
+        html,body{width:54mm!important;max-width:54mm!important}
+        body{font-size:13px!important;font-weight:700!important}
+        .thermal-produto,.thermal-item-value,.status,.total,.thanks,strong{font-weight:900!important}
+      }
     </style></head><body>
-      ${enigmaPrintHeader("Comprovante de venda",`Venda ${escapeHtml(String(venda.id||"").slice(0,8).toUpperCase())}`)}
+      <div class="thermal-head">
+        <img class="thermal-logo" src="${ENIGMA_PRINT.logo}" alt="ENIGMA"/>
+        <div class="thermal-title">COMPROVANTE DE VENDA</div>
+        <div class="thermal-meta">Venda ${vendaCurta}</div>
+      </div>
+      <div class="thermal-contact">${escapeHtml(ENIGMA_PRINT.endereco)}<br/>WhatsApp ${escapeHtml(ENIGMA_PRINT.whatsapp)} · ${escapeHtml(ENIGMA_PRINT.instagram)}</div>
       <div class="status">${venda.status==="estornada"?"VENDA ESTORNADA":"VENDA CONCLUÍDA"}</div>
       <div class="info"><strong>Data:</strong> ${escapeHtml(fmtDateTime(venda.timestamp))}</div>
       <div class="info"><strong>Cliente:</strong> ${escapeHtml(venda.clienteNome||"Consumidor não identificado")}${venda.clienteTelefone?`<br/><strong>Contato:</strong> ${escapeHtml(venda.clienteTelefone)}`:""}</div>
-      <table><tbody>${itens}</tbody></table>
-      <div class="info"><strong>Pagamento:</strong> ${escapeHtml(forma)}</div>
-      <div class="total"><span>TOTAL</span><span>${fmt(venda.total)}</span></div>
-      ${venda.status==="estornada"?`<div class="info"><strong>Motivo do estorno:</strong> ${escapeHtml(venda.motivoCancelamento||"Estorno registrado")}</div>`:""}
-      <div class="thanks">Obrigado pela preferência.</div>
-      ${enigmaPrintFooter()}
+      <div class="thermal-items">${itens}</div>
+      <div class="payment"><strong>Pagamento:</strong> ${escapeHtml(forma)}</div>
+      <div class="total"><span>TOTAL</span><span>${fmtPrint(venda.total)}</span></div>
+      ${venda.status==="estornada"?`<div class="estorno"><strong>Motivo do estorno:</strong> ${escapeHtml(venda.motivoCancelamento||"Estorno registrado")}</div>`:""}
+      <div class="thanks">Obrigado pela preferência!</div>
+      <div class="thermal-footer">${escapeHtml(ENIGMA_PRINT.nome)}<br/>${escapeHtml(ENIGMA_PRINT.endereco)}<br/>${escapeHtml(ENIGMA_PRINT.whatsapp)} · ${escapeHtml(ENIGMA_PRINT.instagram)}</div>
       <script>window.onload=()=>setTimeout(()=>window.print(),250)</script>
     </body></html>`;
     openPrintHtml(html);
@@ -3552,7 +3593,7 @@ function CupomVenda({ venda, role, onFechar, onExcluirVenda, onEditarVenda, onAt
                 <span className="font-mono text-xl text-white">{fmt(venda.total)}</span>
               </div>
               <Button className="w-full mt-4" onClick={imprimirCupomVenda}>
-                <span className="flex items-center justify-center gap-2"><Printer size={15} /> Imprimir cupom</span>
+                <span className="flex items-center justify-center gap-2"><Printer size={15} /> Reimprimir cupom 58mm</span>
               </Button>
               {venda.status!=="estornada" && ["admin","gerente"].includes(role) && (onEditarVenda || onExcluirVenda) && (
                 <div className="flex gap-2 mt-2">
