@@ -3486,10 +3486,10 @@ function CupomVenda({ venda, role, onFechar, onExcluirVenda, onEditarVenda, onAt
     }).join("");
     const vendaCurta=escapeHtml(String(venda.id||"").slice(0,8).toUpperCase());
     const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Venda ENIGMA</title><style>
-      @page{size:58mm auto;margin:2mm}
+      @page{size:58mm auto;margin:0}
       *{box-sizing:border-box}
       html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      body{font-family:Arial,Helvetica,sans-serif;width:54mm;max-width:54mm;margin:0 auto!important;font-size:13px!important;line-height:1.28!important;font-weight:700!important;text-rendering:geometricPrecision}
+      body{font-family:Arial,Helvetica,sans-serif;width:48mm!important;max-width:48mm!important;margin:0 auto!important;padding:0!important;font-size:13px!important;line-height:1.28!important;font-weight:700!important;text-rendering:geometricPrecision}
       .thermal-head{text-align:center;border-bottom:2px dashed #000;padding:0 0 7px;margin-bottom:7px}
       .thermal-logo{display:block;width:58px;height:58px;object-fit:contain;margin:0 auto 3px;filter:invert(1)}
       .thermal-title{font-size:15px;font-weight:900;letter-spacing:.2px;line-height:1.1;text-transform:uppercase}
@@ -3512,7 +3512,7 @@ function CupomVenda({ venda, role, onFechar, onExcluirVenda, onEditarVenda, onAt
       .thanks{text-align:center;margin:10px 0 7px;font-size:12px;font-weight:900}
       .thermal-footer{text-align:center;border-top:2px dashed #000;padding-top:7px;font-size:10px;font-weight:800;line-height:1.3}
       @media print{
-        html,body{width:54mm!important;max-width:54mm!important}
+        html{width:58mm!important;max-width:58mm!important}body{width:48mm!important;max-width:48mm!important;margin-left:auto!important;margin-right:auto!important;overflow:visible!important}
         body{font-size:13px!important;font-weight:700!important}
         .thermal-produto,.thermal-item-value,.status,.total,.thanks,strong{font-weight:900!important}
       }
