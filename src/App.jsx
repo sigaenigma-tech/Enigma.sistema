@@ -1172,7 +1172,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.5.9</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.3</div>
       </div>
     </aside>
   );
@@ -2080,7 +2080,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.5.9</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.3</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -3092,9 +3092,22 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
   const osEntregues=osRelatorio.filter(o=>o.status==="entregue");
   const osCanceladas=osRelatorio.filter(o=>o.status==="cancelado");
   const osEmAndamento=osRelatorio.filter(o=>!["entregue","cancelado"].includes(o.status));
-  const faturamentoOS=osEntregues.reduce((a,o)=>a+Number(o.valor_final||0),0);
-  const ticketMedioOS=osEntregues.filter(o=>Number(o.valor_final||0)>0).length
-    ? faturamentoOS/osEntregues.filter(o=>Number(o.valor_final||0)>0).length : 0;
+
+  const custoPecasDaOS=(o)=>{
+    const pecas=Array.isArray(o?.pecas_usadas)?o.pecas_usadas:[];
+    return pecas.reduce((s,p)=>s+(Number(p?.custo)||0)*(Number(p?.qtd)||0),0);
+  };
+  const valorBrutoDaOS=(o)=>{
+    const orc=o?.orcamento&&typeof o.orcamento==="object"&&!Array.isArray(o.orcamento)?o.orcamento:{};
+    return Number(o?.valor_final ?? orc.valorCobrado ?? orc.valorProposto ?? 0)||0;
+  };
+  const valorLiquidoDaOS=(o)=>valorBrutoDaOS(o)-custoPecasDaOS(o);
+  const faturamentoOS=osEntregues.reduce((a,o)=>a+valorBrutoDaOS(o),0);
+  const custoPecasOS=osEntregues.reduce((a,o)=>a+custoPecasDaOS(o),0);
+  const liquidoOS=osEntregues.reduce((a,o)=>a+valorLiquidoDaOS(o),0);
+  const margemOS=faturamentoOS>0?(liquidoOS/faturamentoOS)*100:0;
+  const osEntreguesComValor=osEntregues.filter(o=>valorBrutoDaOS(o)>0);
+  const ticketMedioOS=osEntreguesComValor.length?faturamentoOS/osEntreguesComValor.length:0;
 
   const temposConclusao=osEntregues.map(o=>{
     const entrada=new Date(o.data_entrada);
@@ -3149,6 +3162,40 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
   const diasOrdenados = Object.keys(porDia).sort().reverse();
   const totalPeriodo = totalGeral(vendasPeriodo);
   const totaisPeriodo = totaisPorForma(vendasPeriodo);
+
+
+  function imprimirRelatorioFaturamento(){
+    const lista=modo==="dia"?vendasDoDia:vendasPeriodo;
+    const validas=lista.filter(v=>v.status!=="estornada");
+    const periodo=modo==="dia"?fmtDate(data):`${fmtDate(dataInicio)} a ${fmtDate(dataFim)}`;
+    const totalFat=totalGeral(validas);
+    const formas=totaisPorForma(validas);
+    const itens=validas.reduce((s,v)=>s+(v.itens||[]).reduce((a,i)=>a+(Number(i.qtd)||0),0),0);
+    const ticket=validas.length?totalFat/validas.length:0;
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Faturamento</title><style>
+    @page{size:A4;margin:12mm}body{font-family:Arial;color:#111;font-size:11px}h1{font-size:20px;margin:0}h2{font-size:13px;margin-top:18px}.box{border:1px solid #bbb;padding:10px;margin:8px 0}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.v{font-size:17px;font-weight:800}.k{font-size:8px;color:#666;text-transform:uppercase}table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px solid #ddd;text-align:left}th{background:#111;color:white}.num{text-align:right}</style></head><body>
+    <h1>ENIGMA</h1><div>Relatório de Faturamento · ${escapeHtml(periodo)}</div>
+    <div class="grid"><div class="box"><div class="k">Faturamento</div><div class="v">${fmtPrint(totalFat)}</div></div><div class="box"><div class="k">Vendas</div><div class="v">${validas.length}</div></div><div class="box"><div class="k">Itens</div><div class="v">${itens}</div></div><div class="box"><div class="k">Ticket médio</div><div class="v">${fmtPrint(ticket)}</div></div></div>
+    <h2>Formas de pagamento</h2><table><thead><tr><th>Forma</th><th class="num">Valor</th></tr></thead><tbody>${FORMAS.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td class="num">${fmtPrint(formas[f.id]||0)}</td></tr>`).join("")}</tbody></table>
+    <script>window.onload=()=>setTimeout(()=>window.print(),200)</script></body></html>`;
+    openPrintHtml(html);
+  }
+
+  function imprimirRelatorioAssistencia(){
+    const periodo=`${fmtDate(dataInicio)} a ${fmtDate(dataFim)}`;
+    const linhas=osRelatorio.map(o=>{
+      const bruto=valorBrutoDaOS(o), custo=custoPecasDaOS(o), liquido=bruto-custo, st=statusInfo(o.status);
+      return `<tr><td>#${escapeHtml(o.numero||"—")}</td><td>${escapeHtml(o.cliente?.nome||"Cliente")}</td><td>${escapeHtml(o.aparelho?.marcaModelo||"—")}</td><td>${escapeHtml(st.label)}</td><td class="num">${bruto?fmtPrint(bruto):"—"}</td><td class="num">${fmtPrint(custo)}</td><td class="num">${bruto?fmtPrint(liquido):"—"}</td></tr>`;
+    }).join("");
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório da Assistência</title><style>
+    @page{size:A4;margin:10mm}body{font-family:Arial;color:#111;font-size:9px}h1{font-size:20px;margin:0}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:12px 0}.box{border:1px solid #bbb;padding:8px}.v{font-size:14px;font-weight:800}.k{font-size:7px;color:#666;text-transform:uppercase}table{width:100%;border-collapse:collapse}th,td{padding:6px 4px;border-bottom:1px solid #ddd}th{background:#111;color:#fff;text-align:left}.num{text-align:right;white-space:nowrap}.note{margin-top:10px;color:#666}</style></head><body>
+    <h1>ENIGMA</h1><div>Relatório da Assistência Técnica · ${escapeHtml(periodo)}</div>
+    <div class="grid"><div class="box"><div class="k">Bruto recebido</div><div class="v">${fmtPrint(faturamentoOS)}</div></div><div class="box"><div class="k">Custo das peças</div><div class="v">${fmtPrint(custoPecasOS)}</div></div><div class="box"><div class="k">Líquido estimado</div><div class="v">${fmtPrint(liquidoOS)}</div></div><div class="box"><div class="k">Margem após peças</div><div class="v">${margemOS.toFixed(1)}%</div></div></div>
+    <table><thead><tr><th>OS</th><th>Cliente</th><th>Aparelho</th><th>Status</th><th class="num">Bruto</th><th class="num">Peças</th><th class="num">Líquido</th></tr></thead><tbody>${linhas||'<tr><td colspan="7">Sem OS no período.</td></tr>'}</tbody></table>
+    <div class="note">Líquido estimado = bruto recebido − custo cadastrado das peças. Não desconta despesas gerais, impostos ou taxas.</div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),200)</script></body></html>`;
+    openPrintHtml(html);
+  }
 
   function giroInfo(g){
     if(g==="alto") return {label:"ALTO GIRO",cls:"text-green-300 border-green-500/25 bg-green-500/[.04]"};
@@ -3322,12 +3369,20 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
           <div className="text-[9px] text-[#5F5F69] mt-2">O período considera a data de entrada da OS. Valores de faturamento consideram somente ordens marcadas como Entregue.</div>
         </Card>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="rounded-xl border border-green-500/25 bg-green-500/[.04] px-4 py-3 text-xs text-green-200">
+          V4.6.3 ATIVA · Relatório financeiro da assistência atualizado
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           <MetricCyber label="OS RECEBIDAS" value={String(osRelatorio.length)} sub="no período"/>
           <MetricCyber label="ENTREGUES" value={String(osEntregues.length)} sub={`${osEmAndamento.length} em andamento`}/>
-          <MetricCyber label="FATURAMENTO ENTREGUE" value={fmt(faturamentoOS)} sub="valor final das OS"/>
+          <MetricCyber label="VALOR BRUTO RECEBIDO" value={fmt(faturamentoOS)} sub="OS entregues"/>
+          <MetricCyber label="CUSTO DAS PEÇAS" value={fmt(custoPecasOS)} sub="custo interno"/>
+          <MetricCyber label="VALOR LÍQUIDO EST." value={fmt(liquidoOS)} sub={`${margemOS.toFixed(1)}% após peças`}/>
           <MetricCyber label="TICKET MÉDIO" value={fmt(ticketMedioOS)} sub="OS entregues com valor"/>
         </div>
+        <Button variant="secondary" className="w-full" onClick={imprimirRelatorioAssistencia}>
+          <span className="flex items-center justify-center gap-2"><Printer size={15}/> Imprimir relatório da assistência</span>
+        </Button>
 
         <div className="grid md:grid-cols-3 gap-3">
           <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[.025] p-4">
@@ -3379,7 +3434,7 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
               <div><div className="text-xs text-white">{o.cliente?.nome||"Cliente"}</div><div className="text-[10px] text-[#666672] mt-1">{o.aparelho?.marcaModelo||"Aparelho não informado"}</div></div>
               <div><div className="text-[8px] text-[#5F5F69]">PROBLEMA</div><div className="text-[10px] text-[#A0A0AA] mt-1 line-clamp-2">{o.problema_relatado||"—"}</div></div>
               <div><span className="text-[9px] px-2 py-1 rounded-full border" style={{color:st.color,borderColor:st.color+"55",backgroundColor:st.color+"15"}}>{st.label}</span></div>
-              <div className="md:text-right"><div className="text-[8px] text-[#5F5F69]">VALOR FINAL</div><div className="font-mono text-xs mt-1">{valor>0?fmt(valor):"—"}</div></div>
+              <div className="md:text-right"><div className="text-[8px] text-[#5F5F69]">BRUTO / PEÇAS / LÍQUIDO</div><div className="font-mono text-[10px] mt-1">{valorBrutoDaOS(o)>0?`${fmt(valorBrutoDaOS(o))} / ${fmt(custoPecasDaOS(o))} / ${fmt(valorLiquidoDaOS(o))}`:"—"}</div></div>
             </div>
           })}</div>}
         </Card>
@@ -3406,6 +3461,7 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
               <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do dia</span><span className="font-mono text-2xl text-white">{fmt(total)}</span></div>
               <div className="text-xs text-[#6E6E78]">{carregando ? "Carregando..." : `${vendasDoDia.length} venda(s)`}</div>
               <div className="grid grid-cols-2 gap-2 mt-4">{FORMAS.map(f=><div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2"><div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div><div className="font-mono text-sm text-[#E5E5EA]">{fmt(totais[f.id])}</div></div>)}</div>
+              <Button variant="secondary" className="w-full mt-4" onClick={imprimirRelatorioFaturamento}><span className="flex items-center justify-center gap-2"><Printer size={15}/> Imprimir relatório</span></Button>
             </Card>
             <Card>
               <Label>Vendas <span className="normal-case text-[#5A5A64]">(toque pra ver o cupom)</span></Label>
@@ -3422,6 +3478,7 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
               <div className="flex items-center justify-between mb-1"><span className="text-sm text-[#8A8A96]">Faturamento do período</span><span className="font-mono text-2xl text-white">{fmt(totalPeriodo)}</span></div>
               <div className="text-xs text-[#6E6E78]">{carregandoPeriodo ? "Carregando..." : `${vendasPeriodo.length} venda(s) em ${diasOrdenados.length} dia(s)`}</div>
               <div className="grid grid-cols-2 gap-2 mt-4">{FORMAS.map(f=><div key={f.id} className="rounded-lg border border-[#2A2A34] bg-[#0F0F14] px-3 py-2"><div className="text-[10px] tracking-wide uppercase text-[#6E6E78]">{f.label}</div><div className="font-mono text-sm text-[#E5E5EA]">{fmt(totaisPeriodo[f.id])}</div></div>)}</div>
+              <Button variant="secondary" className="w-full mt-4" onClick={imprimirRelatorioFaturamento}><span className="flex items-center justify-center gap-2"><Printer size={15}/> Imprimir relatório do período</span></Button>
             </Card>
             <Card>
               <Label>Por dia</Label>
