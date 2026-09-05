@@ -1236,7 +1236,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.5</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.6</div>
       </div>
     </aside>
   );
@@ -2144,7 +2144,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.5</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.6</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2490,16 +2490,70 @@ function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar, on
   const [form,setForm]=useState({tipo:"saida",categoria_id:"",descricao:"",valor:"",forma_pagamento:"pix",status:"pago",data_competencia:new Date().toISOString().slice(0,10),observacao:""});
   const [mostrarForm,setMostrarForm]=useState(false);
   const [filtro,setFiltro]=useState("todos");
+  const [syncFin,setSyncFin]=useState({rodando:false,corrigidos:0,erro:false});
+
+  const sincronizarFinanceiroPDV=async()=>{
+    try{
+      const [lancamentos,vendasRows]=await Promise.all([
+        sb("financeiro_lancamentos?select=id,origem_id,valor,forma_pagamento,status,updated_at&origem=eq.pdv"),
+        sb("vendas?select=id,total,forma_pagamento,status,timestamp,updated_at")
+      ]);
+
+      const vendaPorId=new Map((vendasRows||[]).map(v=>[String(v.id),v]));
+      let corrigidos=0;
+
+      for(const lanc of (lancamentos||[])){
+        const venda=vendaPorId.get(String(lanc.origem_id||""));
+        if(!venda) continue;
+
+        const valorAtual=Number(lanc.valor||0);
+        const valorVenda=Number(venda.total||0);
+        const formaVenda=venda.forma_pagamento||null;
+        const statusVenda=venda.status==="estornada"?"cancelado":"pago";
+
+        const divergente=
+          Math.abs(valorAtual-valorVenda)>0.009 ||
+          (lanc.forma_pagamento||null)!==formaVenda ||
+          (lanc.status||"pago")!==statusVenda;
+
+        if(!divergente) continue;
+
+        await sb(`financeiro_lancamentos?id=eq.${lanc.id}`,{
+          method:"PATCH",
+          prefer:"return=minimal",
+          body:JSON.stringify({
+            valor:valorVenda,
+            forma_pagamento:formaVenda,
+            status:statusVenda,
+            updated_at:new Date().toISOString()
+          })
+        });
+        corrigidos++;
+      }
+
+      return corrigidos;
+    }catch(e){
+      console.warn("Não foi possível reconciliar financeiro com PDV:",e);
+      throw e;
+    }
+  };
 
   const carregar=async()=>{
     setLoadingFin(true);
+    setSyncFin(x=>({...x,rodando:true,erro:false}));
     try{
+      const corrigidos=await sincronizarFinanceiroPDV();
       const [m,c]=await Promise.all([
         sb("financeiro_movimentacoes?select=*&order=data_competencia.desc,created_at.desc"),
         sb("financeiro_categorias?select=*&ativa=eq.true&order=tipo.asc,nome.asc")
       ]);
-      setMovs(m||[]);setCats(c||[]);
-    }catch(e){console.warn("Financeiro ainda não disponível:",e);}
+      setMovs(m||[]);
+      setCats(c||[]);
+      setSyncFin({rodando:false,corrigidos,erro:false});
+    }catch(e){
+      console.warn("Financeiro ainda não disponível:",e);
+      setSyncFin({rodando:false,corrigidos:0,erro:true});
+    }
     setLoadingFin(false);
   };
   useEffect(()=>{carregar();},[]);
@@ -2555,6 +2609,21 @@ function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar, on
         <div className="text-[9px] tracking-[.28em] text-purple-300">ENIGMA // FINANCIAL CORE</div>
         <div className="text-xl text-white mt-2">Visão Geral Financeira</div>
         <div className="text-xs text-[#74747F] mt-1">Movimentações pagas, pendências e resultado operacional registrado.</div>
+        <div className={"mt-3 rounded-lg border px-3 py-2 text-[10px] "+(
+          syncFin.erro
+            ?"border-red-500/25 bg-red-500/[.04] text-red-300"
+            :syncFin.rodando
+              ?"border-cyan-500/25 bg-cyan-500/[.04] text-cyan-300"
+              :"border-green-500/20 bg-green-500/[.035] text-green-300"
+        )}>
+          {syncFin.erro
+            ?"Não foi possível sincronizar as vendas do PDV."
+            :syncFin.rodando
+              ?"Sincronizando a visão financeira com as vendas atuais do PDV..."
+              :syncFin.corrigidos>0
+                ?`${syncFin.corrigidos} lançamento(s) antigo(s) do PDV foram corrigidos automaticamente.`
+                :"Financeiro sincronizado com as vendas atuais do PDV."}
+        </div>
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCyber label="ENTRADAS" value={fmt(entradas)} sub="recebido"/>
@@ -2571,7 +2640,7 @@ function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar, on
         </div>
       </div>
       <div className="rounded-xl border border-white/10 p-4">
-        <div className="flex justify-between items-center mb-3"><div><div className="text-[9px] tracking-[.2em] text-[#8A8A96]">ÚLTIMAS MOVIMENTAÇÕES</div><div className="text-xs text-[#5F5F69] mt-1">Financeiro consolidado</div></div><button onClick={carregar} className="text-[10px] text-cyan-300">Atualizar</button></div>
+        <div className="flex justify-between items-center mb-3"><div><div className="text-[9px] tracking-[.2em] text-[#8A8A96]">ÚLTIMAS MOVIMENTAÇÕES</div><div className="text-xs text-[#5F5F69] mt-1">Financeiro consolidado</div></div><button onClick={carregar} disabled={loadingFin||syncFin.rodando} className="text-[10px] text-cyan-300 disabled:opacity-50">{syncFin.rodando?"Sincronizando...":"Atualizar e sincronizar"}</button></div>
         {!movs.length?<div className="text-xs text-[#666672] py-6 text-center">Nenhum lançamento financeiro ainda.</div>:
         <div className="space-y-2">{movs.slice(0,6).map(x=><div key={x.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2">
           <div><div className="text-xs">{x.descricao}</div><div className="text-[9px] text-[#60606B]">{x.categoria||"Sem categoria"} · {x.data_competencia}</div></div>
@@ -3450,7 +3519,7 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
         </Card>
 
         <div className="rounded-xl border border-green-500/25 bg-green-500/[.04] px-4 py-3 text-xs text-green-200">
-          V4.6.5 ATIVA · Relatório financeiro da assistência atualizado
+          V4.6.6 ATIVA · Relatório financeiro da assistência atualizado
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           <MetricCyber label="OS RECEBIDAS" value={String(osRelatorio.length)} sub="no período"/>
