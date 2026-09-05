@@ -1236,7 +1236,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.6</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.7</div>
       </div>
     </aside>
   );
@@ -2144,7 +2144,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.6</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.7</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2210,6 +2210,7 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
   const [modoRetroativo,setModoRetroativo]=useState(false);
   const [dataRetroativa,setDataRetroativa]=useState("2026-08-24");
   const [peliculaGruposPDV,setPeliculaGruposPDV]=useState([]);
+  const [scannerMsg,setScannerMsg]=useState("");
 
   useEffect(()=>{
     let vivo=true;
@@ -2220,6 +2221,7 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
   },[]);
 
   const normPel=(v="")=>String(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+  const normCodigoBarras=(v="")=>String(v??"").replace(/[\r\n\t\s]/g,"").trim();
   const parecePeliculaPDV=(p)=>{const t=normPel(`${p?.nome||""} ${p?.compatibilidade||""}`);return t.includes("pelicula")||t.includes("vidro")||t.includes("3d")||t.includes("9d")||t.includes("ceramica")||t.includes("hidrogel")};
   function gruposAutomaticosProduto(p){
     if(!parecePeliculaPDV(p))return [];
@@ -2233,7 +2235,7 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
   }
   function textoBuscaProduto(p){
     const gs=gruposAutomaticosProduto(p);
-    return normPel(`${p?.nome||""} ${p?.sku||""} ${p?.marca||""} ${p?.compatibilidade||""} ${gs.flatMap(g=>[g.nome,g.marca,...(g.modelos||[])]).join(" ")}`);
+    return normPel(`${p?.nome||""} ${p?.sku||""} ${p?.codigoBarras||""} ${p?.marca||""} ${p?.compatibilidade||""} ${gs.flatMap(g=>[g.nome,g.marca,...(g.modelos||[])]).join(" ")}`);
   }
 
   async function carregarHistoricoVendas(){
@@ -2259,7 +2261,14 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
     );
   }
 
-  const resultados = estoque.filter((p) => p.categoria === "acessorio" && (!normPel(busca) || textoBuscaProduto(p).includes(normPel(busca))));
+  const buscaCodigo=normCodigoBarras(busca);
+  const resultados = estoque.filter((p) => {
+    if(p.categoria !== "acessorio") return false;
+    if(!String(busca||"").trim()) return true;
+    const codigo=normCodigoBarras(p?.codigoBarras);
+    const matchCodigo=!!buscaCodigo && !!codigo && codigo===buscaCodigo;
+    return matchCodigo || textoBuscaProduto(p).includes(normPel(busca));
+  });
   const seminovosDisponiveis = seminovos.filter((x) => {
     const preco = Number(x?.dados?.pdv?.precoVenda) || 0;
     const q = busca.toLowerCase();
@@ -2271,6 +2280,31 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
   function addDoEstoque(p) {
     setItens([...itens, { id: genId(), descricao: p.nome, tipo: "produto", valor: p.preco, qtd: qtdSel, estoqueId: p.id }]);
     setBusca(""); setQtdSel(1);
+  }
+
+  function addPorCodigoBarras(p) {
+    setItens(prev=>{
+      const idx=prev.findIndex(i=>i.estoqueId===p.id && i.tipo==="produto");
+      if(idx<0) return [...prev,{id:genId(),descricao:p.nome,tipo:"produto",valor:p.preco,qtd:1,estoqueId:p.id}];
+      return prev.map((i,n)=>n===idx?{...i,qtd:(Number(i.qtd)||0)+1}:i);
+    });
+    setBusca("");
+    setQtdSel(1);
+    setScannerMsg(`✓ ${p.nome} adicionado ao carrinho`);
+    window.setTimeout(()=>setScannerMsg(""),2200);
+  }
+
+  function processarCodigoBarras(valor){
+    const codigo=normCodigoBarras(valor);
+    if(!codigo) return false;
+    const produto=estoque.find(p=>p.categoria==="acessorio" && normCodigoBarras(p?.codigoBarras)===codigo);
+    if(produto){
+      addPorCodigoBarras(produto);
+      return true;
+    }
+    setScannerMsg(`Código ${codigo} não encontrado no cadastro`);
+    window.setTimeout(()=>setScannerMsg(""),3000);
+    return false;
   }
   function addSeminovo(x) {
     if (itens.some((i) => i.seminovoId === x.id)) return;
@@ -2353,16 +2387,30 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
             <div className="flex items-center gap-2 mb-2">
               <div className="relative flex-1">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A5A64]" />
-                <Input placeholder="Buscar capinha, película, carregador..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9" />
+                <Input
+                  placeholder="Buscar produto, SKU ou bipar código de barras..."
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  onKeyDown={(e)=>{
+                    if(e.key!=="Enter" && e.key!=="Tab") return;
+                    const valor=e.currentTarget.value;
+                    if(!String(valor||"").trim()) return;
+                    e.preventDefault();
+                    processarCodigoBarras(valor);
+                  }}
+                  autoComplete="off"
+                  className="pl-9"
+                />
               </div>
               <Stepper value={qtdSel} onChange={setQtdSel} />
             </div>
+            {scannerMsg&&<div className={"mb-2 rounded-lg border px-3 py-2 text-[10px] "+(scannerMsg.startsWith("✓")?"border-green-500/25 bg-green-500/[.04] text-green-300":"border-amber-500/25 bg-amber-500/[.04] text-amber-300")}>{scannerMsg}</div>}
             {busca && (
               <div className="max-h-48 overflow-y-auto space-y-1 mb-2">
                 {resultados.length === 0 && <div className="text-xs text-[#5A5A64] py-2">Nenhum produto encontrado</div>}
                 {resultados.map((p) => (
                   <button key={p.id} onClick={() => addDoEstoque(p)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-[#0F0F14] border border-[#2A2A34] text-left">
-                    <span><span className="text-sm text-[#E5E5EA]">{p.nome}</span>{gruposAutomaticosProduto(p).length>0&&<span className="block text-[9px] text-cyan-300 mt-0.5">Compatível: {[...new Set(gruposAutomaticosProduto(p).flatMap(g=>g.modelos||[]))].slice(0,6).join(" · ")}{[...new Set(gruposAutomaticosProduto(p).flatMap(g=>g.modelos||[]))].length>6?" · +":""}</span>}</span>
+                    <span><span className="text-sm text-[#E5E5EA]">{p.nome}</span>{p.codigoBarras&&<span className="block text-[9px] text-[#777783] mt-0.5">Código: {p.codigoBarras}</span>}{gruposAutomaticosProduto(p).length>0&&<span className="block text-[9px] text-cyan-300 mt-0.5">Compatível: {[...new Set(gruposAutomaticosProduto(p).flatMap(g=>g.modelos||[]))].slice(0,6).join(" · ")}{[...new Set(gruposAutomaticosProduto(p).flatMap(g=>g.modelos||[]))].length>6?" · +":""}</span>}</span>
                     <span className="flex items-center gap-2">
                       <span className="font-mono text-xs text-[#C9C9D2]">{fmt(p.preco)}</span>
                       <EstoqueBadge item={p} />
@@ -3519,7 +3567,7 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
         </Card>
 
         <div className="rounded-xl border border-green-500/25 bg-green-500/[.04] px-4 py-3 text-xs text-green-200">
-          V4.6.6 ATIVA · Relatório financeiro da assistência atualizado
+          V4.6.7 ATIVA · Relatório financeiro da assistência atualizado
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           <MetricCyber label="OS RECEBIDAS" value={String(osRelatorio.length)} sub="no período"/>
