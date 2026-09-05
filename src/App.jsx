@@ -318,13 +318,18 @@ function fmtDateTime(iso) {
 function totaisPorForma(vendas) {
   const t = { dinheiro: 0, pix: 0, debito: 0, credito: 0 };
   (vendas || []).filter(v => v.status !== "estornada").forEach((v) => {
-    const pagamentos = Array.isArray(v.pagamentos) && v.pagamentos.length
-      ? v.pagamentos
-      : [{ forma: v.formaPagamento, valor: v.total }];
+    const pagamentosSalvos = Array.isArray(v.pagamentos) ? v.pagamentos.filter(Boolean) : [];
+    // O ENIGMA trabalha hoje com uma forma por venda. Em versões anteriores,
+    // a edição podia atualizar formaPagamento sem sincronizar o JSON pagamentos.
+    // Quando houver divergência em pagamento único, a forma principal da venda é a fonte canônica.
+    const pagamentoUnicoInconsistente = pagamentosSalvos.length === 1 && v.formaPagamento && pagamentosSalvos[0]?.forma !== v.formaPagamento;
+    const pagamentos = !pagamentosSalvos.length || pagamentoUnicoInconsistente
+      ? [{ forma: v.formaPagamento, valor: v.total }]
+      : pagamentosSalvos;
     pagamentos.forEach((p) => {
-      const forma = p.forma || v.formaPagamento;
+      const forma = p?.forma || v.formaPagamento;
       if (!forma) return;
-      t[forma] = (t[forma] || 0) + Number(p.valor || 0);
+      t[forma] = (t[forma] || 0) + Number(p?.valor ?? v.total ?? 0);
     });
   });
   return t;
@@ -694,6 +699,22 @@ function EnigmaSistema({ usuario, onLogout }) {
     } catch (e) { setSaveError(true); }
     setTab("pdv");
   }
+  async function recarregarVendasDoCaixa() {
+    if (!caixaAtual?.id) return null;
+    try {
+      const vendaRows = await sb(`vendas?select=*&caixa_id=eq.${caixaAtual.id}&order=timestamp.asc`);
+      const vendasAtualizadas = (vendaRows || []).map(rowToVenda);
+      const caixaAtualizado = { ...caixaAtual, vendas: vendasAtualizadas };
+      setCaixaAtual(caixaAtualizado);
+      setSaveError(false);
+      return caixaAtualizado;
+    } catch (e) {
+      console.error("Não foi possível atualizar as vendas do caixa:", e);
+      setSaveError(true);
+      return null;
+    }
+  }
+
   async function registrarVenda({ itens, formaPagamento, clienteId = null, retroativa = false, dataVenda = null }) {
     if (!caixaAtual && !retroativa) return null;
     const total = itens.reduce((s, it) => s + it.valor * it.qtd, 0);
@@ -782,9 +803,25 @@ function EnigmaSistema({ usuario, onLogout }) {
   async function fecharCaixa({ valorContado, observacao }) {
     if(!podeAcao(role,"fechar_caixa")){alert("Seu nível de acesso não permite fechar o caixa.");return;}
     if (!caixaAtual) return;
-    const vendas = caixaAtual.vendas;
+
+    // Regra de auditoria: o fechamento nunca usa apenas o estado em memória.
+    // Antes de calcular, recarrega as vendas atuais do banco para incorporar edições
+    // feitas depois da venda (valor, forma de pagamento, estorno etc.).
+    let caixaBase = caixaAtual;
+    try {
+      const vendaRows = await sb(`vendas?select=*&caixa_id=eq.${caixaAtual.id}&order=timestamp.asc`);
+      caixaBase = { ...caixaAtual, vendas: (vendaRows || []).map(rowToVenda) };
+      setCaixaAtual(caixaBase);
+    } catch (e) {
+      console.error("Falha ao atualizar vendas antes do fechamento:", e);
+      alert("Não foi possível atualizar as vendas do caixa. O fechamento foi interrompido para evitar divergência.");
+      setSaveError(true);
+      return;
+    }
+
+    const vendas = caixaBase.vendas;
     const totais = totaisPorForma(vendas);
-    const saldoEsperadoDinheiro = caixaAtual.valorInicial + totais.dinheiro;
+    const saldoEsperadoDinheiro = caixaBase.valorInicial + totais.dinheiro;
     const diferenca = (Number(valorContado) || 0) - saldoEsperadoDinheiro;
     try {
       await sb(`caixa_sessoes?id=eq.${caixaAtual.id}`, {
@@ -876,7 +913,13 @@ function EnigmaSistema({ usuario, onLogout }) {
     try {
       await sb(`vendas?id=eq.${venda.id}`, {
         method: "PATCH", prefer: "return=minimal",
-        body: JSON.stringify({ itens: novosItens, forma_pagamento: novaForma, total: novoTotal }),
+        body: JSON.stringify({
+          itens: novosItens,
+          forma_pagamento: novaForma,
+          pagamentos: [{ forma: novaForma, valor: novoTotal }],
+          subtotal: novoTotal,
+          total: novoTotal
+        }),
       });
       // reconcilia estoque: devolve o que não é mais usado, desconta o que passou a ser usado a mais
       const oldMap = {}; if(!venda.retroativa) (venda.itens || []).forEach((i) => { if (i.estoqueId) oldMap[i.estoqueId] = (oldMap[i.estoqueId] || 0) + i.qtd; });
@@ -886,10 +929,31 @@ function EnigmaSistema({ usuario, onLogout }) {
         const delta = (oldMap[id] || 0) - (newMap[id] || 0);
         if (delta !== 0) ajustarQuantidadeLocal(id, delta);
       });
-      const vendaAtualizada = { ...venda, itens: novosItens, formaPagamento: novaForma, total: novoTotal };
+      // Mantém o financeiro coerente com a venda editada.
+      try {
+        await sb(`financeiro_lancamentos?origem=eq.pdv&origem_id=eq.${encodeURIComponent(String(venda.id))}`, {
+          method:"PATCH",
+          prefer:"return=minimal",
+          body:JSON.stringify({
+            valor:novoTotal,
+            forma_pagamento:novaForma,
+            updated_at:new Date().toISOString()
+          })
+        });
+      } catch (finErr) {
+        console.warn("Venda atualizada, mas o lançamento financeiro não pôde ser sincronizado:", finErr);
+      }
+
+      const vendaAtualizada = { ...venda, itens: novosItens, formaPagamento: novaForma, pagamentos:[{ forma:novaForma, valor:novoTotal }], subtotal:novoTotal, total: novoTotal };
       if (caixaAtual && caixaAtual.vendas.some((v) => v.id === venda.id)) {
         setCaixaAtual({ ...caixaAtual, vendas: caixaAtual.vendas.map((v) => (v.id === venda.id ? vendaAtualizada : v)) });
       }
+
+      // Recarrega do banco para garantir que fechamento e relatórios vejam a versão persistida.
+      if (caixaAtual?.id && venda.caixaId === caixaAtual.id) {
+        await recarregarVendasDoCaixa();
+      }
+
       setSaveError(false);
       return vendaAtualizada;
     } catch (e) { setSaveError(true); return null; }
@@ -1112,7 +1176,7 @@ function EnigmaSistema({ usuario, onLogout }) {
         {tab === "pdv" && (
           <PDVTab role={role} caixaAtual={caixaAtual} estoque={estoque} seminovos={seminovos} clientes={clientes} onAddCliente={adicionarCliente} onVenda={registrarVenda} onIrParaCaixa={() => navigate("financeiro")} onExcluirVenda={excluirVenda} onEditarVenda={editarVenda} />
         )}
-        {tab === "financeiro" && tabPermitida(role,"financeiro") && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} />}
+        {tab === "financeiro" && tabPermitida(role,"financeiro") && <FinanceiroTab role={role} caixaAtual={caixaAtual} seminovos={seminovos} onAbrir={abrirCaixa} onFechar={fecharCaixa} onAtualizarCaixa={recarregarVendasDoCaixa} />}
         {tab === "os" && osView === "lista" && (
           <ListaOS index={osIndex} onAbrir={abrirDetalheOS} onNova={() => setOsView("nova")} />
         )}
@@ -1172,7 +1236,7 @@ function SideNav({ tab, setTab, role, usuario, onLogout }) {
           <div className="text-[9px] text-purple-300 mt-1">{ROLE_LABELS[role]||role}</div>
         </div>
         <button onClick={onLogout} className="w-full rounded-lg border border-white/8 px-3 py-2 text-[10px] text-[#777782] hover:text-white">Sair do sistema</button>
-        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.3</div>
+        <div className="text-[9px] text-[#454550] mt-2 text-center">ENIGMA OS · V4.6.5</div>
       </div>
     </aside>
   );
@@ -2080,7 +2144,7 @@ function ConfiguracoesTab({usuario}) {
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Usuário</Label><div className="text-sm text-white">{usuario?.nome||"—"}</div><div className="text-xs text-[#666672] mt-1">{usuario?.username||usuario?.email||"Conta autenticada"}</div></div>
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/[.035] p-4"><Label>Nível de acesso</Label><div className="text-sm text-purple-200">{ROLE_LABELS[role]||role}</div></div>
-        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.3</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
+        <div className="rounded-xl border border-white/10 bg-white/[.02] p-4"><Label>Versão</Label><div className="text-sm text-white">ENIGMA OS V4.6.5</div><div className="text-xs text-[#666672] mt-1">User Access Manager</div></div>
       </div>
     </Card>
     {role==="admin"&&<Card className="!rounded-2xl border-purple-500/15">
@@ -2417,7 +2481,7 @@ function PDVTab({ role, caixaAtual, estoque, seminovos = [], clientes = [], onAd
 
 
 /* ================= FINANCEIRO ================= */
-function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar }) {
+function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar, onAtualizarCaixa }) {
   const limitadoCaixa=role==="vendedor";
   const [secao,setSecao]=useState(limitadoCaixa?"caixa":"visao");
   const [movs,setMovs]=useState([]);
@@ -2516,7 +2580,7 @@ function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar }) 
       </div>
     </div>}
 
-    {secao==="caixa" && <CaixaTab caixaAtual={caixaAtual} onAbrir={onAbrir} onFechar={onFechar} />}
+    {secao==="caixa" && <CaixaTab caixaAtual={caixaAtual} onAbrir={onAbrir} onFechar={onFechar} onAtualizarCaixa={onAtualizarCaixa} />}
 
     {secao==="seminovos" && <div className="space-y-4">
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -2561,7 +2625,7 @@ function FinanceiroTab({ role, caixaAtual, seminovos = [], onAbrir, onFechar }) 
 }
 
 /* ================= CAIXA ================= */
-function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
+function CaixaTab({ caixaAtual, onAbrir, onFechar, onAtualizarCaixa }) {
   const [valorInicial, setValorInicial] = useState("");
   const [operador, setOperador] = useState("");
   const [observacao, setObservacao] = useState("");
@@ -2571,6 +2635,7 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
   const [historicoCaixa,setHistoricoCaixa]=useState([]);
   const [loadingHistorico,setLoadingHistorico]=useState(false);
   const [detalheFechamento,setDetalheFechamento]=useState(null);
+  const [atualizandoCaixa,setAtualizandoCaixa]=useState(false);
 
   async function carregarHistoricoCaixa(){
     setLoadingHistorico(true);
@@ -2631,7 +2696,22 @@ function CaixaTab({ caixaAtual, onAbrir, onFechar }) {
     return (
       <div className="space-y-4">
         <Card>
-          <div className="flex items-center gap-2 mb-3 text-[#C9C9D2]"><Wallet size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Caixa aberto</span></div>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2 text-[#C9C9D2]"><Wallet size={16} className="text-purple-400" /><span className="text-sm tracking-wide">Caixa aberto</span></div>
+            <button
+              onClick={async()=>{
+                if(!onAtualizarCaixa) return;
+                setAtualizandoCaixa(true);
+                await onAtualizarCaixa();
+                setAtualizandoCaixa(false);
+              }}
+              disabled={atualizandoCaixa}
+              className="text-[10px] text-cyan-300 disabled:opacity-50"
+            >
+              {atualizandoCaixa?"Atualizando...":"Atualizar vendas"}
+            </button>
+          </div>
+          <div className="text-[10px] text-[#666672] mb-3">Os totais abaixo são recalculados com os dados atuais das vendas. O fechamento também faz uma nova leitura do banco automaticamente.</div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div><Label>Aberto em</Label><div className="text-[#E5E5EA]">{fmtDateTime(caixaAtual.dataAbertura)}</div></div>
             <div><Label>Fundo inicial</Label><div className="font-mono text-[#E5E5EA]">{fmt(caixaAtual.valorInicial)}</div></div>
@@ -3370,7 +3450,7 @@ function RelatorioTab({ role, caixaAtual, estoque = [], onBuscarVendas, onBuscar
         </Card>
 
         <div className="rounded-xl border border-green-500/25 bg-green-500/[.04] px-4 py-3 text-xs text-green-200">
-          V4.6.3 ATIVA · Relatório financeiro da assistência atualizado
+          V4.6.5 ATIVA · Relatório financeiro da assistência atualizado
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           <MetricCyber label="OS RECEBIDAS" value={String(osRelatorio.length)} sub="no período"/>
